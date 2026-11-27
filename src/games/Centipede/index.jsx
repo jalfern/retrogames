@@ -5,7 +5,7 @@ import VirtualControls from '../../components/VirtualControls'
 import { GAMES } from '../../config/games'
 import { attractFrame, DIM } from './attract.js'
 import { exposeGame, unexposeGame, exposeFeedbackState, unexposeFeedbackState, seedFromQuery, seedRng } from '../../utils/gameContract'
-import { CELL_SIZE, START_LIVES, INVULN_TICKS, scoreForSegment, MUSHROOM_POINTS, mushroomField, SPIDER_POINTS, SCORPION_POINTS, FLEA_POINTS, SPIDER_EVERY, SCORPION_EVERY, FLEA_COOLDOWN, poisonMushroom, bulletEscapes, waveSpeed, splitSpd } from './sim.js'
+import { CELL_SIZE, START_LIVES, INVULN_TICKS, scoreForSegment, MUSHROOM_POINTS, mushroomField, SPIDER_POINTS, SCORPION_POINTS, FLEA_POINTS, SPIDER_EVERY, SCORPION_EVERY, FLEA_COOLDOWN, poisonMushroom, bulletEscapes, waveSpeed, splitSpd, munchCue } from './sim.js'
 
 // CENTIPEDE (#1473 batch 16) — the Feb port's score was dead, one touch was
 // instant hard-reset, cut bodies never grew heads, and the mushroom field
@@ -65,6 +65,8 @@ const CentipedeGame = () => {
         let respawnAt = -1       // tick the zapper returns, -1 = alive
         let invulnUntil = 0
         let spiderAt = SPIDER_EVERY     // tick the next spider enters
+        let munchAt = 0                // #3632 — the swarm's chewing clack clock
+        let munchAlt = false           // two-syllable click-et-a texture
         let scorpionAt = SCORPION_EVERY // tick the next scorpion crosses
         let fleaAt = 0                  // earliest tick a high shot may summon again
 
@@ -248,14 +250,21 @@ const CentipedeGame = () => {
                     vx: 0,
                     vy: -BULLET_SPEED
                 })
-                audioController.playTone(600, 0.05, 'square')
+                // #3632 — the zapper: a crack, not a beep. Sharp square crack
+                // falling fast under a static tick, the machine's snap report.
+                audioController.playSweep(1500, 320, 0.09, 'square', 0.07)
+                audioController.playNoise(0.04, 0.05)
             }
         }
 
         const playerAlive = () => respawnAt < 0
 
         const killPlayer = () => {
-            audioController.playSweep(800, 200, 1.0, 'sawtooth')
+            // #3632 — the death: a static burst, the zapper's engine winding
+            // all the way down, and a low thud to land it (three layers, ours).
+            audioController.playNoise(0.18, 0.22)
+            audioController.playSweep(700, 70, 0.65, 'sawtooth', 0.11)
+            audioController.playTone(110, 0.3, 'triangle', 0.1, 0.3)
             if (isAttractMode) { respawnAt = tickN + 60; return }
             lives--
             if (lives <= 0) {
@@ -280,6 +289,7 @@ const CentipedeGame = () => {
             if (!playerAlive() && tickN >= respawnAt) {
                 resetPlayer()
                 spawnCentipede()
+                audioController.playSweep(200, 600, 0.15, 'square', 0.07) // re-seat blip (#3632)
                 // The garden calms for the respawned zapper — the menagerie
                 // leaves, and its cadence restarts from this tick.
                 state.spider = null
@@ -359,9 +369,13 @@ const CentipedeGame = () => {
                         const dead = state.mushrooms.splice(hitMushroom, 1)[0]
                         state.score += MUSHROOM_POINTS // arcade: 1 pt per mushroom
                         burst(dead.x, dead.y, dead.poison ? '#ff2d2d' : MUSHROOM_SKIN[1].cap, 6, MUSHROOM_POINTS)
-                        audioController.playNoise(0.1, 0.1)
+                        audioController.playFilteredNoise(0.09, 0.12, 1400)
+                        audioController.playTone(150, 0.06, 'triangle', 0.07)
                     } else {
-                        audioController.playTone(200, 0.05, 'triangle')
+                        // #3632 — the chip: a two-tone woodblock click (hit, and
+                        // a lower syllable an echo-length behind it).
+                        audioController.playTone(340, 0.03, 'square', 0.07)
+                        audioController.playTone(250, 0.035, 'square', 0.05, 0.03)
                     }
                     state.bullets.splice(i, 1)
                     return
@@ -395,7 +409,15 @@ const CentipedeGame = () => {
                     }
 
                     burst(seg.x, seg.y, '#ffffff', 8, scoreForSegment(seg.head))
-                    audioController.playNoise(0.2, 0.3)
+                    // #3632 — the segment pew: a fast falling chirp with a static
+                    // tick underneath; the head dies brighter, two rising sparkle
+                    // notes over the pew (the machine's exclamation mark).
+                    audioController.playSweep(900, 180, 0.13, 'square', 0.11)
+                    audioController.playNoise(0.05, 0.07)
+                    if (seg.head) {
+                        audioController.playTone(1300, 0.04, 'square', 0.07, 0.10)
+                        audioController.playTone(1750, 0.05, 'square', 0.07, 0.16)
+                    }
                     state.bullets.splice(i, 1)
                     return
                 }
@@ -414,9 +436,14 @@ const CentipedeGame = () => {
                             burst(s.x, s.y, '#c17bff', 8, SPIDER_POINTS(dist))
                             state.spider = null
                             spiderAt = tickN + SPIDER_EVERY
-                            audioController.playSweep(300, 90, 0.3, 'square')
+                            // #3632 — the squelch-boing: down in a harsh buzz,
+                            // a rubbery rebound ride back up, dust over it.
+                            audioController.playSweep(320, 80, 0.22, 'square', 0.11)
+                            audioController.playSweep(120, 300, 0.16, 'triangle', 0.08, null, 0.2)
+                            audioController.playNoise(0.06, 0.08)
                         } else {
-                            audioController.playNoise(0.15, 0.25)
+                            audioController.playFilteredNoise(0.1, 0.14, 700)
+                            audioController.playTone(110, 0.08, 'triangle', 0.08)
                         }
                         return
                     }
@@ -428,7 +455,11 @@ const CentipedeGame = () => {
                         burst(s.x, s.y, '#ff9d2e', 8, SCORPION_POINTS)
                         state.scorpion = null
                         scorpionAt = tickN + SCORPION_EVERY
-                        audioController.playSweep(200, 900, 0.4, 'square')
+                        // #3632 — the sting: a whip-crack up then off, static on
+                        // the strike — quicksilver deserves more than one beep.
+                        audioController.playSweep(240, 1400, 0.12, 'square', 0.09)
+                        audioController.playSweep(1400, 300, 0.2, 'sawtooth', 0.06, null, 0.12)
+                        audioController.playNoise(0.05, 0.07)
                         state.bullets.splice(i, 1)
                         return
                     }
@@ -443,9 +474,15 @@ const CentipedeGame = () => {
                             state.score += FLEA_POINTS
                             burst(f.x, f.y, '#5ea8ff', 6, FLEA_POINTS)
                             state.flea = null
-                            audioController.playSweep(500, 180, 0.2, 'triangle')
+                            // #3632 — the hop pops off with a sparkle over the pop.
+                            audioController.playSweep(520, 160, 0.14, 'square', 0.1)
+                            audioController.playNoise(0.04, 0.06)
+                            audioController.playTone(1400, 0.05, 'square', 0.06, 0.12)
                         } else {
-                            audioController.playTone(520, 0.06, 'triangle')
+                            // the chewed hopper pings, and the rain it shakes out
+                            // hisses down through the garden.
+                            audioController.playTone(760, 0.04, 'square', 0.07)
+                            audioController.playFilteredNoise(0.12, 0.08, 1600, 0.03)
                         }
                         return
                     }
@@ -458,7 +495,9 @@ const CentipedeGame = () => {
                     if (!state.flea && playerAlive() && tickN >= fleaAt && bulletEscapes(b.y)) {
                         spawnFlea(b.x)
                         fleaAt = tickN + FLEA_COOLDOWN
-                        audioController.playTone(1200, 0.05, 'square')
+                        // #3632 — the sky answers with a zoom: the flea's dive-in
+                        // falls in pitch as it drops from the top of the field.
+                        audioController.playSweep(1500, 420, 0.22, 'square', 0.08)
                     }
                     state.bullets.splice(i, 1)
                 }
@@ -504,18 +543,45 @@ const CentipedeGame = () => {
                 }
             })
 
+            // #3632 — THE MUNCH. The swarm is never silent: its column clacks
+            // as it moves, two syllables alternating, and munchCue (sim.js)
+            // rises in pitch and tightens the interval the nearer the lowest
+            // segment comes to the zapper — the arcade's dread curve, pure
+            // arithmetic. The clack pauses with the swarm (respawn dark time).
+            if (state.centipedes.length && playerAlive()) {
+                let lowest = state.centipedes[0]
+                for (const c of state.centipedes) if (c.y > lowest.y) lowest = c
+                const cue = munchCue(Math.abs(lowest.x - state.player.x) + Math.abs(lowest.y - state.player.y))
+                if (tickN >= munchAt) {
+                    munchAlt = !munchAlt
+                    audioController.playTone(munchAlt ? cue.freq : Math.round(cue.freq * 0.75), 0.03, 'square', 0.05)
+                    munchAt = tickN + cue.every
+                }
+            } else {
+                munchAt = tickN // silent while dead — restart the chew on landing
+            }
+
             if (state.centipedes.length === 0) {
                 wave += 1 // #3631 — the field rebuilds one rung faster
                 spawnCentipede() // Next level
-                audioController.playSweep(400, 800, 0.5, 'sine')
+                // #3632 — the wave jingle: three rising arcade notes (ours,
+                // original), the garden's round bell instead of one long sine.
+                audioController.playTone(660, 0.07, 'square', 0.09)
+                audioController.playTone(990, 0.07, 'square', 0.09, 0.09)
+                audioController.playTone(1320, 0.12, 'square', 0.09, 0.18)
             }
 
             // --- #3604 menagerie: the garden walks --------------------------
             if (!state.spider && tickN >= spiderAt) spawnSpider()
-            if (!state.scorpion && tickN >= scorpionAt) spawnScorpion()
+            if (!state.scorpion && tickN >= scorpionAt) {
+                spawnScorpion()
+                // #3632 — the quicksilver announces its crossing with a low hiss.
+                audioController.playFilteredNoise(0.35, 0.09, 500)
+            }
 
             if (state.spider) {
                 const s = state.spider
+                let bounced = false // #3632 — did the eater strike something this tick?
                 // Seek: every so often the eater leans toward the nearest
                 // mushroom it can smell — that's the bounce grammar of the
                 // arcade's lunch run.
@@ -533,15 +599,18 @@ const CentipedeGame = () => {
                 }
                 s.x += s.vx
                 s.y += s.vy
-                if (s.x < 0) { s.x = 0; s.vx = -s.vx }
-                if (s.x > state.width - 16) { s.x = state.width - 16; s.vx = -s.vx }
+                if (s.x < 0) { s.x = 0; s.vx = -s.vx; bounced = true }
+                if (s.x > state.width - 16) { s.x = state.width - 16; s.vx = -s.vx; bounced = true }
                 const sTop = Math.round(state.height * 0.3), sBottom = state.height - 16
-                if (s.y < sTop) { s.y = sTop; s.vy = -s.vy }
-                if (s.y > sBottom) { s.y = sBottom; s.vy = -s.vy }
+                if (s.y < sTop) { s.y = sTop; s.vy = -s.vy; bounced = true }
+                if (s.y > sBottom) { s.y = sBottom; s.vy = -s.vy; bounced = true }
+                // #3632 — the spider boing: every ricochet is a rubbery spring,
+                // the eater announces itself across the garden.
+                if (bounced) audioController.playSweep(140, 340, 0.07, 'triangle', 0.07)
                 // Eat everything it touches — the garden shrinks behind it.
                 const before = state.mushrooms.length
                 state.mushrooms = state.mushrooms.filter((m) => !(Math.abs(m.x - s.x) < 12 && Math.abs(m.y - s.y) < 12))
-                if (state.mushrooms.length < before) audioController.playNoise(0.08, 0.15)
+                if (state.mushrooms.length < before) audioController.playFilteredNoise(0.07, 0.1, 900)
                 if (playerAlive() && tickN >= invulnUntil && Math.abs(s.x - state.player.x) < 12 && Math.abs(s.y - state.player.y) < 12) killPlayer()
             }
 
@@ -556,7 +625,10 @@ const CentipedeGame = () => {
                 // Venom trail: every full cap under the streak turns red.
                 state.mushrooms.forEach((m) => {
                     if (Math.abs(m.x - s.x) < 10 && Math.abs(m.y - s.y) < 10 && poisonMushroom(m)) {
-                        audioController.playTone(900, 0.04, 'sawtooth')
+                        // #3632 — venom sizzles: a detuned two-note fizz, not a
+                        // plain blip (each cap is only sizzled once — no spam).
+                        audioController.playTone(820, 0.03, 'sawtooth', 0.045)
+                        audioController.playTone(1230, 0.035, 'sawtooth', 0.035, 0.02)
                     }
                 })
                 if (playerAlive() && tickN >= invulnUntil && Math.abs(s.x - state.player.x) < 12 && Math.abs(s.y - state.player.y) < 12) killPlayer()
@@ -574,12 +646,12 @@ const CentipedeGame = () => {
                 f.y += f.vy
                 if (f.x < 0) { f.x = 0; f.vx = -f.vx }
                 if (f.x > state.width - 16) { f.x = state.width - 16; f.vx = -f.vx }
-                if (f.y <= 50) { f.y = 50; f.vy = Math.abs(f.vy) }
-                if (f.y >= state.height - 40) { f.y = state.height - 40; f.vy = -Math.abs(f.vy) }
+                if (f.y <= 50) { f.y = 50; f.vy = Math.abs(f.vy); audioController.playSweep(600, 240, 0.06, 'square', 0.06) } // ceiling dip
+                if (f.y >= state.height - 40) { f.y = state.height - 40; f.vy = -Math.abs(f.vy); audioController.playSweep(240, 640, 0.07, 'square', 0.06) } // floor boing (#3632)
                 // Fleas chew the garden too.
                 const beforeF = state.mushrooms.length
                 state.mushrooms = state.mushrooms.filter((m) => !(Math.abs(m.x - f.x) < 10 && Math.abs(m.y - f.y) < 10))
-                if (state.mushrooms.length < beforeF) audioController.playNoise(0.08, 0.15)
+                if (state.mushrooms.length < beforeF) audioController.playFilteredNoise(0.07, 0.1, 900)
                 if (playerAlive() && tickN >= invulnUntil && Math.abs(f.x - state.player.x) < 12 && Math.abs(f.y - state.player.y) < 12) killPlayer()
                 if (f.life <= 0) state.flea = null // done eating, hops off
             }

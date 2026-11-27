@@ -30,6 +30,24 @@ export const SPIDER_EVERY = 420
 export const SCORPION_EVERY = 560
 export const FLEA_COOLDOWN = 240
 
+// The munch law (#3632): the swarm is never silent. Its column clacks as it
+// moves, and the arcade tightens the screw as it descends — the click rises
+// in pitch and shortens its interval the nearer the column's front comes to
+// the zapper. All arithmetic, no dice, no wall clock: a distance in px maps
+// to { freq Hz, every ticks }. 240 px is the dread horizon; past it the
+// clack idles at the floor, at contact it screams at the ceiling.
+export const MUNCH_MIN_EVERY = 3    // ~20 clicks/s at the muzzle
+export const MUNCH_MAX_EVERY = 9    // ~6.7 clicks/s across the garden
+export const MUNCH_FLOOR = 220
+export const MUNCH_CEIL = 1500
+export const munchCue = (distance) => {
+    const t = 1 - Math.min(1, Math.max(0, distance) / 240) // 0 far → 1 contact
+    return {
+        freq: Math.round(MUNCH_FLOOR + t * (MUNCH_CEIL - MUNCH_FLOOR)),
+        every: Math.round(MUNCH_MAX_EVERY - t * (MUNCH_MAX_EVERY - MUNCH_MIN_EVERY)),
+    }
+}
+
 // The scorpion poisons the mushroom it stands on — unless it is already
 // chewing apart under shots. Poison survives every fate except a full
 // rebuild (startRun): the garden remembers.

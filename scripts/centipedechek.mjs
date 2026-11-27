@@ -12,7 +12,7 @@
 
 import { readFileSync } from 'node:fs'
 import { spawnSync } from 'node:child_process'
-import { mushroomField, scoreForSegment, MUSHROOM_POINTS, CELL_SIZE, START_LIVES, SPIDER_POINTS, SCORPION_POINTS, FLEA_POINTS, SPIDER_EVERY, SCORPION_EVERY, FLEA_COOLDOWN, poisonMushroom, bulletEscapes, waveSpeed, splitSpd, SPEED_CAP } from '../src/games/Centipede/sim.js'
+import { mushroomField, scoreForSegment, MUSHROOM_POINTS, CELL_SIZE, START_LIVES, SPIDER_POINTS, SCORPION_POINTS, FLEA_POINTS, SPIDER_EVERY, SCORPION_EVERY, FLEA_COOLDOWN, poisonMushroom, bulletEscapes, waveSpeed, splitSpd, SPEED_CAP, munchCue, MUNCH_FLOOR, MUNCH_CEIL, MUNCH_MIN_EVERY, MUNCH_MAX_EVERY } from '../src/games/Centipede/sim.js'
 import { seedRng, seedFromQuery } from '../src/utils/gameContract.js'
 import { plant, pull } from './lib/mutateguard.mjs'
 
@@ -189,7 +189,7 @@ console.log('#3604 wiring: the garden walks, stings and rains')
 {
     const src = readFileSync('src/games/Centipede/index.jsx', 'utf8')
     ok(/if \(!state\.spider && tickN >= spiderAt\) spawnSpider\(\)/.test(src) &&
-        /if \(!state\.scorpion && tickN >= scorpionAt\) spawnScorpion\(\)/.test(src),
+        /if \(!state\.scorpion && tickN >= scorpionAt\) \{\s*spawnScorpion\(\)/.test(src),
         'spider and scorpion enter on their cadence, one at a time')
     ok(/state\.bullets = \[\]/.test(src),
         'a fresh board clears the gun — no stale volley rides across a reset to diverge seeded drives (#3604)')
@@ -236,6 +236,53 @@ console.log('#3604 wiring: the garden walks, stings and rains')
     const ss = src.match(/const spawnSpider = \(\) => \{[\s\S]*?\n        \}/)
     ok(!!ss && /state\.height \* 0\.45/.test(ss[0]) && !/height - 30/.test(ss[0]),
         'the spider enters in its roaming band, never on the start pad')
+}
+
+// -------------------------------------------------- #3632 sound grammar ----
+console.log('#3632 sound grammar: the munch law and layered cues')
+{
+    // The munch law is pure sim arithmetic — pin its shape directly.
+    ok(munchCue(240).freq === MUNCH_FLOOR && munchCue(240).every === MUNCH_MAX_EVERY,
+        'a far swarm clacks slow at the floor pitch')
+    ok(munchCue(0).freq === MUNCH_CEIL && munchCue(0).every === MUNCH_MIN_EVERY,
+        'contact screams fast at the ceiling pitch')
+    let mono = true
+    for (let d = 0; d < 400; d += 5) {
+        const a = munchCue(d), b = munchCue(d + 5)
+        if (b.freq > a.freq || b.every < a.every) mono = false
+    }
+    ok(mono, 'closer never lowers the pitch or loosens the interval (monotone dread curve)')
+    ok(munchCue(-50).freq === munchCue(0).freq && munchCue(9999).every === MUNCH_MAX_EVERY,
+        'distance clamps at both rails')
+    const src = readFileSync('src/games/Centipede/index.jsx', 'utf8')
+    ok(/const cue = munchCue\(Math\.abs\(lowest\.x - state\.player\.x\) \+ Math\.abs\(lowest\.y - state\.player\.y\)\)/.test(src),
+        'the munch measures manhattan distance to the lowest segment')
+    ok(/if \(tickN >= munchAt\)[\s\S]{0,240}?munchAt = tickN \+ cue\.every/.test(src),
+        'the clack is rate-limited by the cue interval (no oscillator flood)')
+    ok(/munchAlt \? cue\.freq : Math\.round\(cue\.freq \* 0\.75\)/.test(src),
+        'two syllables alternate — click-et-a, not a machine-gun single tone')
+    ok(!/playNoise\(0\.2, 0\.3\)/.test(src), 'the bare one-cue segment kill is gone')
+    ok(/playSweep\(900, 180, 0\.13, 'square', 0\.11\)/.test(src) && /playNoise\(0\.05, 0\.07\)/.test(src),
+        'the segment kill is layered: falling pew over a static tick')
+    ok(/if \(seg\.head\) \{\s*audioController\.playTone\(1300[\s\S]{0,140}?1750/.test(src),
+        'the head dies brighter — two rising sparkle notes')
+    ok(/playSweep\(1500, 320, 0\.09, 'square', 0\.07\)/.test(src), 'the zapper fires a crack, not a beep')
+    ok(/playTone\(340, 0\.03, 'square', 0\.07\)/.test(src) && /playTone\(250, 0\.035, 'square', 0\.05, 0\.03\)/.test(src),
+        'the mushroom chip clicks twice (woodblock + echo syllable)')
+    ok(/playFilteredNoise\(0\.09, 0\.12, 1400\)/.test(src), 'the destroyed mushroom crunches (filtered, not raw static)')
+    ok(/if \(bounced\) audioController\.playSweep\(140, 340, 0\.07/.test(src), 'the spider boings on every ricochet')
+    ok(/playSweep\(320, 80, 0\.22, 'square', 0\.11\)/.test(src) && /playSweep\(120, 300, 0\.16, 'triangle', 0\.08, null, 0\.2\)/.test(src),
+        'the spider kill squelches down and rebounds — the boing is a pair')
+    ok(/playFilteredNoise\(0\.35, 0\.09, 500\)/.test(src), 'the scorpion hisses in on its crossing')
+    ok(/playTone\(820, 0\.03, 'sawtooth', 0\.045\)/.test(src), 'venom caps sizzle (detuned pair)')
+    ok(/playSweep\(1500, 420, 0\.22, 'square', 0\.08\)/.test(src), 'the summoned flea zooms in (falling pitch)')
+    ok(/playSweep\(240, 640, 0\.07, 'square', 0\.06\)/.test(src), 'the flea boings off the garden floor')
+    ok(/playTone\(660, 0\.07, 'square', 0\.09\)[\s\S]{0,140}?990[\s\S]{0,140}?1320/.test(src),
+        'the wave clears on a three-note jingle, not a lone sine')
+    ok(/playNoise\(0\.18, 0\.22\)[\s\S]{0,140}?playSweep\(700, 70, 0\.65/.test(src),
+        'death is layered: static burst over the wind-down')
+    ok(!/new (AudioContext|Oscillator\w*)\b/.test(src) && !/webkitAudioContext/.test(src),
+        'audio law: every cue rides audioController (no raw WebAudio in the game)')
 }
 
 // ------------------------------------------------------------------ mutants ----
@@ -329,6 +376,25 @@ if (process.argv.includes('--mutant')) {
         ['cuts never accelerate the rear chain', I,
             `state.centipedes[j].spd = splitSpd(state.centipedes[j].spd)`,
             `void j`],
+        // #3632 — the sound grammar is a law too: silent or flat-cued, it dies.
+        ['the swarm is silent (no munch)', I,
+            `audioController.playTone(munchAlt ? cue.freq : Math.round(cue.freq * 0.75), 0.03, 'square', 0.05)`,
+            `void cue.freq`],
+        ['the munch ignores the swarm (flat dread)', I,
+            `const cue = munchCue(Math.abs(lowest.x - state.player.x) + Math.abs(lowest.y - state.player.y))`,
+            `const cue = munchCue(1e9)`],
+        ['the segment kill falls back to bare static', I,
+            `audioController.playSweep(900, 180, 0.13, 'square', 0.11)`,
+            `audioController.playNoise(0.2, 0.3)`],
+        ['the head never sparkles', I,
+            `audioController.playTone(1300, 0.04, 'square', 0.07, 0.10)`,
+            `void 0`],
+        ['the spider ricochets silently', I,
+            `if (bounced) audioController.playSweep(140, 340, 0.07, 'triangle', 0.07)`,
+            `void bounced`],
+        ['the flea never zooms in', I,
+            `audioController.playSweep(1500, 420, 0.22, 'square', 0.08)`,
+            `void 0`],
     ]
     let died = 0
     for (const [name, file, from, to] of MUTANTS) {
