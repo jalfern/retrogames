@@ -6,7 +6,7 @@ import WatchButton, { WatchToast, AttractWatchButton } from '../../components/Wa
 import { isWatchKey, isTakeoverKey, playWatchStart, playWatchStop, watchSfxLog, WATCH_ATTRACT_HINT } from '../../utils/watch'
 import { GAMES } from '../../config/games'
 import { attractFrame, DIM } from './attract.js'
-import { makeRun, tickMc, gunnerStep, fireAt, startWave, citiesAlive, attractFerry, winner, SCREEN_WIDTH, SCREEN_HEIGHT, GROUND_Y } from './sim.js'
+import { makeRun, tickMc, gunnerStep, fireAt, fireBattery, startWave, citiesAlive, attractFerry, winner, SCREEN_WIDTH, SCREEN_HEIGHT, GROUND_Y } from './sim.js'
 import { exposeFeedbackState, unexposeFeedbackState, seedFromQuery } from '../../utils/gameContract'
 import { mountDbg, unmountDbg } from '../../utils/DebugKit'
 
@@ -216,6 +216,24 @@ const MissileCommandGame = () => {
             if (attractUiRef.current && (e.code === 'Space' || e.code === 'Enter')) { startRun(); return }
             if (gs.watch && isTakeoverKey(e)) release() // then the key drives for real below
             if (e.code in keys) keys[e.code] = true
+            // #3695 — the arcade's three buttons (#3630 gap 1): `1`/`2`/`3` fire
+            // the LEFT/CENTER/RIGHT battery at the crosshair no matter which
+            // sector the aim sits in (Wikipedia §Gameplay, "one of three buttons
+            // … from the appropriate battery"). `2` is the fast battery — the
+            // arcade's own answer to a smart bomb at distance (§6: only the
+            // center battery's missiles reach one). P1's seat keys, same duty
+            // guard as Space: never spends ammo on the other seat's wave.
+            if (e.code === 'Digit1' || e.code === 'Digit2' || e.code === 'Digit3' || e.code === 'KeyB') {
+                e.preventDefault()
+                // At attract, 1/2 already returned as mode keys above; 3 and the
+                // pad's FAST (KeyB) just sit out (the demo keeps its shells —
+                // fireBattery answers only a live `playing` run of the duty seat).
+                if (!attractUiRef.current && !(gs.twoP && gs.turn === 2)) {
+                    const battery = e.code === 'Digit1' ? 0 : e.code === 'Digit3' ? 2 : 1
+                    fireBattery(gs, battery, gs.crosshair.x, gs.crosshair.y)
+                }
+                return
+            }
             // #3630 slice 2: Space is P1's fire — it never spends P2's ammo on
             // P2's wave (the seat not on duty keeps its hands off the board).
             if (e.code === 'Space' && !(gs.twoP && gs.turn === 2)) fireAt(gs, gs.crosshair.x, gs.crosshair.y) // Fire
@@ -377,7 +395,7 @@ const MissileCommandGame = () => {
             })
 
             ctx.fillStyle = '#aaaaaa'
-            gs.silos.forEach((s) => {
+            gs.silos.forEach((s, i) => {
                 if (s.alive) {
                     ctx.beginPath()
                     ctx.moveTo(s.x - 20, GROUND_Y)
@@ -386,14 +404,28 @@ const MissileCommandGame = () => {
                     ctx.fill()
 
                     ctx.fillStyle = '#ffffff'
-                    for (let i = 0; i < s.ammo; i++) {
+                    for (let i2 = 0; i2 < s.ammo; i2++) {
                         let row = 0
-                        let col = i
-                        if (i > 3) { row = 1; col = i - 4 }
-                        if (i > 7) { row = 2; col = i - 8 }
+                        let col = i2
+                        if (i2 > 3) { row = 1; col = i2 - 4 }
+                        if (i2 > 7) { row = 2; col = i2 - 8 }
                         ctx.fillRect(s.x - 12 + (col * 6), GROUND_Y - 10 + (row * 4), 4, 4)
                     }
                     ctx.fillStyle = '#aaaaaa'
+
+                    // #3695 — the three-button law taught on the board itself:
+                    // each battery wears its key. The center one glows FAST
+                    // while smart bombs are live — it is the only launcher
+                    // whose missiles outrun one (manual §6).
+                    ctx.font = '10px monospace'
+                    ctx.textAlign = 'center'
+                    ctx.fillStyle = '#7a7a7a'
+                    ctx.fillText(String(i + 1), s.x, GROUND_Y - 34)
+                    if (i === 1 && gs.smartWave) {
+                        ctx.fillStyle = '#00e5ff'
+                        ctx.fillText('FAST', s.x, GROUND_Y - 46)
+                    }
+                    ctx.textAlign = 'left'
                 }
             })
 
@@ -676,6 +708,13 @@ const MissileCommandGame = () => {
                     smartAt: gs.warheads.filter((m) => m.smart && !m.dead)
                         .map((m) => ({ x: Math.round(m.x), y: Math.round(m.y), tx: m.targetX })),
                     abmSpeeds: gs.abms.map((a) => a.speed),
+                    // #3695 — where each in-flight ABM was launched from: the
+                    // three-button law seen from the outside (40 / 400 / 760).
+                    origins: gs.abms.map((a) => Math.round(a.startX)),
+                    smartWave: gs.smartWave,
+                    // #3695 — per-silo ammo (-1 = destroyed) so the drive can
+                    // watch WHICH magazine the named key spends.
+                    silosAmmo: gs.silos.map((s) => (s.alive ? s.ammo : -1)),
                     ammo: gs.silos.reduce((a, s) => a + (s.alive ? s.ammo : 0), 0),
                     watching: gs.watch, seed: gs.seed,
                     // #3630 slice 2: the hot-seat view for the drive script.
@@ -763,6 +802,10 @@ const MissileCommandGame = () => {
                     </div>
                 )}
             </div>
+            {/* #3695 — the FAST button rides the registry pad declaration
+                (reads a/b, button 1 KeyB): phones call the center battery at
+                the tapped crosshair. KeyB (not Digit2) so at attract it is an
+                inert ad — attract 2 keeps meaning "two player". */}
             <VirtualControls visible={!paused} />
         </div>
     )

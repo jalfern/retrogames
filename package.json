@@ -157,6 +157,7 @@
     "polarplay": "node scripts/polarplay.mjs",
     "lint:missile": "eslint src/games/MissileBattle src/components src/utils src/config src/main.jsx scripts",
     "missilecmdcheck": "node scripts/missilecmdcheck.mjs",
+    "mcbatterydrive": "node scripts/mcbatterydrive.mjs",
     "missilecheck": "node scripts/missilecheck.mjs",
     "missileplay": "node scripts/missileplay.mjs",
     "lint:sim": "eslint src/games/SimCityMin src/components src/utils src/config src/main.jsx scripts",

@@ -757,7 +757,12 @@ export const GAMES = [
         label: 'MISSILE COMMAND',
         theme: 'dark',
         description: 'Defend your cities from incoming ICBMs.',
-        controls: ['Mouse Move / Arrow Keys: Aim', 'Click / Space: Fire ABM — the nearest battery in range launches', WATCH_HELP + ' — the sweep-proven gunner meets every warhead high and never lets the fire touch the ground', 'Press 2 at the title: two-player alternating vs the CPU — a human P2 joins on WASD + F', '?: Pause and read the controls'],
+        // #3695 — the arcade had three buttons; the pad gives the expert's
+        // call: B = FAST, the center battery (the only launcher that outruns a
+        // smart bomb, manual §6), fired at the live crosshair. KeyB, not
+        // Digit2: attract `2` keeps meaning "two player".
+        pad: { layout: 'stick', reads: ['a', 'b'], aLabel: 'FIRE', buttons: [{ label: 'FAST', code: 'KeyB' }] },
+        controls: ['Mouse Move / Arrow Keys: Aim', 'Click / Space: Fire ABM — the nearest battery in range launches', '1 / 2 / 3: fire the LEFT / CENTER / RIGHT battery from any aim — 2 is the fast one, the smart-bomb answer (phones: FAST button)', WATCH_HELP + ' — the sweep-proven gunner meets every warhead high and never lets the fire touch the ground', 'Press 2 at the title: two-player alternating vs the CPU — a human P2 joins on WASD + F', '?: Pause and read the controls'],
     },
     {
         path: '/adventure',

@@ -19,10 +19,10 @@
 import { readFileSync } from 'node:fs'
 import { spawnSync } from 'node:child_process'
 import {
-    chooseEnemySpawn, makeRun, tickMc, gunnerStep, citiesAlive, fireAt, startWave, winner,
+    chooseEnemySpawn, makeRun, tickMc, gunnerStep, citiesAlive, fireAt, fireBattery, startWave, winner,
     SCREEN_WIDTH, SAFE_Y, WAVE_BREAK_TICKS, PROVEN_WAVES, attractFerry, ATTRACT_FERRY_EVERY,
     SAUCER_FIRST_WAVE, SAUCER_SCORE,
-    SMART_FIRST_WAVE, SMART_SCORE, CENTER_SILO_X, CENTER_ABM_SPEED,
+    SMART_FIRST_WAVE, SMART_SCORE, CENTER_SILO_X, CENTER_ABM_SPEED, ABM_SPEED,
 } from '../src/games/MissileCommand/sim.js'
 import { seedRng, seedFromQuery } from '../src/utils/gameContract.js'
 import { plant, pull } from './lib/mutateguard.mjs'
@@ -578,6 +578,73 @@ console.log('smart bombs (#3630): the watch fights back with the center battery'
     ok(shot && shot.wid === 9, 'cities before exotics: the uncovered ICBM owns the shot ahead of the smart bomb', `wid ${shot && shot.wid}`)
 }
 
+// ------------------------------------------------- #3695: three-button law ----
+// The arcade's control law, exposed to the player (README gap 1). Wikipedia
+// §Gameplay (verbatim): the player moves the crosshair by trackball "and
+// pressing one of three buttons to launch a counter-missile from the
+// appropriate battery" — the BUTTON names the launcher; where the aim sits is
+// the click law's business, not the button's. The sim has served the watch
+// this way since #3630 (`cmd.silo`); fireBattery is the human door. These
+// pins grade the sim half; the shell wiring (keys 1/2/3, the phone FAST pad)
+// rides in the wiring section, and mcbatterydrive proves it in real Chrome.
+console.log('three-button law (#3695): fireBattery names its battery from any sector')
+{
+    // key 2 aimed deep in the LEFT sector: the click law would answer silo 0
+    // (|40−120| beats |400−120|) — the named battery must win instead.
+    const g = makeRun(4001)
+    ok(fireBattery(g, 1, 120, 300) === true, 'key 2 answers on a live board')
+    ok(g.abms.length === 1 && Math.round(g.abms[0].startX) === CENTER_SILO_X,
+        'the CENTER battery launches from x=400 aimed deep in the LEFT sector',
+        g.abms.length ? `startX ${g.abms[0].startX}` : 'no ABM')
+    ok(g.silos[0].ammo === 10 && g.silos[1].ammo === 9,
+        'only the named battery spends (left stays 10, center drops to 9)',
+        `${g.silos[0].ammo}/${g.silos[1].ammo}`)
+    // keys 1 and 3 name their own batteries, from a center aim
+    const g2 = makeRun(4002)
+    fireBattery(g2, 0, 400, 200); fireBattery(g2, 2, 400, 200)
+    ok(g2.abms.length === 2 && Math.round(g2.abms[0].startX) === 40 && Math.round(g2.abms[1].startX) === 760,
+        'keys 1 and 3 launch from their own batteries (40 / 760), not the nearest',
+        g2.abms.map((a) => Math.round(a.startX)).join(','))
+    // the speed law rides the battery and the wave, not the key (§6)
+    ok(g2.abms.every((a) => a.speed === ABM_SPEED && a.center === false),
+        'below the gate every battery flies the standard ABM — the fast law stays the wave\'s')
+    const g3 = makeRun(4003); g3.wave = SMART_FIRST_WAVE; startWave(g3)
+    fireBattery(g3, 1, 120, 300); fireBattery(g3, 0, 400, 300)
+    ok(g3.abms[0] && g3.abms[0].speed === CENTER_ABM_SPEED && g3.abms[0].center === true,
+        'from the gate the named CENTER battery flies 28 with the smart-kill flag, from ANY sector',
+        g3.abms[0] ? `${g3.abms[0].speed} center=${g3.abms[0].center}` : 'no ABM')
+    ok(g3.abms[1] && g3.abms[1].speed === ABM_SPEED,
+        'the outer battery stays 15 at the gate — key 2 IS the fast call',
+        g3.abms[1] ? `${g3.abms[1].speed}` : 'no ABM')
+    // manual §7 hint 3 rides this door too: aim ON the bomb and it never sees it
+    const g3b = makeRun(4004); g3b.wave = SMART_FIRST_WAVE; startWave(g3b)
+    g3b.warheads = [{ id: 9, x: 400, y: 300, startX: 400, startY: 0, targetX: 400, targetY: 550,
+        speed: 1.7, color: '#f00', coverUntil: 0, smart: true, evTicks: 0, evadeX: 0, evadeY: 0, trail: [] }]
+    fireBattery(g3b, 1, 400, 310)
+    ok(g3b.abms[0] && g3b.abms[0].blind === true, 'a battery-keyed shot ON the bomb is blind (manual §7 hint 3)')
+    // duds, not reroutes: fireFrom keeps its gates behind the new door
+    const g4 = makeRun(4005); g4.silos[1].alive = false
+    ok(fireBattery(g4, 1, 400, 300) === false && g4.abms.length === 0,
+        'a DEAD battery named by its key is a dud — the shot never reroutes to a neighbour')
+    const g5 = makeRun(4006); g5.silos[1].ammo = 0
+    ok(fireBattery(g5, 1, 400, 300) === false && g5.abms.length === 0,
+        'an EMPTY battery is a dud — no free shot borrowed from the click law')
+    ok(fireBattery(g5, 7, 400, 300) === false, 'an index off the board is refused')
+    g5.state = 'gameOver'
+    ok(fireBattery(g5, 0, 400, 300) === false, 'no battery fires outside play')
+    // the mouse keeps its law untouched: nearest battery, byte for byte
+    const g6 = makeRun(4007)
+    fireAt(g6, 120, 300)
+    ok(g6.abms.length === 1 && Math.round(g6.abms[0].startX) === 40,
+        'a mouse click still takes the NEAREST battery (left-sector aim → left silo) — old law intact',
+        g6.abms.length ? `startX ${g6.abms[0].startX}` : 'no ABM')
+    // the hot-seat duty guard is the shell's; the sim stays seat-agnostic:
+    // a named battery fires identically whichever seat owns the board.
+    const g7 = makeRun(4008, { twoPlayer: true })
+    ok(fireBattery(g7, 2, 500, 200) === true && Math.round(g7.abms[0].startX) === 760 && g7.turn === 1,
+        'hot-seat: the sim fires the named battery; the seat guard lives in the shell (key never reaches it off-duty)')
+}
+
 // ------------------------------------------- #3630 slice 2: 2P alternating seats ----
 // Manual §6 (games 18–34): players alternate one wave at a time, both scores
 // display, cities and silos are SHARED — a burn on your wave costs your partner
@@ -722,6 +789,19 @@ console.log('component wiring: pin, report, restart, seat')
     // #3630 slice 2 — the hot-seat wiring the sim section can't see
     ok(/e\.code === 'Digit2' \|\| e\.code === 'Digit1'/.test(src),
         'mode keys wired: 1 opens solo, 2 opens the hot-seat')
+    // #3695 — the three-button law at the shell: keys, seat guard, phone pad
+    ok(/if \(e\.code === 'Digit1' \|\| e\.code === 'Digit2' \|\| e\.code === 'Digit3' \|\| e\.code === 'KeyB'\)/.test(src),
+        'battery keys 1/2/3 (+ pad FAST) wired into the keydown lane')
+    ok(/if \(!attractUiRef\.current && !\(gs\.twoP && gs\.turn === 2\)\) \{/.test(src) &&
+        /fireBattery\(gs, battery, gs\.crosshair\.x, gs\.crosshair\.y\)/.test(src),
+        'the battery fire carries the same duty guard as Space — never the off-duty seat\'s ammo, never the attract demo')
+    ok(/pad: \{ layout: 'stick', reads: \['a', 'b'\], aLabel: 'FIRE', buttons: \[\{ label: 'FAST', code: 'KeyB' \}\] \}/.test(
+        readFileSync('src/config/games.js', 'utf8')),
+        'phones get the FAST button from the registry pad (B dispatches KeyB)')
+    ok(/origins: gs\.abms\.map\(\(a\) => Math\.round\(a\.startX\)\)/.test(src),
+        'the probe exposes launch origins — the drive script watches the button law')
+    ok(/export function fireBattery\(gs, idx, x, y\)/.test(readFileSync('src/games/MissileCommand/sim.js', 'utf8')),
+        'sim exports fireBattery — the named-battery door (three-button law)')
     ok(/gs\.twoP && P2_CODES\.includes\(e\.code\)/.test(src),
         'seat 2 has its own keyboard lane (WASD aim + F fire)')
     ok(/gs\.p2cpu = false/.test(src), 'a P2 key joins a human into the CPU seat mid-run')
@@ -812,6 +892,16 @@ if (process.argv.includes('--mutant')) {
         ['the center battery keeps the slow speed (arcade counter-rule gone)', S,
             `export const CENTER_ABM_SPEED = 28`,
             `export const CENTER_ABM_SPEED = 15`],
+        // #3695 — the three-button law is load-bearing for these checks
+        ['a battery key falls back to the click law (the named battery is a lie)', I,
+            `fireBattery(gs, battery, gs.crosshair.x, gs.crosshair.y)`,
+            `fireAt(gs, gs.crosshair.x, gs.crosshair.y)`],
+        ['the named battery spends a neighbour\'s magazine instead', S,
+            `export function fireBattery(gs, idx, x, y) {\n    if (gs.state !== 'playing') return false\n    const silo = gs.silos[idx]`,
+            `export function fireBattery(gs, idx, x, y) {\n    if (gs.state !== 'playing') return false\n    const silo = gs.silos[0]`],
+        ['a dead battery reroutes to the nearest (a dud becomes a free shot)', S,
+            `    const silo = gs.silos[idx]\n    if (!silo) return false\n    return fireFrom(gs, silo, x, y, null)`,
+            `    const silo = gs.silos[idx]\n    if (!silo) return false\n    return silo.alive && silo.ammo > 0 ? fireFrom(gs, silo, x, y, null) : fireAt(gs, x, y)`],
         ['outer fire kills smart bombs too (the counter-rule is inverted)', S,
             `if (m.smart && !e.center) return`,
             `if (m.smart && e.center) return`],
