@@ -501,16 +501,18 @@ npm run dev -- --port 5173 --strictPort      # then /retrogames/pinball
   Honest residue: the ramp is wire-scored (no raised lane wall), so a
   flank-line ball scores whether or not the player aimed it — same law the
   launch-lane RAMP has always had.
-- **#3446 item 1:** the spinner read is graduated. A feed pass now calls its
-  ladder on the DMD — `SPINNER x1, x2 …` one rung per turn (`gs.spinPass`,
-  cooled by `gs.spinCool` 24 ticks after the last turn, so the next pass
-  starts at x1) — and spinner events carry the feed speed (`v = |vy|`), which
-  the shell rides: flash persistence and blade motion-ghosts scale with it, so
-  a fast ramp feed blurs and a limp outlane trickle does not. Display state
-  only: physics, scoring and `stateHash` are untouched (gates §spinner +
-  mutants spinrung/spincool/spingrade). Still open on #3446: ramp ball-motion
-  read, lit-hierarchy pass, EMBER re-dress (the kickback save sweep + grapple
-  voice shipped with #3468 + #3766 — see "#3766 — the rescue shows").
+- ~~**#3446 item 1:** the spinner read is graduated.~~ **CLOSED by #3467**:
+  a feed pass now calls its ladder on the DMD — `SPINNER x1, x2 …` one rung
+  per turn (`gs.spinPass`, cooled by `gs.spinCool` 24 ticks after the last
+  turn, so the next pass starts at x1) — and spinner events carry the feed
+  speed (`v = |vy|`), which the shell rides: flash persistence and blade
+  motion-ghosts scale with it, so a fast ramp feed blurs and a limp outlane
+  trickle does not. Display state only: physics, scoring and `stateHash` are
+  untouched (gates §spinner + mutants spinrung/spincool/spingrade). The
+  residue named here — ramp ball-motion read, lit-hierarchy pass, EMBER
+  re-dress — is polish-pass work, routed to the QA lane as #3789 (the
+  kickback save sweep + grapple voice shipped with #3468 + #3766 — see
+  "#3766 — the rescue shows").
   The JET LANE combo banner landed with #3468: the
   flank SET announces itself `JET LANE! +<set>` (hot, pulsing, crawl-in — the
   same class as the right-ramp RAMP SET), mirroring the launch-lane SET.

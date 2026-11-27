@@ -125,6 +125,14 @@ ok(weakestStage({ games: [
     { dir: 'Other', label: 'OTHER', gaps: [] },
 ], qaIssues: [{ title: 'QA — OTHER: something', body: 'polish', labels: ['feedback'] }], heldDirs: [] }).dir === 'Other',
 '#3074 boundary: actionable feedback (no waiting-jon) still weakens — the filter must not blind the ladder')
+ok(weakestStage({ games: [
+    { dir: 'Contra', label: 'CONTRA', gaps: [] },
+], qaIssues: [{ title: 'QA — PINBALL: residue', body: 'parity-pinned art-kit contract (#3259)', labels: ['feedback'] }], heldDirs: [] }) === null,
+'#3788: embedded substrings must not name a game — "contract" is not CONTRA (phantom KICK CONTRA -1, 2026-11-27)')
+ok(weakestStage({ games: [
+    { dir: 'Contra', label: 'CONTRA', gaps: [] },
+], qaIssues: [{ title: 'qa(contra): trainable-adapter polish pass', body: 'REC-chip verify', labels: ['feedback'] }], heldDirs: [] }).dir === 'Contra',
+'#3788 boundary: punctuation-adjoined names still count — `qa(contra):` names CONTRA')
 ok(weakestStage({ games: [], qaIssues: [], heldDirs: [] }) === null,
 'an empty shelf answers null — ONLY then is STOP legal')
 ok(heldDirs(GS, [{ labels: ['building'], title: 'POLISH — HELD GAME: q', body: '' }]).join() === 'Held',
