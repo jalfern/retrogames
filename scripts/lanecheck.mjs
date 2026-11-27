@@ -43,7 +43,7 @@ import { builderLadder, lanePlan } from './lib/lanes.mjs'
 import { laneVerdict } from './lib/lanebusy.mjs'
 import { slotVerdict, slotLive, DEFAULT_STAMP_CAP_MIN, DEFAULT_LOG_CAP_MIN } from './lib/slotlive.mjs'
 import { parkPath, newestReport, readReport, parkReport } from './lib/statepark.mjs'
-import { flagshipStage, heldGames, qaIdleStage, weakestStage } from './lib/idle.mjs'
+import { flagshipStage, heldGames, qaIdleStage, weakestStage, parseGaps } from './lib/idle.mjs'
 import { slotsLine, throughputLine } from '../src/pages/floor.js'
 import { trialVerdict, reportText, laneSplit, VERDICT_FILE,
     usageWindow, spark, streamStats, laneOfClaims, boxMisses, parseSpanName, BOX_MIN } from './studiotrial.mjs'
@@ -242,6 +242,17 @@ section('A. pure planner')
     // the manual item still OWNS the gap it names (suppression direction stays)
     ok(flagshipStage({ gapsByGame: { SSX: ['gap one'] }, qaIssues: [Object.assign(iss(1, ['feedback', ...M]), { title: 'QA — ssx', body: 'SSX repeats the opening words of gap one, verbatim here' })], buildingQa: [] }) === null,
         'A11f manual feedback stopped owning the gap it names')
+    // #3672: the ladder consumes parseGaps output, so struck bullets must not
+    // aim weakestStage at dead ground (2026-11-26: CENTIPEDE 5 / Pac-Man 0 were
+    // mostly struck-through shipped work).
+    {
+        const struck = [{ dir: 'Contra', label: 'CONTRA', gaps: parseGaps('## Honest gaps\n- ~~formations law~~ #3620: shipped the sweep.\n- open gap stays on the ladder here\n') }]
+        const st = weakestStage({ games: struck, qaIssues: [] })
+        ok(st && st.gap === 'open gap stays on the ladder here',
+            '#3672: struck bullets drop out; the live gap still scores (got ' + JSON.stringify(st && st.gap) + ')')
+        ok(weakestStage({ games: [{ dir: 'Contra', label: 'CONTRA', gaps: parseGaps('## Honest gaps\n- ~~all of it~~ #3620: shipped.\n') }], qaIssues: [] }) === null,
+            '#3672: a title whose every gap is struck is not weak (no kick onto dead ground)')
+    }
 }
 
 // A12 — #3093 wiring: pulse carries the manual count; the fallback ladder,

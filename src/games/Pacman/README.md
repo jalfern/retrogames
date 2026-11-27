@@ -82,5 +82,7 @@ npm run feedbackcheck          # pin law + rollout floor (48)
   shipped the lift: live round clear, freeze flash, wordless chase shorts after
   rounds 1-2, per-kind fruit arpeggios and the stage-lift tell. Shorts beyond
   r2 and the arcade's exact gag scripts stay UNVERIFIED in-repo.
-- Chrome on this dev box aborts (#737), so browser-tier drive is advisory;
-  the Node gate carries the proof.
+- No live browser-drive script for this title — browser-tier evidence is
+  advisory and the Node gate carries the proof. (This bullet long cited #737 as
+  a dev-box Chrome abort; #737 is the feedback-button platform issue — a misref,
+  and every other title's play/drive suite runs live Chrome these days.)
