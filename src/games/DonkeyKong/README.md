@@ -49,8 +49,28 @@ Ports: the browser checks read `DEV_PORT` (slot a 5173 / slot b 5178 / QA 5176).
   its `+50`/`+100` at the barrel (cyan 7px mono, rises and fades over 48
   ticks, deterministic — `gs.popups`, pinned by kongcheck §obstacle-bonus),
   so the bonus is readable on a muted phone.
-- Oil drum is decor; the arcade's flame kills (spec unverifiable against ROMs
-  in-repo).
+- **CLOSED by #3796 (fire oil — the drum bites back):** the arcade's flame is
+  now an enemy, not decor. Wikipedia §Gameplay carries the law: stage one is
+  barrels *and oil drums*, "a life is lost when Mario touches Donkey Kong or any
+  enemy object", objects die "with a hammer power-up", and "fireballs speed up"
+  as the levels escalate. The drum lights a fireball 7 s into every live board,
+  then one every 20 s (max two — the arcade's pair): it walks the tower UP every
+  sound ladder it rolls over — broken baits and the barrel-only outside rung
+  refused, the same geometry the route respects — kills on contact through
+  `killPlayer` (so the death/capture/collapse freezes and the honest terminal
+  cover it unchanged), smashes under a live swing for our house 100, and pays the
+  same house obstacle bonus jumped/walk-past as a barrel (witness sets key on
+  object identity, so a flame never double-dips a barrel's mark). Fairness laws:
+  the light defers while the runner stands at the drum; the title demo never
+  spawns an enemy (#3786's law); reaching the ape douses the tower (his last
+  stand is not a crossfire) and the crash shakes the flames out with the barrels.
+  Escalation is the sourced speed-up: `fireSpeed` = 0.9 + 0.1 per *banked* lap,
+  capped 1.3. Determinism: every fireball movement is dice-free (fixed clock,
+  fixed columns), so every seeded barrel floor is byte-identical — kongcheck §fire
+  pins the streams equal. What stays unverifiable in-repo and therefore house law,
+  not arcade claim: the spawn cadence, the up-climb patrol SHAPE (the ROM's
+  wander/homing/hop arcs are not sourceable here) and the exact speed number —
+  the kill, the smash and the escalation are the shipped, sourced laws.
 - **CLOSED by #3622:** barrels meet ladders mid-air — see Corner pair below.
   (Was: a barrel meeting a ladder mid-air kept rolling; the edge-check could
   never set `falling=true` — gravity beats it to `vy>0` — so no airborne
@@ -106,6 +126,21 @@ Ports: the browser checks read `DEV_PORT` (slot a 5173 / slot b 5178 / QA 5176).
   counter faster than our once-a-second) is unverifiable in-repo; the LAWS
   — decreasing counter, bank the remainder, zero takes the life — are the
   spec, and all three ship.
+
+## The capture scene (#3796 — the grab is a story now)
+
+The #3786 grab used to slide Pauline in a
+straight line from perch to ape, crossing the x=100 ladder's rung column
+mid-flight with chest-beat luck for his arms. `captureScene(captureTimer)`
+  (pure function, exported from sim.js, pinned by kongcheck §capture-scene)
+  scripts the 90 ticks as REACH (arm extends, she's still perched, HELP still
+  calling) → GRAB (dragged left along her girder — above every rung top, so the
+  path is off the ladder geometry by construction) → CARRY (down at the girders'
+  left end into the ape's hand, HELP cut off since reach). A heart pops between
+  them at the grab and shatters into drifting halves as he carries her — §Plot:
+  "a heart appears … Donkey Kong grabs her … the heart breaks". The arcade's own
+  heart beat is the stage-clear one; ours rings on the counter-zero grab the
+  counter law made canonical for this build.
 
 ## Hammer (#2018 — the attract promise kept)
 Two mallets ride the right-hand ends of the ground floor and DK's girder

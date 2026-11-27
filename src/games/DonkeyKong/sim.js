@@ -83,6 +83,55 @@ export function barrelRollClick(gs, b) {
 export const HAMMER_SWINGS = 5    // hits per mallet before it shatters (arcade lore)
 export const HAMMER_SWING_TICKS = 12 // one swing animation (the hit window)
 
+// #3796 — THE FIRE OIL. Wikipedia, Donkey Kong §Gameplay: stage one is barrels
+// AND oil drums, "a life is lost when Mario touches Donkey Kong or any enemy
+// object", and "fireballs speed up" as the levels escalate. The drum's flame
+// becomes an emitter: a fireball lights at the drum, walks the tower UP the
+// sound ladders and kills on contact through the existing freeze/terminal laws.
+// Every fireball movement is dice-free — fixed spawn clock, fixed columns, fixed
+// climb — so the seeded barrel floors stay byte-identical (§patrol law in
+// kongcheck). What the ROM actually does (patrol patterns, homing, hop arcs)
+// is unverifiable in-repo, so the patrol SHAPE stays house law and an honest
+// gap; the kill, the hammer-smash (§Gameplay: "destroying objects with a
+// hammer power-up") and the lap speed-up are the sourced laws.
+export const FIRE_SPAWN_FIRST = 420 // first flame ~7 s into a live board
+export const FIRE_SPAWN_EVERY = 1200 // one new flame every 20 s while the board runs
+export const FIRE_MAX = 2 // the arcade's pair
+export const FIRE_SPEED = 0.9 // slower than a barrel — a runner outwalks the flame
+export const FIRE_LAP_SPEEDUP = 0.1 // "fireballs speed up" — +0.1 per banked lap
+export const FIRE_SPEED_MAX = 1.3
+export const FIRE_ESCALATE_MIN = 1 // the arcade's escalation starts after a full lap
+
+// #3796 — the capture grab becomes a scripted scene (issue item 2): the ape's
+// arm REACHes, the grab drags her along a path that rides ABOVE the ladder
+// tops (the old straight slide crossed the x=100 rung column mid-flight), then
+// he carries her down at the girders' left end. A heart pops at the grab and
+// shatters (§Plot: "a heart appears ... Donkey Kong grabs her ... the heart
+// breaks"). Pure function of captureTimer — no state, no dice — so the shell
+// draws it and kongcheck pins the same timeline.
+export const CAPTURE_REACH_END = 30 // arm out, she is still on her perch
+export const CAPTURE_GRAB_END = 60 // dragged along the girder, off the rungs
+export function captureScene(captureTimer) {
+    if (captureTimer <= 0 || captureTimer > CAPTURE_TICKS) return null
+    const t = CAPTURE_TICKS - captureTimer // ticks elapsed in the grab
+    let phase, px, py, arm
+    if (t < CAPTURE_REACH_END) {
+        phase = 'reach'; arm = (t + 1) / CAPTURE_REACH_END
+        px = 108; py = 28
+    } else if (t < CAPTURE_GRAB_END) {
+        phase = 'grab'; arm = 1
+        const u = (t - CAPTURE_REACH_END) / (CAPTURE_GRAB_END - CAPTURE_REACH_END)
+        px = 108 + (76 - 108) * u; py = 28
+    } else {
+        phase = 'carry'; arm = 1
+        const u = (t - CAPTURE_GRAB_END) / (CAPTURE_TICKS - CAPTURE_GRAB_END)
+        px = 76; py = 28 + (56 - 28) * u
+    }
+    const heart = t < CAPTURE_REACH_END ? null : (t < CAPTURE_GRAB_END ? 'pop' : 'break')
+    const heartU = t < CAPTURE_GRAB_END ? 0 : (t - CAPTURE_GRAB_END) / (CAPTURE_TICKS - CAPTURE_GRAB_END)
+    return { phase, px, py, arm, heart, heartU }
+}
+
 export const DK_PLAT = 5   // the girder the ape stands on
 export const TOP_PLAT = 6   // the girder she stands on
 
@@ -283,6 +332,10 @@ export function makeRun(seed, opts = {}) {
         platforms,
         ladders,
         hammers,
+        // #3796 — the fire oil: flames light at the drum and walk the tower up.
+        fireballs: [],
+        fireTimer: FIRE_SPAWN_FIRST,
+        lap: 0, // banked laps — the arcade's "fireballs speed up" escalator
         player: {
             x: 24, y: 216, w: 11, h: 16,
             vx: 0, vy: 0,
@@ -330,6 +383,10 @@ function resetPlayer(gs) {
     gs.swing = 0
     gs.swingSeq = 0
     gs.hammers.forEach(h => { h.taken = false })
+    // #3796 — and the flames back off with the screen: the drum re-fills, the
+    // clock re-lights. (lap survives: escalation counts banked laps, not boards.)
+    gs.fireballs = []
+    gs.fireTimer = FIRE_SPAWN_FIRST
     // #3598 — screen reset rebuilds the finale too: fresh rivets, girders
     // back level, the ape back on his perch (both respawn and lap ride this).
     gs.rivets.forEach(r => { r.pulled = false })
@@ -383,6 +440,103 @@ export function spanBoardY(gs, b, li) {
     if (!top) return b.y
     if (b.y >= top.y) return false
     return Math.min(b.y, top.y - b.h) // rest on the head when bodies would overlap
+}
+
+// #3796 — the flame lights at the drum (the barrel of oil the arcade's ape
+// kicks). Fair spawn: the runner standing at the drum never catches fire —
+// the light defers a second and tries again.
+export function spawnFireball(gs) {
+    const ground = gs.platforms[0]
+    const surf = ground ? getPlatformY(ground, 12) : 232
+    gs.fireballs.push({
+        x: 10, y: surf - 9, w: 9, h: 9,
+        vx: FIRE_SPEED, vy: 0, dir: 1,
+        onLadder: false, falling: false,
+        ladderIdx: -1,
+    })
+}
+
+// The fireball law — a deterministic climb. It rolls the deck it stands on,
+// takes EVERY sound ladder whose foot it passes, up (broken baits and the
+// barrel-only outside rung stay refused: the flame respects the same geometry
+// the route does), and steps off the tower's right ends to burn out below.
+// No rnd() anywhere in here: the seeded barrel floors are untouched.
+export function updateFireball(gs, f) {
+    const sp = fireSpeed(gs)
+    if (f.onLadder) {
+        const l = gs.ladders[f.ladderIdx]
+        f.y -= sp
+        f.dir = 0
+        if (f.y + f.h <= l.yTop) { // head clears the mouth: onto the girder above
+            f.onLadder = false
+            f.ladderIdx = -1
+            const surf = l.yTop - 8
+            f.y = surf - f.h
+            f.vy = 0
+            const cx = f.x + f.w / 2
+            let dir = 1
+            for (const p of gs.platforms) {
+                if (cx >= p.x && cx <= p.x + p.w && Math.abs(getPlatformY(p, cx) - surf) < 2) {
+                    dir = p.slope < 0 ? -1 : 1
+                    break
+                }
+            }
+            f.dir = dir
+            f.vx = dir * sp
+        }
+        return
+    }
+
+    f.vy += GRAVITY
+    f.y += f.vy
+    f.x += f.vx
+    if (f.vx > 0) f.dir = 1
+    else if (f.vx < 0) f.dir = -1
+
+    let landed = false
+    for (const p of gs.platforms) {
+        const cx = f.x + f.w / 2
+        if (cx >= p.x && cx <= p.x + p.w) {
+            const surfaceY = getPlatformY(p, cx)
+            if (f.y + f.h >= surfaceY && f.y + f.h < surfaceY + 10 && f.vy >= 0) {
+                f.y = surfaceY - f.h
+                f.vy = 0
+                f.falling = false
+                landed = true
+                const dir = p.slope < 0 ? -1 : p.slope > 0 ? 1 : (f.dir === -1 ? -1 : 1)
+                f.dir = dir
+                f.vx = dir * sp
+                break
+            }
+        }
+    }
+
+    // Take the foot of every sound ladder rolled over — upward.
+    if (landed) {
+        for (let li = 0; li < gs.ladders.length; li++) {
+            const l = gs.ladders[li]
+            if (l.broken || l.barrelOnly) continue
+            const cx = f.x + f.w / 2
+            if (Math.abs(cx - l.x) < 2.5 && Math.abs((f.y + f.h) - l.yBot) < 6) {
+                f.onLadder = true
+                f.ladderIdx = li
+                f.x = l.x - f.w / 2
+                f.vx = 0
+                f.vy = 0
+                break
+            }
+        }
+    }
+
+    if (!f.onLadder) {
+        const onPlat = findPlatform(gs.platforms, f.x + f.w / 2, f.y, f.h)
+        if (!onPlat && f.vy >= 0) f.falling = true
+    }
+}
+
+export function fireSpeed(gs) {
+    const sp = FIRE_SPEED + (gs.lap >= FIRE_ESCALATE_MIN ? FIRE_LAP_SPEEDUP * gs.lap : 0)
+    return Math.min(FIRE_SPEED_MAX, Math.round(sp * 100) / 100)
 }
 
 function updateBarrel(gs, b, ev) {
@@ -578,7 +732,7 @@ function attractPlan(gs) {
 // human input, watchStep drives instead.
 // ---------------------------------------------------------------------------
 export function tickDonkeyKong(gs, input = null) {
-    const ev = { jump: false, jumpedBarrel: 0, passedBarrel: 0, died: false, respawn: false, captured: false, won: false, over: false, barrel: false, hammerUp: false, swing: false, hammered: 0, hammerDown: false, climbed: false, hang: false, noClimb: false, reached: false, pull: false, rivet: false, collapse: false, barrelVoices: [] }
+    const ev = { jump: false, jumpedBarrel: 0, passedBarrel: 0, died: false, respawn: false, captured: false, won: false, over: false, barrel: false, hammerUp: false, swing: false, hammered: 0, hammerDown: false, climbed: false, hang: false, noClimb: false, reached: false, pull: false, rivet: false, collapse: false, fire: 0, fireOut: false, barrelVoices: [] }
     const p = gs.player
     gs.tickN++
     // #3761 — popups age at the top of the tick, so the tick that pays a
@@ -637,6 +791,8 @@ export function tickDonkeyKong(gs, input = null) {
             // the transition onto the fresh board, arcade tally-screen style.
             const paid = gs.bonus
             gs.score += paid
+            gs.lap++ // #3796 — "fireballs speed up" as the levels escalate: the
+                     // banked lap rides the flames' clock (capped, see FIRE_*)
             resetPlayer(gs) // #3598 — rebuilds the board too: fresh rivets, level girders, ape back on his perch
             gs.popups.push({ x: 112, y: 34, text: `+${paid}`, age: 0 })
         }
@@ -651,6 +807,7 @@ export function tickDonkeyKong(gs, input = null) {
         if (gs.collapse === 1) {
             ev.collapse = true
             gs.barrels = []           // the crash shakes the deck clean
+            if (gs.fireballs.length) { gs.fireballs = []; ev.fireOut = true } // #3796 — and drowns the flames
             p.climbing = false        // no hanging on a ladder that just fell
             p.climbLadder = null      // #3618 half-rung state goes with it
             p.hanging = false
@@ -939,6 +1096,24 @@ export function tickDonkeyKong(gs, input = null) {
         }
     }
 
+    // #3796 — THE FIRE CLOCK. The flame lights at the drum while the board
+    // runs, and stops with the finale (the ape's last stand is not a
+    // crossfire). The title demo never spawns an enemy that could gamble a
+    // life (#3786's law, same as the fuse). A runner standing at the drum
+    // defers the light one second rather than catching fire for free.
+    if (!gs.rivetPhase && !gs.attract) {
+        gs.fireTimer--
+        if (gs.fireTimer <= 0) {
+            if (Math.abs((p.x + p.w / 2) - 12) >= 34 && gs.fireballs.length < FIRE_MAX) {
+                spawnFireball(gs)
+                ev.fire++
+                gs.fireTimer = FIRE_SPAWN_EVERY
+            } else {
+                gs.fireTimer = 60
+            }
+        }
+    }
+
     for (let i = gs.barrels.length - 1; i >= 0; i--) {
         const b = gs.barrels[i]
         updateBarrel(gs, b, ev)
@@ -1013,12 +1188,75 @@ export function tickDonkeyKong(gs, input = null) {
         }
     }
 
+    // ---- FIREBALLS (#3796) ----
+    // Same freeze/terminal laws the barrels live under: the death, win,
+    // capture and collapse branches returned before this loop, so a flame
+    // never kills twice and never kills mid-animation. Contact is death
+    // ("any enemy object"); the hammer smashes it for our house 100
+    // (§Gameplay destroying-objects); jumping or walking past pays the same
+    // house obstacle bonus as a barrel — witness sets key on object identity,
+    // so barrels and flames never double-dip each other's marks.
+    for (let i = gs.fireballs.length - 1; i >= 0; i--) {
+        const f = gs.fireballs[i]
+        updateFireball(gs, f)
+
+        if (f.y > GH + 20) {
+            gs.fireballs.splice(i, 1)
+            continue
+        }
+
+        if (gs.swing > 0 && gs.deathTimer <= 0 && gs.winTimer <= 0 && !p.climbing) {
+            const dx = (f.x + f.w / 2 - (p.x + p.w / 2)) * p.dir
+            const dy = f.y + f.h / 2 - (p.y + p.h / 2)
+            const phase = (gs.swingSeq - 1) % 3
+            const inLane = dx > 0 && dx < 17
+            const inBand = phase === 0 ? dy >= -16 && dy <= -2
+                : phase === 1 ? dy > -8 && dy <= 8
+                    : dy >= 2 && dy <= 16
+            if (inLane && inBand) {
+                gs.fireballs.splice(i, 1)
+                gs.score += 100
+                ev.hammered++
+                continue
+            }
+        }
+
+        if (gs.deathTimer <= 0 && gs.winTimer <= 0) {
+            const dx = (p.x + p.w / 2) - (f.x + f.w / 2)
+            const dy = (p.y + p.h / 2) - (f.y + f.h / 2)
+            if (Math.abs(dx) < 8 && Math.abs(dy) < 10) {
+                killPlayer(gs, ev)
+            }
+
+            if (p.vy < 0 || !p.grounded) {
+                if (Math.abs(dx) < 16 && dy < 0 && dy > -24 && !p.jumpedBarrels.has(f)) {
+                    p.jumpedBarrels.add(f)
+                    gs.score += 100
+                    ev.jumpedBarrel++
+                    gs.popups.push({ x: f.x + f.w / 2, y: f.y, text: '+100', age: 0 })
+                }
+            }
+            else if (p.grounded && !p.climbing && gs.deathTimer <= 0) {
+                if (Math.abs(dx) < 16 && dy <= -10 && dy > -48 && !p.passedBarrels.has(f) && !p.jumpedBarrels.has(f)) {
+                    p.passedBarrels.add(f)
+                    gs.score += 50
+                    ev.passedBarrel++
+                    gs.popups.push({ x: f.x + f.w / 2, y: f.y, text: '+50', age: 0 })
+                }
+            }
+        }
+    }
+
     // ---- WIN CONDITION → THE RIVET FINALE (#3598) ----
     // Reaching her girder no longer rings the lap — the arrival ARMS the
     // finale. Pull the rivets out from under the tower and the crash banks it.
     if (p.y + p.h < 56 && p.x > 72 && p.x < 152 && !gs.rivetPhase) {
         gs.rivetPhase = true
         ev.reached = true
+        // #3796 — the finale is the ape's last stand, not a crossfire: the
+        // flames back off the tower the moment he is reached (spawn already
+        // stopped; these are the ones already climbing).
+        if (gs.fireballs.length) { gs.fireballs = []; ev.fireOut = true }
     }
     return ev
 }
@@ -1049,8 +1287,10 @@ const HOLD = 8
 // Clone only what the tick mutates. The level is read-only: shared refs.
 function cloneWorld(gs) {
     const barrels = gs.barrels.map(b => ({ ...b }))
+    const fireballs = gs.fireballs.map(f => ({ ...f })) // #3796 — rollouts see the flames
     const ref = new Map()
     gs.barrels.forEach((b, i) => ref.set(b, barrels[i]))
+    gs.fireballs.forEach((f, i) => ref.set(f, fireballs[i]))
     return {
         seed: gs.seed,
         rngState: gs.rngState,
@@ -1079,6 +1319,9 @@ function cloneWorld(gs) {
         hammer: gs.hammer,
         swing: gs.swing,
         swingSeq: gs.swingSeq,
+        fireballs, // #3796
+        fireTimer: gs.fireTimer,
+        lap: gs.lap,
         platforms: gs.platforms,
         ladders: gs.ladders,
         hammers: gs.hammers.map(h => ({ ...h })),
@@ -1134,6 +1377,20 @@ function greedy(c) {
                 gapUp = Math.min(gapUp, p.y - (b.y + b.h))
             }
         }
+        // #3796 — the flame climbs THIS ladder too. A flame above comes at us
+        // (it only moves up, straight into us): down is wrong, UP outruns it
+        // (climb 1.2 > flame <=1.3 rarely, and it just exited if it's close
+        // to the mouth). A flame below: never step down into it — climb.
+        let flameAbove = false
+        let flameBelow = false
+        for (const f of c.fireballs) {
+            if (f.onLadder && Math.abs(f.x + f.w / 2 - (p.x + p.w / 2)) < 8) {
+                if (f.y < p.y) flameAbove = true
+                else flameBelow = true
+            }
+        }
+        if (flameAbove) return { left: false, right: false, up: true, down: false, jump: false }
+        if (flameBelow) return { left: false, right: false, up: true, down: false, jump: false }
         if (gapUp < 16) return { left: false, right: false, up: false, down: true, jump: false }
         return { left: false, right: false, up: true, down: false, jump: false }
     }
@@ -1162,10 +1419,26 @@ function greedy(c) {
     const dir = dx > 0 ? 1 : -1
 
     // Barrel threats on THIS girder (feet within one band, moving or not).
+    // #3796 — rolling flames join the same list (arcable like barrels), and a
+    // flame about to spill out of a ladder mouth onto THIS girder is a column
+    // to stand off, not to jump into: the exit lands at foot level, under the
+    // arc. The runner backs 22 px off the mouth column, like the ladder law.
     const footY = p.y + p.h
-    const near = c.barrels
+    const near = [...c.barrels, ...c.fireballs.filter(f => !f.onLadder)]
         .filter(b => !b.onLadder && Math.abs((b.y + b.h) - footY) < 12 && Math.abs(b.x - cx) < 30)
         .sort((a, b) => Math.abs(a.x - cx) - Math.abs(b.x - cx))[0]
+
+    const mouthColumn = () => {
+        for (const f of c.fireballs) {
+            if (!f.onLadder) continue
+            const l = c.ladders[f.ladderIdx]
+            if (!l) continue
+            if ((f.y + f.h - l.yTop) / Math.max(0.1, fireSpeed(c)) > 45) continue // still climbing far below
+            const ep = c.platforms.findIndex(pl => Math.abs(getPlatformY(pl, l.x) - (l.yTop - 8)) < 2)
+            if (ep === pi && Math.abs(l.x - cx) < 30) return l.x
+        }
+        return null
+    }
 
     // Is the route ladder safe to board? A barrel riding it, or rolling onto
     // its top on the girder above, drops onto the runner mid-climb.
@@ -1182,6 +1455,15 @@ function greedy(c) {
                 const onTop = Math.abs((b.y + b.h) - surf) < 12 && Math.abs(bx - wp.x) < 26
                 if (onTop && Math.sign(bx - wp.x) === Math.sign(-b.vx || -1)) return false // rolling in
             }
+        }
+        // #3796 — a flame riding OUR route ladder is only safe once its body
+        // has cleared the foot: board behind a flame that just mounted and you
+        // meet it in the mouth. Higher up it is climbing away from us.
+        for (const f of c.fireballs) {
+            if (!f.onLadder) continue
+            const l = c.ladders[f.ladderIdx]
+            if (!l || Math.abs(l.x - wp.x) >= 2) continue
+            if (f.y + f.h > l.yBot - 12) return false
         }
         return true
     }
@@ -1201,6 +1483,18 @@ function greedy(c) {
     }
 
     if (atLadder && ladderSafe()) return { left: false, right: false, up: true, down: false, jump: false }
+
+    // A flame about to exit a mouth near us holds us off the column (#3796):
+    // the exit lands at foot level, under the arc, so standing off beats both
+    // walking into it and jumping blind at it.
+    const mX = mouthColumn()
+    if (mX !== null && Math.abs(mX - cx) <= 22) {
+        const away = mX >= cx ? -1 : 1
+        return {
+            left: away === -1, right: away === 1, up: false, down: false,
+            jump: jumpNear(away),
+        }
+    }
 
     // Blocked at the mouth: stand OFF it, back the way we came, at a fixed
     // standoff — a dancer twitching at the foot of the ladder gets speared by
@@ -1252,7 +1546,7 @@ function rollout(gs, cand) {
         jumped += ev.jumpedBarrel
         maxP = Math.max(maxP, progress(c))
         let gap = Infinity
-        for (const b of c.barrels) gap = Math.min(gap, Math.hypot(b.x - c.player.x, b.y - c.player.y))
+        for (const b of [...c.barrels, ...c.fireballs]) gap = Math.min(gap, Math.hypot(b.x - c.player.x, b.y - c.player.y)) // #3796 — flames are danger too
         if (gap < minBarrelGap) minBarrelGap = gap
     }
     const p1 = progress(c)
@@ -1276,10 +1570,11 @@ function rollout(gs, cand) {
 
 // On this girder, is anything close enough that an arc might be the right
 // answer? Jump candidates only compete when a barrel is near (see below).
+// #3796 — rolling flames count too: the arc answers them the same way.
 function barrelThreat(gs) {
     const p = gs.player
     const footY = p.y + p.h
-    return gs.barrels.some(b => !b.onLadder && Math.abs((b.y + b.h) - footY) < 14 && Math.abs(b.x - p.x) < 34)
+    return [...gs.barrels, ...gs.fireballs].some(b => !b.onLadder && Math.abs((b.y + b.h) - footY) < 14 && Math.abs(b.x - p.x) < 34)
 }
 
 // Candidate order IS the tie-break: climb first (the route is the win), then
@@ -1328,8 +1623,10 @@ export function stateHash(gs) {
     let s = `K${gs.tickN}|${gs.score}|${gs.lives}|${gs.over ? 1 : 0}|${gs.deathTimer}|${gs.winTimer}|${gs.barrelTimer}|${gs.bonus}|${gs.captured ? 1 : 0}${gs.captureTimer}|${gs.rngState}|`
     s += `H${gs.hammer}|${gs.swingSeq}|${gs.hammers.map(h => (h.taken ? 1 : 0)).join('')}|`
     s += `R${gs.rivetPhase ? 1 : 0}${gs.rivets.map(r => (r.pulled ? 1 : 0)).join('')}|${gs.pullTimer}|${gs.collapse}|${Math.round(gs.dkFall * 1e4)}|`
+    s += `F${gs.lap}|${gs.fireTimer}|` // #3796 — the fire clock and the escalation ride the witness
     s += `${r4(p.x)},${r4(p.y)},${r4(p.vx)},${r4(p.vy)},${p.grounded ? 1 : 0},${p.climbing ? 1 : 0},${p.dir},${p.jumpedBarrels.size}|${p.passedBarrels.size}|`
     s += gs.barrels.map(b => `${r4(b.x)},${r4(b.y)},${r4(b.vx)},${r4(b.vy)},${b.onLadder ? 1 : 0},${b.falling ? 1 : 0},${b.ladderBot || 0},${b.takenBits || 0},${b.ladderIdx ?? -1}`).join(';')
+    s += `|f${gs.fireballs.map(f => `${r4(f.x)},${r4(f.y)},${r4(f.vx)},${r4(f.vy)},${f.onLadder ? 1 : 0},${f.ladderIdx ?? -1}`).join(';')}`
     let h = 0x811c9dc5
     for (let i = 0; i < s.length; i++) {
         h ^= s.charCodeAt(i)

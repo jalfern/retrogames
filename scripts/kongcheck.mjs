@@ -14,7 +14,7 @@
 
 import { readFileSync } from 'node:fs'
 import { spawnSync } from 'node:child_process'
-import { START_LIVES, BONUS_START, BONUS_DROP, BONUS_TICK, CAPTURE_TICKS, BARREL_SPEED, HAMMER_SWINGS, RIVET_SCORE, PULL_TICKS, COLLAPSE_TICKS, RIVET_X, DK_PLAT, TOP_PLAT, DK_FALL_STOP, BREAK_FRACS, BARREL_CLICK_EVERY, BARREL_CLICK_RANGE, barrelBoardVoice, barrelDangleVoice, barrelRollClick, BRACE_WIDTH, BRACE_PLATE, BRACE_PAD, barrelRideFrame, spanBoardY, makeRun, tickDonkeyKong, watchStep, stateHash, rnd, getPlatformY, buildLevel, platformIndex } from '../src/games/DonkeyKong/sim.js'
+import { START_LIVES, BONUS_START, BONUS_DROP, BONUS_TICK, CAPTURE_TICKS, CAPTURE_REACH_END, CAPTURE_GRAB_END, captureScene, BARREL_SPEED, HAMMER_SWINGS, HAMMER_SWING_TICKS, RIVET_SCORE, PULL_TICKS, COLLAPSE_TICKS, RIVET_X, DK_PLAT, TOP_PLAT, DK_FALL_STOP, BREAK_FRACS, BARREL_CLICK_EVERY, BARREL_CLICK_RANGE, barrelBoardVoice, barrelDangleVoice, barrelRollClick, BRACE_WIDTH, BRACE_PLATE, BRACE_PAD, barrelRideFrame, spanBoardY, spawnFireball, fireSpeed, FIRE_SPAWN_FIRST, FIRE_SPAWN_EVERY, FIRE_SPEED_MAX, makeRun, tickDonkeyKong, watchStep, stateHash, rnd, getPlatformY, buildLevel, platformIndex } from '../src/games/DonkeyKong/sim.js'
 import { seedRng, seedFromQuery } from '../src/utils/gameContract.js'
 import { parseGaps } from './lib/idle.mjs'
 import { plant, pull } from './lib/mutateguard.mjs'
@@ -34,7 +34,32 @@ const ok = (cond, name, detail = '') => {
 // capture at 3000 ticks mid-scan: the board resets, the world freezes at the
 // terminal, and the stream the scan measures disappears. Top the counter up —
 // these rigs test steel, not stakes (§bonus-timer above owns the fuse law).
-const noFuse = (g) => { g.bonus = Number.MAX_SAFE_INTEGER; return g }
+// #3796 — the fire clock is a stake too: park it with the fuse (the seat's
+// zero-death fleet in §WATCH sweep runs WITH fire live; the sweep is unchanged).
+const noFuse = (g) => { g.bonus = Number.MAX_SAFE_INTEGER; g.fireTimer = Number.MAX_SAFE_INTEGER; g.fireballs = []; return g }
+
+// #3796 — hold a rig's runner inert above the tower: on every deck barrels or
+// the patrol can reach him (her girder arms the finale, whose douse clears the
+// very flames the clock rig measures; DK's girder sits at the barrel spawn;
+// the ground sits in the fireball's first stride). Hover-pinned, grounded=false
+// keeps him out of every kill box while the world runs underneath.
+const park = (g) => {
+    g.player.x = 44
+    g.player.y = 8
+    g.player.grounded = false
+    g.player.climbing = false
+    g.player.vx = 0; g.player.vy = 0
+    return g
+}
+const hover = (g) => {
+    g.player.y = 8
+    g.player.vy = 0
+    g.player.grounded = false
+    return g
+}
+// Fuse-topped board with the fire clock LIVE (noFuse parks both; the fire
+// rigs need the light on).
+const liveFire = (g) => { g.bonus = Number.MAX_SAFE_INTEGER; return g }
 
 // ------------------------------------------------------------- seeded dice ----
 console.log('seeded stream: the dice live inside gs')
@@ -177,7 +202,7 @@ console.log('half-rungs: broken ladders climb part-way (#3618)')
         'the double-board gap is closed with the span body law (CLOSED marker reaches parseGaps)')
     ok(!gaps.some(g => /timer-zero capture law is unmodelled/i.test(g)),
         '#3786 closed the timer-zero gap — the fuse, the bank and the capture ship (CLOSED marker reaches parseGaps)')
-    ok(gaps.length === 1, 'one honest gap remains (oil drum flame)', `gaps=${gaps.length}`)
+    ok(gaps.length === 0, 'no honest gap remains open on the shelf — #3796 closed the oil-drum flame', `gaps=${gaps.length}`)
 }
 
 // ------------------------------------------------------------- core physics ----
@@ -449,6 +474,265 @@ console.log('BONUS TIMER: the fuse, the bank, the capture (#3786)')
     const g2 = makeRun(5)
     g2.bonus -= BONUS_DROP
     ok(stateHash(g1) !== stateHash(g2), 'the fuse rides the replay witness hash (#3786)')
+}
+
+// ---------------------------------------------------------- fire oil (#3796) ----
+// The drum's flame is the arcade's enemy: §Gameplay gives "barrels and oil
+// drums", "a life is lost when Mario touches Donkey Kong or any enemy object",
+// destroying objects "with a hammer power-up" and "fireballs speed up" as the
+// levels escalate. The law ships through the existing freeze/terminal path:
+// the fire clock lights a fireball that climbs the tower on the sound ladders
+// (dice-free — seeded barrel floors byte-identical), kills on contact, smashes
+// under a live swing, pays the house obstacle bonus, douses at the finale and
+// the collapse, and never lights on the title screen.
+console.log('FIRE OIL: the clock, the climb, the kill, the smash (#3796)')
+{
+    // The clock: first light 7 s in, then one every 20 s, cap two, far from
+    // the runner (spawn at the drum, start corner is >34 px away… x24+5.5 vs
+    // drum x12 is 17.5 — the runner STARTS inside the stand-off, so the
+    // first light defers until he moves off; pin both halves).
+    // Pin the runner on her girder (park) so the clock is measured, not the
+    // respawn law that resets it — a manual spawn at the drum beside a runner
+    // parked at the spawn corner would just burn him (the in-game stand-off is
+    // pinned separately below).
+    const g = park(liveFire(makeRun(4)))
+    let firstFire = -1
+    for (let i = 0; i < FIRE_SPAWN_FIRST + 50; i++) {
+        const ev = tickDonkeyKong(g, {})
+        hover(g)
+        if (ev.fire) { firstFire = i; break }
+    }
+    ok(firstFire === FIRE_SPAWN_FIRST - 1 && g.fireballs.length === 1,
+        'the flame lights at the drum on its clock, exactly 7 s in', `tick=${firstFire}`)
+    let second = false
+    for (let i = 0; i < FIRE_SPAWN_EVERY + 50 && !second; i++) { const e2 = tickDonkeyKong(g, {}); hover(g); second = e2.fire > 0 }
+    ok(second, 'the cadence repeats — a second flame lights one period after the first', `n=${g.fireballs.length}`)
+    const capped = park(liveFire(makeRun(4)))
+    spawnFireball(capped)
+    spawnFireball(capped)
+    capped.fireTimer = 1
+    const evC = tickDonkeyKong(capped, {})
+    ok(evC.fire === 0 && capped.fireballs.length === 2 && capped.fireTimer === 60,
+        'the pair is the cap — no third flame until one burns out', `n=${capped.fireballs.length} t=${capped.fireTimer}`)
+    const atDrum = noFuse(makeRun(4))
+    for (let i = 0; i < FIRE_SPAWN_FIRST + 200; i++) tickDonkeyKong(atDrum, {})
+    ok(atDrum.fireballs.length === 0, 'a runner standing at the drum never catches fire for free', `n=${atDrum.fireballs.length}`)
+    const ga = makeRun(4, { attract: true })
+    for (let i = 0; i < FIRE_SPAWN_FIRST + 100; i++) tickDonkeyKong(ga, null)
+    ok(ga.fireballs.length === 0 && ga.fireTimer === FIRE_SPAWN_FIRST,
+        'the title demo never spawns an enemy — the fire clock never ticks in attract')
+}
+{
+    // The climb: a fireball taken at the ground walks UP every sound ladder it
+    // rolls over — deterministic, and it refuses broken baits + the barrel-only
+    // outside rung. Pin the first take (ladder @180, foot on the ground). The
+    // runner rides the top girder (park) so the climb is measured, not burned.
+    const g = park(liveFire(makeRun(4)))
+    spawnFireball(g)
+    const L = g.ladders.findIndex(l => l.x === 180 && l.yBot > 200)
+    let rode = false, exited = false, refusedBroken = true
+    const brokenCols = new Set(g.ladders.filter(l => l.broken || l.barrelOnly).map(l => l.x))
+    for (let i = 0; i < 500; i++) {
+        tickDonkeyKong(g, {})
+        hover(g)
+        const f = g.fireballs[0]
+        if (!f) break
+        if (brokenCols.has(Math.round(f.x + f.w / 2)) && f.onLadder) refusedBroken = false
+        if (f.onLadder && f.ladderIdx === L) rode = true
+        if (rode && !f.onLadder && f.y + f.h < 200) { exited = true; break }
+    }
+    ok(rode && exited, 'a fireball boards the ground ladder at x=180 and climbs out onto girder 1', `rode=${rode} exited=${exited}`)
+    ok(refusedBroken, 'the flame respects the broken baits and the barrel-only rung (route geometry, unchanged)')
+    // Dice-free law: with fire roaming, the rng stream advances exactly as far
+    // as on an identical fireless board — every seeded barrel floor is safe.
+    const a = park(makeRun(123)), b = park(makeRun(123))
+    b.fireTimer = Number.MAX_SAFE_INTEGER
+    for (let i = 0; i < 1000; i++) { tickDonkeyKong(a, {}); hover(a); tickDonkeyKong(b, {}); hover(b) }
+    ok(a.rngState === b.rngState && JSON.stringify(a.barrels) === JSON.stringify(b.barrels),
+        'fireballs consume zero dice — seeded barrel floors are byte-identical', `${a.rngState}/${b.rngState}`)
+}
+{
+    // The kill: contact is a life, through killPlayer — so the freeze windows
+    // and the terminal cover the flame exactly like the barrel did.
+    const g = noFuse(makeRun(9))
+    g.fireballs.push({ x: 100, y: 223, w: 9, h: 9, vx: 0, vy: 0, dir: -1, onLadder: false, falling: false, ladderIdx: -1 })
+    g.player.x = 106; g.player.y = 216; g.player.grounded = true; g.player.vx = 0; g.player.vy = 0
+    const evK = tickDonkeyKong(g, {})
+    ok(evK.died && g.deathTimer === 90, 'the flame kills on contact through the same freeze as a barrel')
+    let d2 = 0
+    for (let i = 0; i < 80; i++) d2 += tickDonkeyKong(g, {}).died
+    ok(d2 === 0, 'the freeze never double-kills')
+    let respawn = false
+    for (let i = 0; i < 30 && !respawn; i++) respawn = tickDonkeyKong(g, {}).respawn
+    ok(respawn && g.lives === START_LIVES - 1 && g.fireballs.length === 0 && g.fireTimer === FIRE_SPAWN_FIRST,
+        'the burn spends the life and rebuilds the board — flames back off with the screen', `lives=${g.lives}`)
+    const t = noFuse(makeRun(9)); t.lives = 1
+    t.fireballs.push({ x: 100, y: 223, w: 9, h: 9, vx: 0, vy: 0, dir: -1, onLadder: false, falling: false, ladderIdx: -1 })
+    t.player.x = 106; t.player.y = 216; t.player.grounded = true
+    tickDonkeyKong(t, {})
+    let over = false
+    for (let i = 0; i < 100 && !over; i++) over = tickDonkeyKong(t, {}).over
+    ok(over && t.lives === 0, 'the burn at the last life is an honest terminal')
+}
+{
+    // Freeze honesty: win, capture and collapse branches return before the fire
+    // loop — a flame sitting on the runner through all three adds no body count.
+    const g = noFuse(makeRun(9))
+    g.winTimer = 5
+    g.fireballs.push({ x: 106, y: 211, w: 9, h: 9, vx: 0, vy: 0, dir: 1, onLadder: false, falling: false, ladderIdx: -1 })
+    g.player.x = 106; g.player.y = 216; g.player.grounded = true
+    let died = 0
+    for (let i = 0; i < 4; i++) died += tickDonkeyKong(g, {}).died
+    ok(died === 0, 'no burn during the win animation')
+    g.fireballs.push({ x: 106, y: 211, w: 9, h: 9, vx: 0, vy: 0, dir: 1, onLadder: false, falling: false, ladderIdx: -1 })
+    g.captureTimer = 5; g.captured = true
+    died = 0
+    for (let i = 0; i < 4; i++) died += tickDonkeyKong(g, {}).died
+    ok(died === 0, 'no burn during the capture grab')
+    g.fireballs.push({ x: 106, y: 211, w: 9, h: 9, vx: 0, vy: 0, dir: 1, onLadder: false, falling: false, ladderIdx: -1 })
+    g.captured = false; g.captureTimer = 0; g.collapse = 1
+    tickDonkeyKong(g, {})
+    ok(g.fireballs.length === 0, 'the collapse shakes the flames out with the barrels')
+}
+{
+    // Hammer: the swing deletes a flame in the arc for our house 100 —
+    // §Gameplay's destroying-objects law, and the mallet only EXTENDS reach:
+    // contact without a live swing still kills (pinned by the kill rig above).
+    const g = noFuse(makeRun(9))
+    g.hammer = HAMMER_SWINGS
+    g.swingSeq = 1 // phase = flat swing (seq-1 %3 === 0 is up; 1 is flat)
+    g.player.x = 100; g.player.y = 216; g.player.grounded = true; g.player.dir = 1
+    g.fireballs.push({ x: 112, y: 216, w: 9, h: 9, vx: 0, vy: 0, dir: -1, onLadder: false, falling: false, ladderIdx: -1 })
+    const s0 = g.score
+    g.swing = HAMMER_SWING_TICKS
+    let smashed = 0
+    for (let i = 0; i < HAMMER_SWING_TICKS; i++) smashed += tickDonkeyKong(g, {}).hammered
+    ok(smashed >= 1 && g.fireballs.length === 0 && g.score - s0 === 100, 'a live swing smashes a flame for the house 100', `smashed=${smashed}`)
+}
+{
+    // The house obstacle bonus pays the flame the same pair it pays barrels:
+    // arc over = 100 once, walk-past below the feet = 50 once.
+    const g = noFuse(makeRun(9))
+    g.player.x = 100; g.player.y = 200; g.player.vy = -4.5; g.player.grounded = false
+    g.fireballs.push({ x: 104, y: 223, w: 9, h: 9, vx: 0, vy: 0, dir: 1, onLadder: false, falling: false, ladderIdx: -1 })
+    let arcs = 0
+    for (let i = 0; i < 30; i++) arcs += tickDonkeyKong(g, {}).jumpedBarrel
+    ok(arcs === 1, 'arcing a flame pays the house 100, once per flame', `arcs=${arcs}`)
+    const w = noFuse(makeRun(9))
+    w.player.x = 150; w.player.y = 176; w.player.grounded = true
+    w.fireballs.push({ x: 120, y: 223, w: 9, h: 9, vx: 0.9, vy: 0, dir: 1, onLadder: false, falling: false, ladderIdx: -1 })
+    let past = 0
+    for (let i = 0; i < 80; i++) past += tickDonkeyKong(w, {}).passedBarrel
+    ok(past === 1, 'a flame crossing under the feet pays the walk-past 50, once', `past=${past}`)
+}
+{
+    // Finale + escalation: reaching her douses the tower; banking a lap makes
+    // the flames faster (capped) — the sourced "fireballs speed up".
+    const g = makeRun(9)
+    g.attract = false
+    spawnFireball(g)
+    g.player.x = 100
+    g.player.y = getPlatformY(g.platforms[TOP_PLAT], 105) - g.player.h
+    let doused = false
+    for (let i = 0; i < 10 && !doused; i++) doused = tickDonkeyKong(g, {}).fireOut
+    ok(doused && g.fireballs.length === 0, 'the finale douses the tower — the ape\u2019s last stand is not a crossfire')
+    const t0 = g.fireTimer
+    for (let i = 0; i < 50; i++) tickDonkeyKong(g, {})
+    ok(g.fireTimer === t0, 'the fire clock stands still while the finale runs')
+    ok(fireSpeed({ lap: 0 }) === 0.9 && fireSpeed({ lap: 3 }) === 1.2 && fireSpeed({ lap: 99 }) === FIRE_SPEED_MAX,
+        'fireballs speed up per banked lap, capped', `${fireSpeed({ lap: 3 })}`)
+    // bank one lap the honest way: topple → collapse → the win BANKS (the bank
+    // lands when winTimer expires, after ev.won) — lap rides the escalation.
+    g.rivets.forEach(r => { r.pulled = true }); g.pullTimer = 0; g.pullIdx = -1; g.rivetPhase = true
+    g.collapse = 1
+    let won = false
+    for (let i = 0; i < COLLAPSE_TICKS + 200 && g.lap === 0; i++) {
+        const e = tickDonkeyKong(g, {}) // never short-circuit — the bank lands ticks after ev.won
+        won = won || e.won
+    }
+    ok(won && g.lap === 1, 'the banked lap rides the escalation counter', `lap=${g.lap}`)
+}
+{
+    // The seat at the flame: watchStep never steps DOWN a ladder with a fire
+    // climbing it from below, and holds off a mouth that is about to spill.
+    const g = noFuse(makeRun(9))
+    g.player.x = 174.5; g.player.y = 150; g.player.climbing = true; g.player.grounded = false
+    const l0 = g.ladders.findIndex(l => l.x === 180 && l.yBot > 200)
+    g.player.climbLadder = g.ladders[l0]
+    g.fireballs.push({ x: 175.5, y: 172, w: 9, h: 9, vx: 0, vy: 0, dir: 1, onLadder: true, falling: false, ladderIdx: l0 })
+    const a = watchStep(g)
+    ok(a && !a.down, 'the seat never steps down into a flame climbing the same ladder', JSON.stringify(a))
+    const m = noFuse(makeRun(9))
+    m.player.x = 160; m.player.y = getPlatformY(m.platforms[1], 165) - m.player.h; m.player.grounded = true
+    m.fireballs.push({ x: 175.5, y: 205, w: 9, h: 9, vx: 0, vy: 0, dir: 1, onLadder: true, falling: false, ladderIdx: l0 })
+    const b = watchStep(m)
+    ok(b && !b.right, 'the seat stands off a ladder mouth that is about to spill fire onto its girder', JSON.stringify(b))
+}
+{
+    // The witness: fire state rides the replay hash (the sweep's byte-equality
+    // sees the flames; two boards one flame-position apart hash apart).
+    const g1 = makeRun(5), g2 = makeRun(5)
+    g2.fireTimer -= 1
+    ok(stateHash(g1) !== stateHash(g2), 'the fire clock rides the replay witness hash')
+    const g3 = makeRun(5)
+    spawnFireball(g3)
+    ok(stateHash(g1) !== stateHash(g3), 'a flame on the board changes the witness')
+}
+{
+    // README honesty: the fire-oil gap CLOSED with the shipped law — parseGaps
+    // must not score DONKEY KONG weak on it again.
+    const RD = readFileSync('src/games/DonkeyKong/README.md', 'utf8')
+    ok(!parseGaps(RD).some(x => /Oil drum is decor/i.test(x)),
+        '#3796 closed the oil-drum gap — the flame kills (CLOSED marker reaches parseGaps)')
+    ok(/fireballs speed up/.test(RD) && /enemy object/.test(RD),
+        'the README quotes the sourced laws the fire section ships')
+}
+{
+    // Shell wiring: every new voice is sounded, and the capture scene is drawn
+    // from the exported script (not re-invented in the shell).
+    ok(/if \(ev\.fire\) \{[\s\S]{0,120}?playNoise[\s\S]{0,80}?playSweep/.test(IDX), 'the flame lighting crackles')
+    ok(/if \(ev\.fireOut\) audioController\.playSweep/.test(IDX), 'the finale douse hisses')
+    ok(/gs\.captureTimer === CAPTURE_TICKS - CAPTURE_GRAB_END/.test(IDX), 'the heart-break snaps exactly at grab\u2192carry')
+    ok(/captureScene\(gs\.captureTimer\)/.test(IDX), 'Pauline rides captureScene — one script, one truth')
+    ok(/scene\.heart === 'pop'/.test(IDX) && /drift = Math\.round\(scene\.heartU \* 9\)/.test(IDX),
+        'the heart pops and its halves drift apart on the scene clock')
+    ok(/sc\.arm \* 30/.test(IDX), 'the ape\u2019s arm visibly reaches on the scene clock')
+}
+
+// -------------------------------------------------- capture scene (#3796) ----
+// The grab is scripted: reach (arm out, HELP still calling) → grab (dragged
+// along her girder, above every rung top) → carry (down at the girders' left
+// end). Pure function of captureTimer — pin the timeline, the rung clearance
+// and the heart beats.
+console.log('CAPTURE SCENE: reach, grab, carry, heart-break (#3796)')
+{
+    ok(captureScene(0) === null && captureScene(91) === null, 'the scene exists exactly inside the grab window')
+    const r0 = captureScene(CAPTURE_TICKS)
+    ok(r0 && r0.phase === 'reach' && r0.arm > 0 && r0.arm < 1 && r0.px === 108 && r0.heart === null,
+        'reach: the arm starts out, she is still perched, no heart yet', JSON.stringify(r0))
+    const r29 = captureScene(CAPTURE_TICKS - (CAPTURE_REACH_END - 1))
+    ok(r29.phase === 'reach' && r29.arm >= 0.95, 'the arm finishes its reach exactly at the grab')
+    const g0 = captureScene(CAPTURE_TICKS - CAPTURE_REACH_END)
+    ok(g0.phase === 'grab' && g0.px === 108 && g0.heart === 'pop', 'the heart pops the instant the grab takes hold')
+    const gEnd = captureScene(CAPTURE_TICKS - (CAPTURE_GRAB_END - 1))
+    ok(gEnd.phase === 'grab' && gEnd.px < 77.5, 'the drag carries her to the girders\u2019 left end', `px=${gEnd.px}`)
+    const c0 = captureScene(CAPTURE_TICKS - CAPTURE_GRAB_END)
+    ok(c0.phase === 'carry' && c0.heart === 'break', 'the heart breaks exactly as the carry starts')
+    const c1 = captureScene(CAPTURE_TICKS - CAPTURE_GRAB_END - 1)
+    ok(c1.phase === 'carry' && c1.py > 28 && c1.heartU > 0, 'the carry lifts off her girder with the halves already drifting', JSON.stringify(c1))
+    const cEnd = captureScene(1)
+    ok(cEnd.py > 55 && cEnd.heartU > 0.9, 'she ends in his hands at his girder', JSON.stringify(cEnd))
+    // Off the ladder geometry by construction: whenever her body is over a
+    // ladder column, it is above that ladder's top rung.
+    const lvl = buildLevel()
+    let clear = true
+    for (let timer = CAPTURE_TICKS; timer > 0; timer--) {
+        const s = captureScene(timer)
+        for (const l of lvl.ladders) {
+            if (Math.abs(l.x - (s.px + 4)) < 6 && s.py + 16 > l.yTop) clear = false
+        }
+    }
+    ok(clear, 'the whole grab path stays off the ladder rung geometry (the old slide crossed x=100 mid-air)')
 }
 
 // ---------------------------------------------------------- rivet finale ----

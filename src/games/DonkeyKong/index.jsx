@@ -7,7 +7,7 @@ import { isWatchKey, isTakeoverKey, playWatchStart, playWatchStop, watchSfxLog, 
 import { mountDbg, unmountDbg } from '../../utils/DebugKit'
 import { GAMES } from '../../config/games'
 import { exposeGame, unexposeGame, exposeFeedbackState, unexposeFeedbackState, seedFromQuery, contractHoldsLoop } from '../../utils/gameContract'
-import { GW, GH, TOP_PLAT, makeRun, tickDonkeyKong, stateHash, BRACE_WIDTH, BRACE_PLATE, BRACE_PAD, barrelRideFrame, BARREL_SPEED, POPUP_LIFE, CAPTURE_TICKS } from './sim.js'
+import { GW, GH, TOP_PLAT, makeRun, tickDonkeyKong, stateHash, BRACE_WIDTH, BRACE_PLATE, BRACE_PAD, barrelRideFrame, BARREL_SPEED, POPUP_LIFE, CAPTURE_TICKS, CAPTURE_GRAB_END, captureScene } from './sim.js'
 import { attractFrame, DIM } from './attract.js'
 
 // DONKEY KONG — shell only since #1637 b27: canvas, sound, chrome, seat.
@@ -186,6 +186,20 @@ const DonkeyKongGame = () => {
             if (ev.captured) {
                 audioController.playSweep(500, 90, 0.7, 'sawtooth')
                 audioController.playNoise(0.25, 0.25)
+            }
+            // #3796 — the fire oil's voices: the flame crackles to life at the
+            // drum, and hiss — the finale drowns it.
+            if (ev.fire) {
+                audioController.playNoise(0.18, 0.2)
+                audioController.playSweep(180, 520, 0.24, 'sawtooth', 0.12)
+            }
+            if (ev.fireOut) audioController.playSweep(420, 120, 0.3, 'sine', 0.10)
+            // #3796 — the heart-break beat of the grab (§Plot): two descending
+            // notes and a snap, once, the instant the carry starts.
+            if (gs.captured && gs.captureTimer === CAPTURE_TICKS - CAPTURE_GRAB_END) {
+                audioController.playTone(880, 0.06, 'square')
+                audioController.playTone(587, 0.09, 'square')
+                audioController.playNoise(0.1, 0.2)
             }
             // #3598 — the finale's voices: arrival sting, the rivet creak and
             // snap, and the crash of the whole tower.
@@ -403,6 +417,19 @@ const DonkeyKongGame = () => {
                 ctx.fillRect(dkX, dkY + 6*s, 4*s, 6*s)
                 ctx.fillRect(dkX + 22*s, dkY + 6*s, 4*s, 6*s)
             }
+            // #3796 — the grab: when the fuse hits zero the ape's arm REACHES
+            // across and the hand closes (captureScene drives it; the old pose
+            // was chest-beat luck).
+            if (gs.captureTimer > 0) {
+                const sc = captureScene(gs.captureTimer)
+                if (sc) {
+                    const reach = Math.round(sc.arm * 30)
+                    ctx.fillStyle = '#c84c0c'
+                    ctx.fillRect(dkX + 22, dkY + 8, reach, 4)
+                    ctx.fillStyle = '#8a3208'
+                    ctx.fillRect(dkX + 22 + reach - 3, dkY + 7, 4, 6)
+                }
+            }
             // Legs
             ctx.fillRect(dkX + 6*s, dkY + 20*s, 6*s, 6*s)
             ctx.fillRect(dkX + 16*s, dkY + 20*s, 6*s, 6*s)
@@ -419,12 +446,15 @@ const DonkeyKongGame = () => {
             const py = gs.collapse > 0
                 ? base + Math.min(landY - base, gs.collapse * gs.collapse * 0.006)
                 : base
-            // #3786 — the capture: the counter hit zero, and the ape's arm
-            // takes her off the girder. She slides down toward his perch while
-            // the grab animates; her call cuts off the instant he has her.
-            const grabT = gs.captured && gs.captureTimer > 0 ? 1 - gs.captureTimer / CAPTURE_TICKS : 0
-            const gx = px + (86 - px) * grabT
-            const gy = py + (64 - py) * grabT
+            // #3786/#3796 — the capture: the counter hit zero and the ape
+            // takes her. The old straight slide cut through the x=100 ladder's
+            // rung column mid-flight; captureScene (#3796) scripts the grab as
+            // reach → drag along the girder (above every rung top) → carry down
+            // at the girders' left end. Her call cuts off the instant the arm
+            // is out.
+            const scene = captureScene(gs.captureTimer)
+            const gx = scene ? scene.px : px
+            const gy = scene ? scene.py : py
             // Dress (pink)
             ctx.fillStyle = '#ff88aa'
             ctx.beginPath()
@@ -439,12 +469,36 @@ const DonkeyKongGame = () => {
             ctx.fillStyle = '#ff88aa'
             ctx.fillRect(gx + 1, gy - 1, 6, 2)
             // HELP text — she stops calling once the tower itself is answering
-            // (#3786: or once the counter has paid and he has her in the grab)
-            if (gs.tickN % 60 < 40 && gs.collapse === 0 && grabT === 0) {
+            // (#3786: or once the counter has paid — the arm being out is the
+            // #3796 "he has her" cue that cuts the call off).
+            if (gs.tickN % 60 < 40 && gs.collapse === 0 && !scene) {
                 ctx.fillStyle = '#ffffff'
                 ctx.font = '5px monospace'
                 ctx.textAlign = 'center'
                 ctx.fillText('HELP!', gx + 4, gy - 4)
+            }
+            // #3796 — the heart (§Plot: it appears as he takes her, and
+            // broke the arcade way: two halves drifting apart).
+            if (scene && scene.heart) {
+                const hx = 72
+                const hy = 18
+                if (scene.heart === 'pop') {
+                    ctx.fillStyle = '#ff2244'
+                    ctx.fillRect(hx, hy, 3, 3)
+                    ctx.fillRect(hx + 4, hy, 3, 3)
+                    ctx.fillRect(hx, hy + 2, 7, 3)
+                    ctx.fillRect(hx + 1, hy + 5, 5, 2)
+                    ctx.fillRect(hx + 2, hy + 7, 3, 1)
+                    ctx.fillStyle = '#ffffff'
+                    ctx.fillRect(hx + 1, hy + 1, 1, 1)
+                } else {
+                    const drift = Math.round(scene.heartU * 9)
+                    ctx.fillStyle = scene.heartU > 0.6 ? '#a01028' : '#ff2244'
+                    ctx.fillRect(hx - drift, hy, 3, 4)
+                    ctx.fillRect(hx - drift + 1, hy + 4, 2, 2)
+                    ctx.fillRect(hx + 4 + drift, hy, 3, 4)
+                    ctx.fillRect(hx + 4 + drift + 1, hy + 4, 2, 2)
+                }
             }
         }
 
@@ -678,6 +732,34 @@ const DonkeyKongGame = () => {
             // Barrels
             gs.barrels.forEach(b => drawBarrel(b))
 
+            // #3796 — fireballs: the flame that left the drum, roaming up.
+            // Orange body, hot core, a blue lick each side that swaps on a
+            // flicker clock — the oil fire's own grammar, distinct from the
+            // drum's decor flame and from the red girders.
+            {
+                const flip = Math.floor(gs.tickN / 6) % 2
+                for (const f of gs.fireballs) {
+                    const fx = Math.round(f.x)
+                    const fy = Math.round(f.y) + (Math.floor(gs.tickN / 8) % 2 ? 0 : -1)
+                    ctx.fillStyle = '#ff4400'
+                    ctx.fillRect(fx, fy + 1, 9, 7)
+                    ctx.fillRect(fx + 1, fy, 7, 9)
+                    ctx.fillStyle = '#ff9900'
+                    ctx.fillRect(fx + 1, fy + 2, 7, 5)
+                    ctx.fillRect(fx + 2, fy + 1, 5, 7)
+                    ctx.fillStyle = flip ? '#ffffcc' : '#ffffff'
+                    ctx.fillRect(fx + 3, fy + 3, 3, 3)
+                    ctx.fillStyle = '#66aaff'
+                    if (flip) {
+                        ctx.fillRect(fx, fy + 2, 1, 3)
+                        ctx.fillRect(fx + 8, fy + 4, 1, 3)
+                    } else {
+                        ctx.fillRect(fx, fy + 4, 1, 3)
+                        ctx.fillRect(fx + 8, fy + 2, 1, 3)
+                    }
+                }
+            }
+
             // Player
             drawJumpman()
 
@@ -789,8 +871,12 @@ const DonkeyKongGame = () => {
                     hammer: gs.hammer, swingSeq: gs.swingSeq,
                     passed: gs.player.passedBarrels.size, // #3754 walk-past witness
                     popups: gs.popups.length, // #3761 bonus-popup witness (FX count)
-                    bonus: gs.bonus, // #3786 — the fuse, for the capture drive
+                    // #3786 — the fuse, for the capture drive
+                    bonus: gs.bonus,
                     cap: gs.captured ? 1 : 0, // #3786 — grab armed witness
+                    fire: gs.fireballs.length, // #3796 — flames on the tower
+                    flames: gs.fireballs.map(f => [Math.round(f.x), Math.round(f.y), f.onLadder ? 1 : 0]), // #3796 patrol readout
+                    lap: gs.lap, // #3796 — escalation witness
                     // #3618 half-rung state for the drive harness
                     hang: gs.player.hanging,
                     brk: gs.player.climbLadder && gs.player.climbLadder.broken
@@ -823,9 +909,25 @@ const DonkeyKongGame = () => {
                 // honest death for the drive (idling on the start corner is not
                 // reliably lethal here — barrels roll away from it).
                 kill: () => { gs.deathTimer = 90; gs.lives = 1 },
+                topLives: () => { gs.lives = 3 }, // #3796 — dev margin for the fire drive
                 // #3786 — burn the fuse to one step from zero so the drive can
                 // watch the capture law fire inside two seconds, no 50-second wait.
                 burnFuse: () => { gs.bonus = 100; gs.bonusTick = 0 },
+                // #3796 — light the drum on the next tick (the spawn keeps its
+                // stand-off law: the drive positions the runner first), and a
+                // deterministic live-kill rig mirroring kongcheck §fire: flame
+                // settles at the runner's feet, next tick is a burn.
+                lightFire: () => { gs.fireTimer = 1; return gs.fireTimer },
+                firekill: () => {
+                    gs.fireballs.push({ x: 100, y: 223, w: 9, h: 9, vx: 0, vy: 0, dir: -1, onLadder: false, falling: false, ladderIdx: -1 })
+                    gs.player.x = 106
+                    gs.player.y = 216
+                    gs.player.vx = 0; gs.player.vy = 0; gs.player.grounded = true
+                    let died = 0
+                    const noInput = { left: false, right: false, up: false, down: false, jump: false }
+                    for (let i = 0; i < 10; i++) died += (tickDonkeyKong(gs, noInput).died || 0)
+                    return { died, deathTimer: gs.deathTimer, fire: gs.fireballs.length }
+                },
                 // #3754 — deterministic live proof of the walk-past 50: same
                 // rig as kongcheck §obstacle-bonus (runner settled on a girder,
                 // one barrel rolling past on the floor below), driven against
