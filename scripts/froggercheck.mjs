@@ -427,8 +427,13 @@ if (process.argv.includes('--mutate')) {
             `            if (!res) return { kind: 'home', row, fly: false, bonus: 0 }`,
             'src/games/Frogger/sim.js'],
     ]
+    // --mutant-only <substr>: re-verify a slice (by name) without re-running
+    // the whole ~50-minute board — same plants, same children, same verdicts.
+    const only = process.argv.find((_, i, a) => a[i - 1] === '--mutant-only')
+    const RUN = only ? MUTANTS.filter(([n]) => n.includes(only)) : MUTANTS
+    if (only && RUN.length === 0) { console.log(`no mutants match --mutant-only "${only}"`); process.exit(1) }
     let died = 0
-    for (const [name, from, to, file = F] of MUTANTS) {
+    for (const [name, from, to, file = F] of RUN) {
         const orig = readFileSync(file, 'utf8')
         if (!orig.includes(from)) { ok(false, `mutant anchor: ${name}`, `missing: ${from}`); continue }
         plant(file, orig.replace(from, to))
@@ -437,7 +442,7 @@ if (process.argv.includes('--mutate')) {
         else { ok(false, `mutant dies: ${name}`, 'child passed despite the bug') }
         pull(file)
     }
-    ok(died === MUTANTS.length, `all ${MUTANTS.length} mutants die`, `${died}/${MUTANTS.length}`)
+    ok(died === RUN.length, `all ${RUN.length} mutants die`, `${died}/${RUN.length}`)
 }
 
 console.log(`\n${passes} passed, ${fails} failed`)
