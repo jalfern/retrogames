@@ -184,7 +184,7 @@ npm run attractcheck              # attract screen rule 6
   honest prose that declines: our hot-seat runs the default raid curve — one
   wave per seat, arrivals gated by wave as in solo. (#3695 §why-weakest has
   the full disposition.)
-- **CLOSED by #PENDING** The arcade's per-base three buttons are exposed to the
+- **CLOSED by #3699** The arcade's per-base three buttons are exposed to the
   player — keys 1/2/3 name LEFT/CENTER/RIGHT and the phone pad wears FAST
   (`KeyB` → center battery), all firing at the crosshair from any sector; see
   Engine notes #3695. Human clicks keep the nearest-battery law; per-battery
