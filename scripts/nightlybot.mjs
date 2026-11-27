@@ -406,7 +406,11 @@ function selftest() {
     ok(nextGreenStreak({ greenStreak: 2 }, true) === 3, 'green nights accumulate')
     ok(nextGreenStreak({ greenStreak: 2 }, false) === 0, 'one red night resets the soak')
     const ccSrc = readFileSync(path.join(ROOT, 'scripts/lib/contractGames.mjs'), 'utf8')
-    const ccIds = [...ccSrc.matchAll(/\{ id: '([^']+)', path: '([^']+)' \}/g)].map(m => `${m[1]}@${m[2]}`)
+    // `[^}]*` — contract entries carry optional spec keys (syncPixel, #3586);
+    // the old `\{ id…path \}` closed the brace immediately and went blind to
+    // any entry with an extra property: asteroids vanished → false roster drift
+    // (nightly 46034576636, red main 2026-11-27).
+    const ccIds = [...ccSrc.matchAll(/\{ id: '([^']+)', path: '([^']+)'[^}]*\}/g)].map(m => `${m[1]}@${m[2]}`)
     const mine = GAMES.map(g => `${g.id}@${g.path}`)
     // SET equality, not order: append order legitimately differs when separate PRs
     // grow the two lists (fixing one drift, #1350, only set up the second by 2026-10-31).
