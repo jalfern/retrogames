@@ -833,6 +833,41 @@ console.log('2P alternating (#3630 slice 2): flip, ledgers, shared board')
     ok(worstCities === 6, 'the CPU seat holds the shared board: 8 seeds, zero cities lost on P2\'s wave', `${worstCities}/6`)
 }
 
+// ---------------------------- #3760 p2 batteries (three-button law, seat 2) ----
+// Seat 2 got its own Z/X/C named buttons (README engine note). The sim stays
+// seat-agnostic — the named door (fireBattery, #3695) answers identically on
+// either seat's wave, magazines are shared-board state, and kills still pay the
+// seat in play. The NEW law lives in the shell's duty guard, so what this
+// section grades is the physics the shell is allowed to reach; the guard and
+// the keys are graded in the wiring pins and proven by mcp2battdrive.
+console.log('p2 batteries (#3760): named-battery law rides seat 2\'s wave unchanged')
+{
+    const g = makeRun(7601, { twoPlayer: true })
+    g.missilesLeftInWave = 0; g.spawning = false
+    g.warheads.length = 0; g.blasts.length = 0; g.abms.length = 0
+    g.saucers.length = 0; g.saucersLeftInWave = 0; g.smartLeftInWave = 0
+    tickMc(g, null)
+    let guard = 0
+    while (g.state === 'waveEnd' && guard++ < WAVE_BREAK_TICKS + 5) tickMc(g, null)
+    ok(g.turn === 2 && g.state === 'playing', 'seat 2 takes the board through a real hand-off', `${g.turn}/${g.state}`)
+    fireBattery(g, 2, 500, 200); fireBattery(g, 0, 500, 200)
+    ok(g.abms.length === 2 && Math.round(g.abms[0].startX) === 760 && Math.round(g.abms[1].startX) === 40
+        && g.silos[2].ammo === 9 && g.silos[0].ammo === 9 && g.silos[1].ammo === 10,
+        'named batteries launch from their own silos and spend only their own magazines on P2\'s wave',
+        `${g.abms.map((a) => Math.round(a.startX)).join(',')} ammo ${g.silos.map((s) => s.ammo).join('/')}`)
+    // a battery-named kill pays the live seat — addScore is seat law, not door law
+    g.abms.length = 0
+    g.warheads = [{ id: 1, x: 400, y: 300, startX: 400, startY: 0, targetX: 400, targetY: 550, speed: 1.7, color: '#f00', coverUntil: 0 }]
+    g.blasts = [{ x: 400, y: 300, radius: 10, growing: true, center: false, color: '#fff' }]
+    guard = 0
+    while (g.warheads.length && guard++ < 60) tickMc(g, null)
+    ok(g.score === 2100 && g.score2 === 25,
+        'a named-battery kill on seat 2\'s wave lands in score2', `${g.score}/${g.score2}`)
+    const g2 = makeRun(7602, { twoPlayer: true })
+    tickMc(g2, null)
+    ok(g2.abms.length === 0, 'no phantom shots from the latch\'s side — the sim fires only what the shell forwards')
+}
+
 // -------------------------------------- #3711 deep-wave doctrine (knots + silo-first) ----
 // Measured magazine law: from wave ~9 the raid fields more warheads than the
 // 30 shells the batteries refill with. The gunner gained two gated habits:
@@ -1030,8 +1065,8 @@ console.log('component wiring: pin, report, restart, seat')
         'the probe exposes launch origins — the drive script watches the button law')
     ok(/export function fireBattery\(gs, idx, x, y\)/.test(readFileSync('src/games/MissileCommand/sim.js', 'utf8')),
         'sim exports fireBattery — the named-battery door (three-button law)')
-    ok(/gs\.twoP && P2_CODES\.includes\(e\.code\)/.test(src),
-        'seat 2 has its own keyboard lane (WASD aim + F fire)')
+    ok(/gs\.twoP && \(P2_CODES\.includes\(e\.code\)( \|\| e\.code in P2_BATT)?\)/.test(src),
+        'seat 2 has its own keyboard lane (WASD aim + F fire, + Z/X/C named batteries #3760)')
     ok(/gs\.p2cpu = false/.test(src), 'a P2 key joins a human into the CPU seat mid-run')
     ok(/if \(gs\.twoP && gs\.turn === 2\) return/.test(src),
         'the mouse never spends the off-duty seat\'s ammo')
@@ -1047,6 +1082,22 @@ console.log('component wiring: pin, report, restart, seat')
     ok(/gs\.reviveFx\.find\(\(f\) => f\.x === c\.x\)/.test(src), '#3753: the rise-in tell renders on the living city')
     ok(/PLAYER \$\{w\} WINS/.test(src) && /A DRAW/.test(src),
         'THE END names the hot-seat winner over both books')
+    // #3760 — seat 2's three-button triangle at the shell: keys, join, latch, teach
+    ok(/const P2_BATT = \{ KeyZ: 0, KeyX: 1, KeyC: 2 \}/.test(src),
+        '#3760: seat 2\'s three-button table wired — Z/X/C name LEFT/CENTER/RIGHT')
+    ok(/gs\.twoP && \(P2_CODES\.includes\(e\.code\) \|\| e\.code in P2_BATT\)/.test(src),
+        '#3760: the battery keys join seat 2\'s lane — a named press claims the seat like WASD/F')
+    ok(/if \(gs\.turn === 2 && !gs\.p2cpu && !gs\.over && !attractUiRef\.current\) \{/.test(src) &&
+        /else if \(e\.code in P2_BATT\) p2Batt = P2_BATT\[e\.code\]/.test(src),
+        '#3760: the latch arms only on the seat\'s own wave against a human seat — off-duty presses join but never latch')
+    ok(/if \(p2Batt !== null\) fireBattery\(gs, p2Batt, gs\.crosshair\.x, gs\.crosshair\.y\)/.test(src),
+        '#3760: the named shot rides fireBattery — dud gates and the per-battery speed law apply for free')
+    ok(/p2Fire = false\n\s*p2Batt = null/.test(src),
+        '#3760: edge latch — swallowed off-duty, never queued for the next wave')
+    ok(/gs\.twoP && gs\.turn === 2 && !gs\.p2cpu \? 'ZXC'\[i\] : String\(i \+ 1\)/.test(src),
+        '#3760: batteries wear the seat on duty — Z/X/C while a human holds seat 2')
+    ok(/Z X C — fire LEFT \/ CENTER \/ RIGHT/.test(src),
+        '#3760: the join moment teaches seat 2 its buttons')
     const simSrc = readFileSync('src/games/MissileCommand/sim.js', 'utf8')
     ok(/if \(gs\.twoP\) \{\s*gs\.turn = gs\.turn === 1 \? 2 : 1/.test(simSrc),
         'the flip lives in nextWave and is gated by the mode')
@@ -1057,6 +1108,8 @@ console.log('component wiring: pin, report, restart, seat')
     ok(!!mc && /WATCH_HELP/.test(mc[0]), 'the registry carries the WATCH line for /missilecommand')
     ok(!!mc && /never lets the fire touch the ground/.test(mc[0]),
         'the registry line names the doctrine the sweep proves')
+    ok(!!mc && /Z\/X\/C name the LEFT\/CENTER\/RIGHT batteries on P2 waves/.test(mc[0]),
+        '#3760: the registry teaches seat 2\'s triangle next to the join keys')
 }
 
 // #3753 — the arcade's bonus city: every 10,000 points a destroyed city is
@@ -1316,6 +1369,26 @@ if (process.argv.includes('--mutant')) {
         ['#3753: the rise-in tell never draws (the windfall is invisible)', S,
             `gs.reviveFx.push({ x: c.x, t: REVIVE_FX_TICKS })`,
             `/* mutant: no tell */`],
+        // #3760 — seat 2's three-button triangle
+        ['#3760: seat 2\'s named battery is deaf (the latch never fires)', I,
+            `if (p2Batt !== null) fireBattery(gs, p2Batt, gs.crosshair.x, gs.crosshair.y)`,
+            `if (false) fireBattery(gs, p2Batt, gs.crosshair.x, gs.crosshair.y)`],
+        ['#3760: the named shot keeps firing (edge latch gone — one press drains the magazine)', I,
+            `p2Fire = false
+                p2Batt = null`,
+            `p2Fire = false`],
+        ['#3760: Z/X/C never join (the triangle sits inert beside a locked CPU seat)', I,
+            `gs.twoP && (P2_CODES.includes(e.code) || e.code in P2_BATT)`,
+            `gs.twoP && P2_CODES.includes(e.code)`],
+        ['#3760: X names the left battery (the button table lies about center)', I,
+            `const P2_BATT = { KeyZ: 0, KeyX: 1, KeyC: 2 }`,
+            `const P2_BATT = { KeyZ: 0, KeyX: 0, KeyC: 2 }`],
+        ['#3760: the board stays seat-blind (HUD keeps 1/2/3 under a human P2)', I,
+            `gs.twoP && gs.turn === 2 && !gs.p2cpu ? 'ZXC'[i] : String(i + 1)`,
+            `String(i + 1)`],
+        ['#3760: the named shot arms on P1\'s wave (duty guard gone)', I,
+            `if (gs.turn === 2 && !gs.p2cpu && !gs.over && !attractUiRef.current) {`,
+            `if (!gs.over && !attractUiRef.current) {`],
     ]
     let died = 0
     for (const [name, file, from, to] of MUTANTS) {

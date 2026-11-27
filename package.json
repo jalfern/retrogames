@@ -226,6 +226,7 @@
     "mcsmartdrive": "node scripts/mcsmartdrive.mjs",
     "mc2pdrive": "node scripts/mc2pdrive.mjs",
     "mcbonusdrive": "node scripts/mcbonusdrive.mjs",
+    "mcp2battdrive": "node scripts/mcp2battdrive.mjs",
     "defendercheck": "node scripts/defendercheck.mjs",
     "defenderplay": "node scripts/defenderplay.mjs",
     "watchmeasure": "node scripts/watchmeasure.mjs",
