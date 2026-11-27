@@ -235,7 +235,7 @@ missing key would silently paint `undefined`), real visual difference, the
 cycle-wrap law, the `?style` parse, and a bit-identical replay.
 
 - CABINET ONE: **MIDNIGHT** (house) · **TIDAL RUN** (teal field, coral lanes, mint neon) · **NOIR** (#3237: black glass, magenta lanes, violet neon)
-- EMBER RIDER: **EMBER** (house) · **TOXIC** (moss field, lime lanes, magenta neon) · **GLACIER** (#3237: ice field, silver lanes, cyan neon)
+- EMBER RIDER: **EMBER** (house) · **TOXIC** (moss field, lime lanes, magenta neon) · **GLACIER** (#3237: ice field, silver lanes, cyan neon) · **INFERNO** (#3794: charred black glass, incandescent white lanes, lava-orange neon — hotter than the house; the teal magnet accent stays)
 - Attract row: **B / Shift / ▲▼** cycles the selected cabinet's kit live — except on the
   **saved custom** (the card once saved in the current slot), where **B / Shift** opens the bench instead (a
   redesign beats a dress) and **▲▼** alone still dresses. The marquee shows `TAG · KIT`
@@ -280,6 +280,10 @@ an offscreen canvas once per frame.
 memory), the kit cycle has its own `dressflip` sound, the results screen
 wears a `◆ KIT <LABEL>` line, and each cabinet ships a third dress —
 **NOIR** (CABINET ONE) and **GLACIER** (EMBER RIDER), palette-only.
+#3794 added the hotter fourth on EMBER RIDER: **INFERNO** (charred field,
+incandescent lanes, lava neon; check §#3794 pins registry order, distinctness,
+the hotter law by luminance/hue, the teal cool-accent law and every resolution
+path — row index, `?style`, kit memory — plus a bit-identical physics replay).
 
 ## TABLE SMITH — the table editor (#3284)
 
