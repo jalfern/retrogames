@@ -14,7 +14,7 @@
 
 import { readFileSync } from 'node:fs'
 import { spawnSync } from 'node:child_process'
-import { START_LIVES, WIN_SCORE, BARREL_SPEED, HAMMER_SWINGS, RIVET_SCORE, PULL_TICKS, COLLAPSE_TICKS, RIVET_X, DK_PLAT, TOP_PLAT, DK_FALL_STOP, BREAK_FRACS, makeRun, tickDonkeyKong, watchStep, stateHash, rnd, getPlatformY, buildLevel, platformIndex } from '../src/games/DonkeyKong/sim.js'
+import { START_LIVES, WIN_SCORE, BARREL_SPEED, HAMMER_SWINGS, RIVET_SCORE, PULL_TICKS, COLLAPSE_TICKS, RIVET_X, DK_PLAT, TOP_PLAT, DK_FALL_STOP, BREAK_FRACS, BARREL_CLICK_EVERY, BARREL_CLICK_RANGE, barrelBoardVoice, barrelDangleVoice, barrelRollClick, makeRun, tickDonkeyKong, watchStep, stateHash, rnd, getPlatformY, buildLevel, platformIndex } from '../src/games/DonkeyKong/sim.js'
 import { seedRng, seedFromQuery } from '../src/utils/gameContract.js'
 import { parseGaps } from './lib/idle.mjs'
 import { plant, pull } from './lib/mutateguard.mjs'
@@ -651,6 +651,83 @@ console.log('corner pair #3622: mid-air takes at the fall-gap corner')
     ok(runnerR2 === 0, 'the runner never climbs the barrel-only outside ladder', `${runnerR2}`)
 }
 
+// #3641 — barrel-voice grammar. The law is pure (pitch/spacing/volume), the
+// stamps ride real physics on the SAME seeds as §corner pair, and the mirror
+// asserts each stamp lands on the tick of its transition: boards on span
+// entries (the bright 740 tick exactly when the barrel was airborne), dangle
+// clatters on dangling-foot exits. Corner parity: the same 3 dangling exits
+// and 2 mid-air catches onto R2 that §corner pair floors pin. Nothing in the
+// grammar touches gs, so every seeded floor stays byte-identical.
+console.log('barrel voices #3641: board tick, descent clicks, dangling clatter')
+{
+    ok(barrelBoardVoice(true).freq > barrelBoardVoice(false).freq,
+        'the mid-air take rings brighter than a rolled-on board',
+        `air=${barrelBoardVoice(true).freq} roll=${barrelBoardVoice(false).freq}`)
+    ok(barrelDangleVoice().vol < barrelBoardVoice(false).vol,
+        'the dangling-foot clatter is lighter than the board tick',
+        `dangle=${barrelDangleVoice().vol} board=${barrelBoardVoice(false).vol}`)
+    ok(barrelRollClick({ tickN: 1 }, { onLadder: true, ladderBot: 100, y: 50 }) === null,
+        `descent clicks ride the ${BARREL_CLICK_EVERY}-tick phase grid`)
+    ok(barrelRollClick({ tickN: BARREL_CLICK_EVERY }, { onLadder: false }) === null,
+        'no clicks while off a ladder')
+    const far = barrelRollClick({ tickN: BARREL_CLICK_EVERY }, { onLadder: true, ladderBot: 400, y: 40 })
+    const near = barrelRollClick({ tickN: BARREL_CLICK_EVERY }, { onLadder: true, ladderBot: 100, y: 100 })
+    ok(!!far && !!near && far.freq === 220 && near.freq === 220 + BARREL_CLICK_RANGE * 2,
+        'the click sits at 220 far up the span and climbs to 340 at the foot',
+        `far=${far && far.freq} near=${near && near.freq}`)
+
+    const r2 = buildLevel().ladders.find(l => l.barrelOnly)
+    let board = 0, boardMid = 0, boardFoot = 0, dangle = 0, clicks = 0, stray = 0, midR2 = 0
+    const ids = new WeakMap()
+    let nextId = 1
+    for (const seed of [7919, 15838, 31676]) {
+        const gs = makeRun(seed) // same seeds as §corner pair
+        const snap = new Map()
+        for (let t = 0; t < 60 * 360; t++) {
+            for (const b of gs.barrels) {
+                if (!ids.has(b)) ids.set(b, nextId++)
+                snap.set(ids.get(b), { onL: b.onLadder, f: b.falling })
+            }
+            const ev = tickDonkeyKong(gs, {})
+            let entered = 0, enteredCold = 0, leftAir = 0
+            for (const b of gs.barrels) {
+                const p = snap.get(ids.get(b))
+                if (!p) continue
+                if (!p.onL && b.onLadder) {
+                    entered++
+                    if (!p.f) enteredCold++ // rolled on from the girder, not caught mid-air
+                    if (p.f && b.ladderBot === r2.yBot && Math.abs(r2.x - (b.x + b.w / 2)) < 0.01) midR2++
+                }
+                if (p.onL && !b.onLadder && b.falling) leftAir++
+            }
+            const ticks = { board: 0, mid: 0, foot: 0, dangle: 0, roll: 0 }
+            for (const v of ev.barrelVoices || []) {
+                if (v.kind === 'board') { board++; if (v.freq === 740) boardMid++; else boardFoot++; ticks.board++; if (v.freq === 740) ticks.mid++; else ticks.foot++ }
+                else if (v.kind === 'dangle') { dangle++; ticks.dangle++ }
+                else if (v.kind === 'roll') clicks++
+                else stray++ // unknown kind — the law grew without a voice
+            }
+            // stamps mirror transitions per tick: every board lands on the tick
+            // the barrel enters a span; every dangle lands on the tick a ride
+            // lets go into the gap. The bright 740 tick never exceeds the
+            // tick's airborne entries (a barrel caught mid-air, not rolled on).
+            if (ticks.board !== entered || ticks.dangle !== leftAir || ticks.mid > entered - enteredCold) stray++
+        }
+    }
+    ok(dangle === 3 && midR2 === 2,
+        'stamps match the corner-pair floors: 3 dangling exits, 2 barrels caught mid-air onto R2',
+        `dangle=${dangle} midR2=${midR2}`)
+    ok(board === boardMid + boardFoot,
+        'every board voice is either a mid-air catch or a rolled-on tick',
+        `board=${board} mid=${boardMid} foot=${boardFoot}`)
+    ok(stray === 0,
+        'every stamp rides its transition; boards split bright-mid-air / plain-foot; no stray voices',
+        `stray=${stray} mid=${boardMid} foot=${boardFoot}`)
+    ok(clicks >= 20 && board > 1000,
+        'the grammar is live in real play: a click trail on the rides, boards on every span-hitting pass',
+        `clicks=${clicks} board=${board}`)
+}
+
 // ---------------------------------------------------------- shell wiring pin ----
 console.log('shell wiring: seed, terminal, seat chrome')
 {
@@ -677,6 +754,8 @@ console.log('shell wiring: seed, terminal, seat chrome')
     ok(/if \(ev\.barrel\) audioController\.play/.test(IDX), 'the barrel throw has a voice')
     ok(/if \(ev\.climbed\) audioController\.play/.test(IDX), 'the ladder mount has a voice')
     ok(/if \(ev\.hang\) audioController\.play/.test(IDX), 'the half-rung hang (#3618) has a voice')
+    ok(/for \(const v of ev\.barrelVoices \|\| \[\]\)/.test(IDX) && /v\.to\) audioController\.playSweep/.test(IDX) && /else audioController\.playTone\(v\.freq/.test(IDX),
+        '#3641 the shell plays every stamped barrel voice (tone, plus sweep+noise for the dangle)')
     ok([/ev\.hammerUp/, /ev\.swing/, /ev\.hammered/, /ev\.hammerDown/].every(re => new RegExp(re.source + '\\)\\s*audioController\\.play').test(IDX)),
         'all four mallet events are sounded')
     ok(/HAMMERS SMASH BARRELS/.test(readFileSync('src/games/DonkeyKong/attract.js', 'utf8')) && /gs\.hammer > 0/.test(IDX),
@@ -776,6 +855,15 @@ if (process.argv.includes('--mutant')) {
         ['#3618 the break lines move to the ladder tops (bait becomes whole)', S,
             `        const breakY = broken ? yTop + (yBot - yTop) * BREAK_FRACS[bk] : yTop`,
             `        const breakY = yTop`],
+        ['#3641 mid-air takes go silent (board stamp only on rolled-on boards)', S,
+            `                    ev.barrelVoices.push(barrelBoardVoice(true)) // #3641 the mid-air take rings brighter\n`,
+            ``],
+        ['#3641 the dangling-foot clatter dies', S,
+            `                ev.barrelVoices.push(barrelDangleVoice())\n`,
+            ``],
+        ['#3641 descent clicks never fire (phase grid broken)', S,
+            `    if (!b.onLadder || gs.tickN % BARREL_CLICK_EVERY !== 0) return null`,
+            `    if (!b.onLadder || gs.tickN % BARREL_CLICK_EVERY !== 0 || true) return null`],
         ['the barrel die leaves the stream (spacing unseeded)', S,
             `gs.barrelTimer = 150 + Math.floor(rnd(gs) * 100)`,
             `gs.barrelTimer = 150 + Math.floor(Math.random() * 100)`],
