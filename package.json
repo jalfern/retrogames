@@ -212,6 +212,7 @@
     "kongdrive": "node scripts/kongdrive.mjs",
     "centipedechek": "node scripts/centipedechek.mjs",
     "centipedadrive": "node scripts/centipedadrive.mjs",
+    "mcsaucerdrive": "node scripts/mcsaucerdrive.mjs",
     "defendercheck": "node scripts/defendercheck.mjs",
     "defenderplay": "node scripts/defenderplay.mjs",
     "watchmeasure": "node scripts/watchmeasure.mjs",
