@@ -9,9 +9,11 @@
   surfaces now and then with a gentle wake; a frog sits on the stone rim and
   occasionally hops. Garden: maple tree, bridge edge, stone rim, paper grain
   and double-rule ink frame.
-  How it works: fixed 1200x1400 design space, letterboxed and scaled to the
-  window; DPR-aware canvas; Web Audio soft splash; DEV hook window.__koiTest
-  with `ready`, `frames`, `tapAt`, `koi()`.
+  How it works: 1200px-wide design space. Landscape (wider than the design
+  aspect) is letterboxed and scaled to the window; portrait fills the width
+  and adapts the design height so the pond and garden stretch to the frame,
+  never leaving a blank band. DPR-aware canvas; Web Audio soft splash; DEV
+  hook window.__koiTest with `ready`, `frames`, `tapAt`, `koi()`.
 -->
 <html lang="en">
 <head>
@@ -22,7 +24,6 @@
   * { box-sizing: border-box; margin: 0; padding: 0; }
   html, body { margin:0; padding:0; height:100%; overflow:hidden; background:#efe6d3; }
   #stage { position:fixed; inset:0; width:100%; height:100%; display:block; touch-action:none; cursor:pointer; }
-  :root { --credits-bottom: 46px; }
   #hud {
     position:fixed; left:max(12px, env(safe-area-inset-left)); bottom:max(12px, env(safe-area-inset-bottom));
     z-index:5; max-width:66vw; font:10px/1.7 Georgia, serif; letter-spacing:.14em; text-transform:uppercase;
@@ -49,21 +50,33 @@ const hintEl = document.getElementById('hud');
 
 // ---------- sizing / coordinate model ----------
 let VW = 0, VH = 0, DPR = 1, S = 1, OX = 0, OY = 0;
+const DESIGN_H0 = 1400; // reference design height (landscape); portrait adapts
+let H = DESIGN_H0, K = 1;
 function resize() {
   DPR = Math.min(window.devicePixelRatio || 1, 2);
   VW = window.innerWidth; VH = window.innerHeight;
   canvas.width = Math.round(VW * DPR); canvas.height = Math.round(VH * DPR);
   canvas.style.width = VW + 'px'; canvas.style.height = VH + 'px';
-  S = Math.min(VW / 1200, VH / 1400);
-  OX = (VW - 1200 * S) / 2; OY = (VH - 1400 * S) / 2;
+  if (VW / VH < 1200 / DESIGN_H0) {
+    // portrait / skinny: design fills the width; height adapts. Nothing
+    // letterboxed, nothing blank — the garden and pond stretch to the frame.
+    S = VW / 1200;
+    H = VH / S;
+    OX = 0; OY = 0;
+  } else {
+    H = DESIGN_H0;
+    S = Math.min(VW / 1200, VH / DESIGN_H0);
+    OX = (VW - 1200 * S) / 2; OY = (VH - DESIGN_H0 * S) / 2;
+  }
+  K = H / DESIGN_H0;
   computeLayout();
 }
 window.addEventListener('resize', resize);
 
-// ---------- layout (design units, origin top-left of screen, 1200x1400 design) ----------
+// ---------- layout (design units, origin top-left of screen, 1200xH design) ----------
 const L = {};
 function computeLayout() {
-  const w = 1200, h = 1400;
+  const w = 1200, h = H;
   const horizon = h * 0.28;           // bridge band bottom edge
   L.w = w; L.h = h;
   L.horizon = horizon;
@@ -312,41 +325,41 @@ function drawGround() {
   // washi wash banding
   for (let i = 0; i < 5; i++) {
     ctx.fillStyle = `rgba(214,198,166,${0.20 - i * 0.03})`;
-    ctx.fillRect(0, 40 + i * 260, L.w, 60);
+    ctx.fillRect(0, (40 + i * 260) * K, L.w, 60 * K);
   }
   // soft shade under the maple tree + moss mound at its base
   ctx.fillStyle = 'rgba(40,50,30,0.14)';
-  ctx.beginPath(); ctx.ellipse(150, 372, 118, 30, 0, 0, Math.PI * 2); ctx.fill();
-  drawMossPatch(150, 368, 100, 22, 0.95);
-  drawMossPatch(72, 380, 52, 14, 0.7);
-  drawMossPatch(248, 384, 46, 13, 0.65);
+  ctx.beginPath(); ctx.ellipse(150, 372 * K, 118, 30 * K, 0, 0, Math.PI * 2); ctx.fill();
+  drawMossPatch(150, 368 * K, 100, 22 * K, 0.95);
+  drawMossPatch(72, 380 * K, 52, 14 * K, 0.7);
+  drawMossPatch(248, 384 * K, 46, 13 * K, 0.65);
   // ---- moss under the bridge legs + gravel under bridge ----
-  const bx = 740, by = 120;
-  drawMossPatch(bx + 10, by + 100, 36, 19, 0.95);
-  drawMossPatch(bx + 302, by + 100, 36, 19, 0.95);
+  const bx = 740, by = 120 * K;
+  drawMossPatch(bx + 10, by + 100 * K, 36, 19 * K, 0.95);
+  drawMossPatch(bx + 302, by + 100 * K, 36, 19 * K, 0.95);
   // dirt mound under the bridge link-post
   ctx.fillStyle = 'rgba(84,62,44,0.42)';
-  ctx.beginPath(); ctx.ellipse(bx + 344, by + 108, 50, 22, 0, 0, Math.PI * 2); ctx.fill();
+  ctx.beginPath(); ctx.ellipse(bx + 344, by + 108 * K, 50, 22 * K, 0, 0, Math.PI * 2); ctx.fill();
   // gravel strip under bridge deck
   ctx.fillStyle = 'rgba(168,158,140,0.55)';
-  ctx.fillRect(bx - 20, by + 100, 400, 58);
-  drawGravel(bx - 20, by + 100, 400, 58, 46, 4242);
+  ctx.fillRect(bx - 20, by + 100 * K, 400, 58 * K);
+  drawGravel(bx - 20, by + 100 * K, 400, 58 * K, 46, 4242);
   // ---- moss along the pond rim (bottom-right and bottom-left) ----
-  drawMossPatch(420, 1212, 70, 20, 0.55);
-  drawMossPatch(870, 1168, 90, 24, 0.6);
-  drawMossPatch(180, 1055, 62, 18, 0.5);
+  drawMossPatch(420, 1212 * K, 70, 20 * K, 0.55);
+  drawMossPatch(870, 1168 * K, 90, 24 * K, 0.6);
+  drawMossPatch(180, 1055 * K, 62, 18 * K, 0.5);
   // ---- stepping stone path (left sliver, from frame edge toward the pond) ----
-  const path = [ { x: 58, y: 600, r: 26 }, { x: 84, y: 730, r: 30 }, { x: 56, y: 872, r: 27 }, { x: 92, y: 1016, r: 30 } ];
+  const path = [ { x: 58, y: 600 * K, r: 26 }, { x: 84, y: 730 * K, r: 30 }, { x: 56, y: 872 * K, r: 27 }, { x: 92, y: 1016 * K, r: 30 } ];
   for (const s of path) drawSteppingStone(s.x, s.y, s.r);
-  drawMossPatch(58, 664, 30, 10, 0.7);
-  drawMossPatch(88, 800, 34, 10, 0.7);
-  drawMossPatch(56, 946, 30, 10, 0.7);
+  drawMossPatch(58, 664 * K, 30, 10 * K, 0.7);
+  drawMossPatch(88, 800 * K, 34, 10 * K, 0.7);
+  drawMossPatch(56, 946 * K, 30, 10 * K, 0.7);
   // ---- gravel field bottom-right corner ----
-  drawGravel(760, 1290, 420, 52, 30, 9777);
+  drawGravel(760, 1290 * K, 420, 52 * K, 30, 9777);
   // ---- fallen maple leaves near the tree ----
   ctx.save();
   for (let i = 0; i < 8; i++) {
-    const lf = { x: 78 + (i * 79) % 210, y: 350 + ((i * 47) % 28), c: i % 2 ? '#c2532c' : '#d98b3a' };
+    const lf = { x: 78 + (i * 79) % 210, y: (350 + ((i * 47) % 28)) * K, c: i % 2 ? '#c2532c' : '#d98b3a' };
     ctx.fillStyle = lf.c;
     ctx.beginPath(); ctx.ellipse(lf.x, lf.y, 12, 6.5, (i * 0.7) % 3, 0, Math.PI * 2); ctx.fill();
     ctx.strokeStyle = 'rgba(150,60,25,0.5)'; ctx.lineWidth = 1.1; ctx.stroke();
@@ -413,8 +426,8 @@ function draw() {
   ctx.fillStyle = '#e9dfca'; ctx.fillRect(0, 0, canvas.width, canvas.height);
   ctx.setTransform(DPR * S, 0, 0, DPR * S, DPR * OX, DPR * OY);
   drawGround();
-  drawMaple(150, 128, 1.0);
-  drawBridgeEdge(740, 120);
+  drawMaple(150, 378 * K - 250, 1.0);
+  drawBridgeEdge(740, 120 * K);
   // shadow of maple + fallen leaves over rim
   drawPondBase();
   drawShadows();
