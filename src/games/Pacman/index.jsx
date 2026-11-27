@@ -4,7 +4,7 @@ import PauseOverlay from '../../components/PauseOverlay'
 import VirtualControls from '../../components/VirtualControls'
 import { GAMES } from '../../config/games'
 import { press, release, currentPad } from '../../utils/onePad'
-import { MAP, COLS, ROWS, CELL_SIZE, makePacman, stepPlayer, validMoves, bfsDir, safeMove, stepGhost, scaredSkin, makeFruitTracker, stepFruit, FRUIT_BLINK, fruitForRound, speedStage, energizerTicks, mazeCleared, briefForRound, CLEAR_FREEZE, BRIEF_TICKS, intermissionFrame, fruitEatTones } from './move'
+import { MAP, COLS, ROWS, CELL_SIZE, makePacman, stepPlayer, validMoves, bfsDir, safeMove, stepGhost, scaredSkin, makeFruitTracker, stepFruit, FRUIT_BLINK, fruitForRound, speedStage, energizerTicks, mazeCleared, briefForRound, CLEAR_FREEZE, BRIEF_TICKS, intermissionFrame, fruitEatTones, makeTunnelRumble, stepTunnelRumble } from './move'
 import { attractFrame, DIM } from './attract.js'
 import { exposeFeedbackState, unexposeFeedbackState, seedFromQuery, seedRng } from '../../utils/gameContract'
 import { mountDbg, unmountDbg } from '../../utils/DebugKit'
@@ -41,6 +41,8 @@ const PacmanGame = () => {
         const pacman = makePacman()
         const gs = { map, pacman, score: 0 }
         const fruitTr = makeFruitTracker() // bonus fruit (#1517)
+        // #3677 item 1: tunnel-crawl rumble tracker (pure law in ./move)
+        const rumbleTr = makeTunnelRumble()
 
         let ghosts = [
             { id: 1, x: 13, y: 11, color: '#ff0000', path: [], progress: 0, speed: 0.08, state: 'chase', type: 'blinky', penTimer: 0 },
@@ -248,6 +250,15 @@ const PacmanGame = () => {
                     }
                 })
             })
+
+            // #3677 item 1: tunnel-crawl audio — a low two-layer rumble pulses
+            // while any ghost crawls the tunnel mouths (half speed is law in
+            // ./move; this only makes it audible on a phone). Component-side
+            // dressing: the sim, dice and round-1 identity are untouched.
+            if (stepTunnelRumble(rumbleTr, ghosts)) {
+                audioController.playFilteredNoise(0.5, 0.07, 320)
+                audioController.playFilteredNoise(0.34, 0.045, 220, 0.18)
+            }
 
             // #3667 item 3: stage-lift tell — when the score ladder climbs,
             // one rising sweep plus a HUD pulse (the speed change itself is
