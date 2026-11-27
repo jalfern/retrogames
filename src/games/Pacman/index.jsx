@@ -4,7 +4,7 @@ import PauseOverlay from '../../components/PauseOverlay'
 import VirtualControls from '../../components/VirtualControls'
 import { GAMES } from '../../config/games'
 import { press, release, currentPad } from '../../utils/onePad'
-import { MAP, COLS, ROWS, CELL_SIZE, makePacman, stepPlayer, validMoves, bfsDir, safeMove, stepGhost, scaredSkin, makeFruitTracker, stepFruit, FRUIT_BLINK } from './move'
+import { MAP, COLS, ROWS, CELL_SIZE, makePacman, stepPlayer, validMoves, bfsDir, safeMove, stepGhost, scaredSkin, makeFruitTracker, stepFruit, FRUIT_BLINK, fruitForRound, speedStage, energizerTicks } from './move'
 import { attractFrame, DIM } from './attract.js'
 import { exposeFeedbackState, unexposeFeedbackState, seedFromQuery, seedRng } from '../../utils/gameContract'
 import { mountDbg, unmountDbg } from '../../utils/DebugKit'
@@ -51,6 +51,10 @@ const PacmanGame = () => {
 
         let gameOver = false
         let lives = 3
+        // #3661: round number drives the fruit kind and the energizer decay
+        // (the speed ladder rides the score). Human start resets to 1; a
+        // cleared maze advances it.
+        let round = 1
 
         // ---------- world + seed (#1473 seed-param, batch 15) ----------
         // Every gameplay die (ghost wander, inky coin flip, attract picks) draws
@@ -89,6 +93,7 @@ const PacmanGame = () => {
                 }
             }
             if (!dotsLeft) {
+                round++ // #3661: a cleared maze is a new round — new fruit, shorter fright
                 resetLevel()
                 return
             }
@@ -168,25 +173,31 @@ const PacmanGame = () => {
             if (eaten === 'dot') {
                 audioController.playTone(300 + rand() * 200, 0.05, 'triangle', 0.1)
             } else if (eaten === 'power') {
-                ghosts.forEach(g => { if (g.state === 'chase') g.state = 'scared' })
-                audioController.playSweep(600, 800, 0.5, 'sine', 0.1)
+                // #3661: from round 14 the pellet scores but nobody frightens —
+                // stepPlayer already left poweredUp false, mirror that here.
+                if (pacman.poweredUp) {
+                    ghosts.forEach(g => { if (g.state === 'chase') g.state = 'scared' })
+                    audioController.playSweep(600, 800, 0.5, 'sine', 0.1)
+                }
             }
 
-            // BONUS FRUIT (#1517) — drops at the 70th/170th pellet, worth 100,
-            // lives ~10 s on the world timer. The attract demo never drops fruit.
+            // BONUS FRUIT (#1517) — drops at the 70th/170th pellet, lives ~10 s
+            // on the world timer; the KIND and its value follow the round
+            // (#3661). The attract demo never drops fruit.
             if (!isAttractMode) {
                 gs.score += stepFruit(fruitTr, eaten === 'dot' || eaten === 'power', pacman, {
                     eat: () => {
                         audioController.playTone(1200, 0.09, 'square', 0.18)
                         audioController.playTone(1600, 0.12, 'square', 0.18)
                     }
-                })
+                }, round)
             }
 
             // GHOST AI — pure per-ghost step from ./move (seeded stream; see
             // move.js). Scoring, lives and the respawn stay here at the door.
+            // gs (not a fresh literal) so the ghosts read the live score stage.
             ghosts.forEach(g => {
-                stepGhost(g, { map, pacman }, rand, {
+                stepGhost(g, gs, rand, {
                     eat: () => {
                         gs.score += 200
                         audioController.playTone(800, 0.1, 'square', 0.2)
@@ -434,6 +445,88 @@ const PacmanGame = () => {
             ctx.restore()
         }
 
+        // Per-kind bonus fruit art (#3661) — original synth, one visual family:
+        // cherry pair → strawberry → peach → galaxian → bell → key. Each sits
+        // inside the ~14px cell around (fx, fy), blinking handled by the caller.
+        const drawFruit = (ctx, fx, fy, kind) => {
+            if (kind === 'strawberry') {
+                ctx.fillStyle = '#ff3050'
+                ctx.beginPath()
+                ctx.moveTo(fx, fy + 6)
+                ctx.quadraticCurveTo(fx - 6, fy + 1, fx - 4, fy - 3)
+                ctx.quadraticCurveTo(fx, fy - 5.5, fx + 4, fy - 3)
+                ctx.quadraticCurveTo(fx + 6, fy + 1, fx, fy + 6)
+                ctx.fill()
+                ctx.fillStyle = '#ffd8a0'
+                for (const [sx, sy] of [[-2, -1], [1, 0], [-1, 2], [2.5, -2], [0, -3], [3, 1], [-3, 1]]) ctx.fillRect(fx + sx, fy + sy, 1, 1)
+                ctx.fillStyle = '#30c030'
+                ctx.beginPath(); ctx.ellipse(fx, fy - 4.5, 4.2, 1.6, 0, 0, Math.PI * 2); ctx.fill()
+                ctx.strokeStyle = '#208020'; ctx.lineWidth = 1
+                ctx.beginPath(); ctx.moveTo(fx, fy - 4.5); ctx.lineTo(fx + 1.5, fy - 7.5); ctx.stroke()
+                return
+            }
+            if (kind === 'peach') {
+                ctx.fillStyle = '#ffb060'
+                ctx.beginPath(); ctx.arc(fx - 2, fy + 1, 4.2, 0, Math.PI * 2); ctx.fill()
+                ctx.beginPath(); ctx.arc(fx + 2.4, fy + 1, 4.2, 0, Math.PI * 2); ctx.fill()
+                ctx.strokeStyle = '#d07030'; ctx.lineWidth = 1
+                ctx.beginPath(); ctx.moveTo(fx + 0.4, fy - 2.5); ctx.quadraticCurveTo(fx - 0.6, fy + 1, fx + 0.4, fy + 4.5); ctx.stroke()
+                ctx.fillStyle = '#30c030'
+                ctx.beginPath(); ctx.ellipse(fx + 3, fy - 5, 3, 1.4, -0.4, 0, Math.PI * 2); ctx.fill()
+                return
+            }
+            if (kind === 'galaxian') {
+                ctx.fillStyle = '#40a0ff'
+                ctx.fillRect(fx - 6.5, fy - 1, 4, 3); ctx.fillRect(fx + 2.5, fy - 1, 4, 3)
+                ctx.fillStyle = '#e8e8ff'
+                ctx.beginPath(); ctx.moveTo(fx, fy - 6); ctx.lineTo(fx + 2.6, fy + 2); ctx.lineTo(fx - 2.6, fy + 2); ctx.closePath(); ctx.fill()
+                ctx.fillStyle = '#ff3030'
+                ctx.fillRect(fx - 1, fy - 6, 2, 2.5)
+                return
+            }
+            if (kind === 'bell') {
+                ctx.fillStyle = '#ffd23f'
+                ctx.beginPath(); ctx.arc(fx, fy, 5.5, Math.PI, 0); ctx.lineTo(fx + 5.5, fy + 3.5); ctx.lineTo(fx - 5.5, fy + 3.5); ctx.closePath(); ctx.fill()
+                ctx.fillStyle = '#c8901c'
+                ctx.fillRect(fx - 6.5, fy + 3.5, 13, 1.8)
+                ctx.beginPath(); ctx.arc(fx, fy + 5.8, 1.4, 0, Math.PI * 2); ctx.fill()
+                return
+            }
+            if (kind === 'key') {
+                ctx.strokeStyle = '#e8d060'; ctx.lineWidth = 2
+                ctx.beginPath(); ctx.arc(fx - 3.2, fy, 2.6, 0, Math.PI * 2); ctx.stroke()
+                ctx.beginPath()
+                ctx.moveTo(fx - 0.6, fy); ctx.lineTo(fx + 6, fy)
+                ctx.moveTo(fx + 3.5, fy); ctx.lineTo(fx + 3.5, fy + 3)
+                ctx.moveTo(fx + 6, fy); ctx.lineTo(fx + 6, fy + 3)
+                ctx.stroke()
+                return
+            }
+            // cherry (#1517) — two red orbs, joined stems, a leaf. Default kind.
+            ctx.strokeStyle = '#00c000'
+            ctx.lineWidth = 1.5
+            ctx.beginPath()
+            ctx.moveTo(fx - 4, fy + 2)
+            ctx.quadraticCurveTo(fx - 1, fy - 7, fx + 2, fy - 8)
+            ctx.moveTo(fx + 4, fy + 2)
+            ctx.quadraticCurveTo(fx + 3, fy - 5, fx + 2, fy - 8)
+            ctx.stroke()
+            ctx.fillStyle = '#30d030'
+            ctx.beginPath()
+            ctx.ellipse(fx + 4, fy - 8, 3, 1.5, -0.4, 0, Math.PI * 2)
+            ctx.fill()
+            ctx.fillStyle = '#ff2020'
+            ctx.beginPath()
+            ctx.arc(fx - 4, fy + 2, 3.5, 0, Math.PI * 2)
+            ctx.arc(fx + 4, fy + 2, 3.5, 0, Math.PI * 2)
+            ctx.fill()
+            ctx.fillStyle = '#ff9090'
+            ctx.beginPath()
+            ctx.arc(fx - 5, fy + 1, 1, 0, Math.PI * 2)
+            ctx.arc(fx + 3, fy + 1, 1, 0, Math.PI * 2)
+            ctx.fill()
+        }
+
         const draw = () => {
             ctx.fillStyle = '#000000'
             ctx.fillRect(0, 0, viewWidth, viewHeight)
@@ -468,34 +561,14 @@ const PacmanGame = () => {
                 }
             }
 
-            // Bonus fruit — arcade cherries: two red orbs, joined stems, a leaf.
-            // Blinks near expiry on the WORLD timer, never the wall clock.
+            // Bonus fruit — original per-kind synth art (#3661): the round picks
+            // the kind; one visual family, arcade-close. Blinks near expiry on
+            // the WORLD timer, never the wall clock.
             if (fruitTr.fruit &&
                 (fruitTr.fruit.timer > FRUIT_BLINK || Math.floor(fruitTr.fruit.timer / 10) % 2 === 0)) {
                 const fx = fruitTr.fruit.x * CELL_SIZE + CELL_SIZE / 2
                 const fy = fruitTr.fruit.y * CELL_SIZE + CELL_SIZE / 2
-                ctx.strokeStyle = '#00c000'
-                ctx.lineWidth = 1.5
-                ctx.beginPath()
-                ctx.moveTo(fx - 4, fy + 2)
-                ctx.quadraticCurveTo(fx - 1, fy - 7, fx + 2, fy - 8)
-                ctx.moveTo(fx + 4, fy + 2)
-                ctx.quadraticCurveTo(fx + 3, fy - 5, fx + 2, fy - 8)
-                ctx.stroke()
-                ctx.fillStyle = '#30d030'
-                ctx.beginPath()
-                ctx.ellipse(fx + 4, fy - 8, 3, 1.5, -0.4, 0, Math.PI * 2)
-                ctx.fill()
-                ctx.fillStyle = '#ff2020'
-                ctx.beginPath()
-                ctx.arc(fx - 4, fy + 2, 3.5, 0, Math.PI * 2)
-                ctx.arc(fx + 4, fy + 2, 3.5, 0, Math.PI * 2)
-                ctx.fill()
-                ctx.fillStyle = '#ff9090'
-                ctx.beginPath()
-                ctx.arc(fx - 5, fy + 1, 1, 0, Math.PI * 2)
-                ctx.arc(fx + 3, fy + 1, 1, 0, Math.PI * 2)
-                ctx.fill()
+                drawFruit(ctx, fx, fy, fruitTr.fruit.kind || 'cherry')
             }
 
             // Draw Entities
@@ -563,6 +636,15 @@ const PacmanGame = () => {
                 ctx.lineTo(hudRight - 10 - i * 18, hudY - 10)
                 ctx.fill()
             }
+            // #3661: the arcade marks the round with the fruit at the bottom —
+            // the icon of the kind this round will drop.
+            const hudBottom = hudY + mapHeight * scale + 14
+            const hudLeft = (viewWidth - mapWidth * scale) / 2
+            ctx.textAlign = 'left'
+            ctx.fillStyle = '#9aa4b2'
+            ctx.font = '12px monospace'
+            ctx.fillText(`ROUND ${round}`, hudLeft, hudBottom + 4)
+            drawFruit(ctx, hudLeft + 78, hudBottom, fruitForRound(round).kind)
         }
 
         let lastTime = 0
@@ -594,6 +676,7 @@ const PacmanGame = () => {
                 // clears the run — the attract demo never spends the seed (#1473)
                 seed = seedFromQuery(window.location.search) ?? Math.floor(Math.random() * 1000000)
                 rand = seedRng(seed)
+                round = 1 // #3661: a human start begins the ladder at round 1
                 resetLevel()
                 gs.score = 0
                 lives = 3
@@ -621,23 +704,27 @@ const PacmanGame = () => {
         window.addEventListener('resize', resize)
         animationFrameId = requestAnimationFrame(loop)
 
-        // production report carries the seed (#1473)
+        // production report carries the seed (#1473) and the progression (#3661)
         exposeFeedbackState(() => ({
             tick: tickN, score: gs.score, done: gameOver, seed: seed, lives: lives,
+            round: round, stage: speedStage(gs.score),
         }))
 
         mountDbg({
             title: 'PAC-MAN',
             getState: () => [
                 `score ${gs.score}  lives ${lives}  power ${pacman.poweredUp ? pacman.powerTimer : '-'}  over ${gameOver}`,
-                `pac ${pacman.x},${pacman.y} p${pacman.progress.toFixed(2)} dir ${pacman.dir.x},${pacman.dir.y}`,
+                `pac ${pacman.x},${pacman.y} p${pacman.progress.toFixed(2)} dir ${pacman.dir.x},${pacman.dir.y} spd ${pacman.speed}`,
                 `ghosts ${ghosts.map(g => `${g.type}:${g.x},${g.y}/${g.state}`).join(' ')}`,
-                `fruit ${fruitTr.fruit ? `@${fruitTr.fruit.x},${fruitTr.fruit.y} t${fruitTr.fruit.timer}` : '-'} pellets ${fruitTr.pellets} dropped ${fruitTr.dropped}`,
-                `seed ${seed}  tick ${tickN}`,
+                `fruit ${fruitTr.fruit ? `@${fruitTr.fruit.x},${fruitTr.fruit.y} t${fruitTr.fruit.timer} ${fruitTr.fruit.kind || 'cherry'}` : '-'} pellets ${fruitTr.pellets} dropped ${fruitTr.dropped}`,
+                `round ${round}  stage ${speedStage(gs.score)}  energizer ${energizerTicks(round)}t  seed ${seed}  tick ${tickN}`,
             ],
             actions: [
                 { label: 'Reset positions', run: () => resetPositions() },
                 { label: 'Force game over', run: () => { gameOver = true } },
+                // #3661 cheat hooks so QA can ride the ladder without the grind
+                { label: 'Round → 14', run: () => { round = 14 } },
+                { label: 'Score → 5000', run: () => { gs.score = 5000 } },
             ],
         })
 
