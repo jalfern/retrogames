@@ -43,14 +43,10 @@ Ports: the browser checks read `DEV_PORT` (slot a 5173 / slot b 5178 / QA 5176).
   below is kept for the record.
 - Oil drum is decor; the arcade's flame kills. No score bonus timers, no
   50/100-point distinction for walking past vs jumping over barrels' edges.
-- Barrels can take ladders mid-air now (#3622): a falling barrel crossing a
-  ladder's span rolls a single BARREL_DIVE_CHANCE, once per barrel per ladder
-  (`takenBits`). Two girder-end rungs stand at the right fall-gap corner
-  (x=222, R1→dangling foot, R2→ground), so corner-miss barrels meet R2
-  mid-air and R1 off the tip. The runner never climbs the barrel-only outer
-  rung. (The old silent failure: the edge-check could never set `falling=true`
-  — gravity beats it to `vy>0` — so no airborne barrel state existed at all;
-  fixed to `vy >= 0`.)
+- **CLOSED by #3622:** barrels meet ladders mid-air — see Corner pair below.
+  (Was: a barrel meeting a ladder mid-air kept rolling; the edge-check could
+  never set `falling=true` — gravity beats it to `vy>0` — so no airborne
+  barrel state existed at all; fixed to `vy >= 0`.)
 - The arcade's true barrel-drop onto an already-boarded ladder (two barrels
   sharing one span) is still simplified: each span takes only its first
   boarder per tick, and the pair stands at the right corner only — the left
@@ -91,3 +87,30 @@ hangs on broken rungs and the sim steps him off onto the girder below —
 the route never clings to what it cannot prove. `kongcheck` §half-rungs pins
 all of it (geometry, hang, descend, seat refusal, seat step-off, per-ladder
 break lines); the drive exercises it with real arrows.
+
+## Corner pair (#3622 — the arcade's end-of-girder ladders)
+Two girder-end rungs stand at the RIGHT fall-gap corner, x=222 — where a
+Node trace showed barrels leaving girder 3's end at cx≈210.5 land, after the
+drop drift, on girder 2's tip (cx≈222-224). R1 (girder 2→1) has its foot
+DANGLING into girder 1's end-gap (`dangles`); R2 (girder 1→ground) hangs
+below it off girder 1's corner (`braceFrom`, a visual tie).
+
+Physics: a barrel ROLLING onto a ladder mouth still takes it at
+`BARREL_DIVE_CHANCE` as before; NEW — a barrel FALLING through a ladder's
+span (feet within `[yTop−8, yBot]`, |cx−x|<5) rolls the SAME single dive
+chance, spending `takenBits` so no barrel re-rolls or re-takes the same
+ladder. Dice order shifts with every airborne meeting: seed floors move and
+kongcheck re-derives them. A barrel rolling off R1's dangling foot becomes
+airborne again and may catch R2 below it.
+
+The old gap had TWO causes: the missing corner geometry (this PR), and a
+silent physics bug — the edge check `!onPlat && vy===0` could never be true
+because gravity is already past `vy>0` on the tick support is lost, so no
+barrel in the shipped sim ever had `falling=true`. That is why #3618 traced
+zero airborne crossings; fixed to `vy >= 0`.
+
+Doctrine: R2's mouth hangs past girder 1's end with nothing to stand on, so
+the runner and attract demo refuse it (marked `barrelOnly`); the outside rung
+is purely the barrels' road down. R1 is a genuine corner shortcut the runner
+may take. `kongcheck` §corner pair pins geometry, mid-air take, once-per-
+barrel-per-ladder, dangling-foot retake and the runner refusal.

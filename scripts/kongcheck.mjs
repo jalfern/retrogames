@@ -166,7 +166,7 @@ console.log('half-rungs: broken ladders climb part-way (#3618)')
         'the half-rung gap no longer scores as open (CLOSED marker reaches parseGaps)')
     ok(!gaps.some(g => /dedicated 25 m rivet stage/i.test(g)),
         'the rivet-screen phantom stays retired (CLOSED marker reaches parseGaps)')
-    ok(gaps.length === 2, 'two honest gaps remain (oil drum, mid-air geometry)', `gaps=${gaps.length}`)
+    ok(gaps.length === 2, 'two honest gaps remain (oil drum, double-board drop onto a span)', `gaps=${gaps.length}`)
 }
 
 // ------------------------------------------------------------- core physics ----
