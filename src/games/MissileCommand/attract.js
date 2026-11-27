@@ -12,6 +12,8 @@ export const INFO_MSGS = [
     'CLICK TO FIRE ABMS',
     'SIX CITIES TO DEFEND',
     'SPLASH DAMAGES WARHEADS',
+    // #3695: the arcade's own three buttons — keys now name the battery.
+    'KEYS 1 2 3 FIRE EACH BATTERY',
     // #3630 slice 2: advertise the hot-seat — one wave each, both scores up.
     'PRESS 2 FOR TWO PLAYER',
 ]

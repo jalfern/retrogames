@@ -103,6 +103,23 @@ waves pays 100 per living city and 50 per spare missile, then reloads.
   winner over both books (equal books: A DRAW). Hand-offs ride real wave clears
   with a jingle — climbing for P2, descending for P1 — and the incoming
   defender is named on the WAVE COMPLETE card.
+- **THREE-BUTTON LAW FOR THE PLAYER (#3695) — gap 1.** Wikipedia §Gameplay
+   (verbatim): the player moves the crosshair by trackball "and pressing one of
+   three buttons to launch a counter-missile from the appropriate battery" — the
+   BUTTON names the launcher; only where you aim was ever the click law's
+   business. The sim served the watch this way since #3630 (`cmd.silo`);
+   `fireBattery(gs, idx, x, y)` is the same door, human side. Desktop: `1`/`2`/`3`
+   during play fire the LEFT/CENTER/RIGHT battery at the live crosshair from any
+   sector — key `2` is the expert's call, the fast battery reachable everywhere
+   (manual §6: only its missiles outrun a smart bomb). Phones: the pad's B wears
+   **FAST** (registry `pad`, dispatches `KeyB`, which the shell maps to the
+   center battery; attract `2` keeps meaning "two player"). The mouse keeps the
+   nearest-battery click law untouched, Space keeps crosshair fire — every
+   existing solo/hot-seat proof replays byte-identical. Duds stay duds: naming a
+   dead or empty battery spends nothing (never reroutes). Hot-seat: the battery
+   keys belong to the seat on duty — same guard as Space; a human P2's own
+   per-base buttons remain open work (see honest gaps). The HUD teaches it: each
+   battery wears its key number; the center glows FAST while smart bombs are live.
 - **Restart was missing entirely before the batch-15 port** — the GAME OVER
   screen was dead. `startRun()` now rebuilds cities, silos, ammo, score, wave
   and spawn state from any key, click, or canvas tap (phones included).
@@ -124,15 +141,23 @@ waves pays 100 per living city and 50 per spare missile, then reloads.
 
 ## Verify
 ```
-npm run missilecmdcheck             # 107 checks: raid replay, sweep 24 seeds waves 1-5 clean,
+npm run missilecmdcheck             # 126 checks: raid replay, sweep 24 seeds waves 1-5 clean,
                                   #   doctrine pins (safe altitude, urgency, cover), saucers
                                   #   (byte-exact gate, entry/launch/kill/hold), deep doctrine
                                   #   A/B waves 6-10, juice, attract ad, smart bombs (speed
                                   #   split, gate, evade, blind-spot kill, center-only kill,
-                                  #   wave hold, watch center doctrine), 2P alternating
-                                  #   (flip seq, bonus attribution, shared board, per-seat
-                                  #   credits, dice-parity trace, CPU-seat defense), wiring
-npm run missilecmdcheck -- --mutant # 32 mutants, all must die
+                                  #   wave hold, watch center doctrine), three-button law
+                                  #   (#3695: fireBattery names its battery from any sector,
+                                  #   per-battery speed, duds, click-law regression),
+                                  #   2P alternating (flip seq, bonus attribution, shared
+                                  #   board, per-seat credits, dice-parity trace, CPU-seat
+                                  #   defense), wiring
+npm run missilecmdcheck -- --mutant # 35 mutants, all must die
+npm run mcbatterydrive            # live browser three-button drive (13 checks): FAST pad
+                                  #   declared, KeyB spends ONLY the center magazine, keys
+                                  #   1/2/3 launch their battery from a foreign sector and
+                                  #   spend their own, mouse keeps the nearest law, key 2
+                                  #   flies 28 at the gate, hot-seat duty guard, zero errors
 npm run mc2pdrive                 # live browser hot-seat drive (needs the dev server): real 2
                                   #   key opens the mode, real keys fire P1's wave only, turn
                                   #   flips after wave 1, the CPU defends P2's wave, real WASD
@@ -149,14 +174,21 @@ npm run attractcheck              # attract screen rule 6
 ```
 
 ## Honest gaps
-- The two-player game (shipped, #3630 slice 2) does not expose the arcade's
-  game-number table (games 18–34 selected waves-per-game, starting wave and
-  smart-bomb on/off with the dial). Our hot-seat runs the default raid curve —
-  one wave per seat, arrivals gated by wave as in solo.
-- Human clicks obey the nearest-battery |dx| click law; the arcade's per-base
-  three buttons are modelled for the watch's smart-bomb shots (`cmd.silo`) but
-  not exposed to the player — you can only call the fast battery by aiming in
-  its sector. Field-of-fire arcs per battery (gap 4 below) would replace both.
+- **BLOCKED** The two-player game (shipped, #3630 slice 2) does not expose the
+  arcade's game-number table (games 18–34 selected waves-per-game, starting wave
+  and smart-bomb on/off with the dial). The structure is sourced (manual §6,
+  quoted in Engine notes), but the per-number parameter values live only in the
+  original's service/dial chart — not in this repo, and Wikipedia §Gameplay
+  carries no variation table. FORGE.md's network boundary + the fidelity law
+  ("the rules ARE the spec") forbid inventing arcade numbers, so this stays
+  honest prose that declines: our hot-seat runs the default raid curve — one
+  wave per seat, arrivals gated by wave as in solo. (#3695 §why-weakest has
+  the full disposition.)
+- **CLOSED by #PENDING** The arcade's per-base three buttons are exposed to the
+  player — keys 1/2/3 name LEFT/CENTER/RIGHT and the phone pad wears FAST
+  (`KeyB` → center battery), all firing at the crosshair from any sector; see
+  Engine notes #3695. Human clicks keep the nearest-battery law; per-battery
+  field-of-fire arcs (below) would replace both.
 - Cities revive only between games (original revives every 10k points).
 - The gunner is proven to wave 5 (the sweep's bar); ferries and (from wave 7)
   smart bombs make the deep arithmetic bind earlier (~wave 9–10 pays 28–30
@@ -169,3 +201,6 @@ npm run attractcheck              # attract screen rule 6
   re-measured with the #3630 arrivals switched off at the source.
 - Outer batteries fire by nearest-silo |dx| like the human click law — the
   original's field-of-fire arcs per battery are not modelled.
+- In hot-seat the battery keys (#3695) belong to seat 1, same guard as Space; a
+  human P2 still fires only the nearest battery on F — the arcade's three
+  buttons for the second seat are open work (needs its own key triangle + HUD).

@@ -214,6 +214,21 @@ export function fireAt(gs, x, y, wid = null) {
     return fireFrom(gs, silo, x, y, wid)
 }
 
+// #3695 — the arcade's own three-button law, handed to the player: each button
+// names its battery and launches at the crosshair from THERE, whichever sector
+// the aim sits in (Wikipedia §Gameplay: "pressing one of three buttons to
+// launch a counter-missile from the appropriate battery"). The WATCH already
+// commands batteries this way (`cmd.silo` below); this is the same door, human
+// side — key 2 calls the fast center battery from anywhere, the expert's
+// answer to a smart bomb at distance (manual §6/§7). fireFrom keeps its
+// alive/ammo gates: naming a dead or empty battery is a dud, not a reroute.
+export function fireBattery(gs, idx, x, y) {
+    if (gs.state !== 'playing') return false
+    const silo = gs.silos[idx]
+    if (!silo) return false
+    return fireFrom(gs, silo, x, y, null)
+}
+
 function fireFrom(gs, silo, x, y, wid) {
     if (!silo || !silo.alive || silo.ammo <= 0) return false
     silo.ammo--
