@@ -150,6 +150,8 @@ const CentipedeGame = () => {
             state.spider = null
             state.scorpion = null
             state.flea = null
+            state.bullets = [] // fresh board, fresh gun — a stale volley riding
+            // across a reset diverges two identical seeded drives (#3604 drive)
             state.player.x = state.width / 2
             state.player.y = state.height - 30
             state.mushrooms = mushroomField(rand, state.width, state.height)

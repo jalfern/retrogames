@@ -115,6 +115,8 @@ console.log('#3604 wiring: the garden walks, stings and rains')
     ok(/if \(!state\.spider && tickN >= spiderAt\) spawnSpider\(\)/.test(src) &&
         /if \(!state\.scorpion && tickN >= scorpionAt\) spawnScorpion\(\)/.test(src),
         'spider and scorpion enter on their cadence, one at a time')
+    ok(/state\.bullets = \[\]/.test(src),
+        'a fresh board clears the gun — no stale volley rides across a reset to diverge seeded drives (#3604)')
     ok(/!state\.flea && playerAlive\(\) && tickN >= fleaAt && bulletEscapes\(b\.y\)/.test(src),
         'a sky shot summons the flea — only when none lives and the cooldown passed')
     ok(/state\.spider = \{[\s\S]{0,400}?vy: 2,/.test(src),

@@ -1,0 +1,133 @@
+// centipedadrive (#3604) — real Chrome, real keys: the menagerie on the live
+// page. The attract opens, a key starts the run, arrows drive the zapper, a
+// swept volley calls the flea out of the sky — all through the browser's own
+// event path. Then the determinism rollout: with the game's own rAF loop
+// parked behind the pause key (one driver, per the Zork lesson), two identical
+// seeded drives of the contract clock answer identically — every spawn dice
+// (spider side, scorpion side, flea dir, rain cells) rides the run's stream.
+// centipedechek owns the rule tables; this proves the browser half.
+import { launch, openGame, Report, requireDevServer } from './lib/harness.mjs'
+
+const BASE = `http://localhost:${process.env.DEV_PORT || 5173}/retrogames/centipede`
+const rep = new Report('centipedadrive')
+await requireDevServer(BASE)
+const browser = await launch()
+const page = await openGame(browser, { url: `${BASE}?seed=4242`, hook: '__game', wait: 600 })
+let errors = 0
+page.on('pageerror', () => errors++)
+
+const s = () => page.evaluate(() => window.__game.state())
+
+// ---- contract live; key starts; real arrows drive ----
+{
+    const a0 = await s()
+    rep.check('contract live at boot', !!a0 && typeof a0.tick === 'number' && a0.segments === 10,
+        `tick ${a0?.tick}, segs ${a0?.segments}`)
+}
+await page.keyboard.press('KeyX')
+await new Promise((r) => setTimeout(r, 250))
+{
+    const a1 = await s()
+    rep.check('key starts a seeded run (score 0, 3 lives, 40 caps)', a1.score === 0 && a1.lives === 3 && a1.mushrooms === 40 && a1.segments === 10,
+        `score ${a1.score}, lives ${a1.lives}, shrooms ${a1.mushrooms}, segs ${a1.segments}`)
+}
+const x0 = (await s()).playerX
+await page.keyboard.down('ArrowRight')
+await new Promise((r) => setTimeout(r, 350))
+await page.keyboard.up('ArrowRight')
+const x1 = (await s()).playerX
+rep.check('held ArrowRight drives the zapper', x1 > x0 + 20, `${x0} -> ${x1}`)
+await page.keyboard.down('ArrowLeft')
+await new Promise((r) => setTimeout(r, 350))
+await page.keyboard.up('ArrowLeft')
+const x2 = (await s()).playerX
+rep.check('held ArrowLeft drives it back', x2 < x1 - 20, `${x1} -> ${x2}`)
+
+// ---- the flea answers the sky: sweep the pad and volley ----
+// Real keys only: walk the strip firing so some shot crosses an empty column
+// and flies out of the garden. The summon must answer within the sweep.
+let fleaSeen = 0
+for (let leg = 0; leg < 14 && !fleaSeen; leg++) {
+    const key = leg % 2 ? 'ArrowLeft' : 'ArrowRight'
+    await page.keyboard.down(key)
+    for (let k = 0; k < 26 && !fleaSeen; k++) {
+        await page.keyboard.press('Space')
+        await new Promise((r) => setTimeout(r, 60))
+        fleaSeen = (await s()).flea
+    }
+    await page.keyboard.up(key)
+}
+rep.check('a sky shot summons the flea (real Space, swept columns)', fleaSeen === 1, `flea=${fleaSeen}`)
+
+// ---- determinism rollout through the whole menagerie ----
+// Park the game's own loop with '?' (the pause gate skips update(); the
+// contract step drives the sim alone), then two identical seeded drives of
+// scripted pads must answer identically — including what was SEEN en route
+// (a spider that visited and was shot leaves the end-state silent).
+await page.keyboard.press('?') // pauses (Shift+Slash; e.key === '?')
+await new Promise((r) => setTimeout(r, 120))
+const ROLLOUT = 2000
+const drive = () => page.evaluate(async (n) => {
+    window.__game.reset(4242)
+    const t0 = window.__game.state().tick
+    let seenSpider = 0, seenScorpion = 0, seenFlea = 0, minShrooms = 999, rained = 0
+    let lastM = window.__game.state().mushrooms
+    for (let i = 0; i < n; i++) {
+        const pad = { right: i % 240 < 120, left: i % 240 >= 120, a: i % 7 === 0 }
+        window.__game.step(pad, 1)
+        const st = window.__game.state()
+        seenSpider |= st.spider; seenScorpion |= st.scorpion; seenFlea |= st.flea
+        minShrooms = Math.min(minShrooms, st.mushrooms)
+        if (st.mushrooms > lastM) rained += st.mushrooms - lastM
+        lastM = st.mushrooms
+    }
+    const st = window.__game.state()
+    return [st.tick - t0, st.score, st.lives, st.segments, st.heads, st.mushrooms,
+        seenSpider, seenScorpion, seenFlea, st.poisoned, rained, minShrooms, st.playerX, st.playerY].join('|')
+}, ROLLOUT)
+const r1 = await drive()
+const r2 = await drive()
+rep.check('determinism: same seed + same pads -> identical menagerie rollout', r1 === r2, `${r1} vs ${r2}`)
+const roll = r1.split('|').map(Number)
+rep.check('the rollout met the spider (cadence fires in-browser)', roll[6] === 1, `seenSpider=${roll[6]}`)
+rep.check('the rollout met the scorpion (venom cadence fires)', roll[7] === 1, `seenScorpion=${roll[7]}`)
+rep.check('venom landed on caps during the rollout', roll[9] > 0, `poisoned=${roll[9]}`)
+rep.check('the garden shrank during the rollout (eaters ate)', roll[11] < 40, `minShrooms=${roll[11]}`)
+rep.check('the flea rained bonus mushrooms during the rollout', roll[10] > 0, `rained=${roll[10]}`)
+await page.keyboard.press('?') // un-pause
+await new Promise((r) => setTimeout(r, 120))
+
+// ---- the zapper still dies honestly through the browser ----
+// The arcade descent is slow law: the head drops one cell per wall bounce,
+// so the budget is a full descent plus a crossing (the menagerie may take
+// a life first — any honest death will do).
+await page.evaluate(() => window.__game.reset(4242))
+let st = null
+for (let k = 0; k < 1600 && !st?.done; k++) {
+    st = await page.evaluate(() => { window.__game.step({}, 50); return window.__game.state() })
+}
+rep.check('idle world spends lives to GAME OVER', !!st && st.done === true, `lives ${st?.lives}, done ${st?.done}`)
+await page.keyboard.press('KeyZ')
+await new Promise((r) => setTimeout(r, 250))
+{
+    const a = await s()
+    rep.check('death screen + key restarts clean (score 0, menagerie clear)', a.score === 0 && a.lives === 3 && !a.spider && !a.scorpion && !a.flea && !a.done,
+        `score ${a.score}, lives ${a.lives}, spider ${a.spider}, scorpion ${a.scorpion}, flea ${a.flea}, done ${a.done}`)
+}
+
+// ---- the drawn world shows the menagerie (canvas is not blank, sprites paint) ----
+await page.evaluate(() => window.__game.reset(4242))
+await page.evaluate(async () => { for (let i = 0; i < 500; i++) window.__game.step({}, 1) })
+await new Promise((r) => setTimeout(r, 250))
+const px = await page.evaluate(() => {
+    const cv = document.querySelector('canvas')
+    const g = cv.getContext('2d')
+    const d = g.getImageData(0, 0, cv.width, cv.height).data
+    let lit = 0
+    for (let i = 0; i < d.length; i += 4) if (d[i] + d[i + 1] + d[i + 2] > 200) lit++
+    return lit
+})
+rep.check('sprites paint through the menagerie (canvas alive)', px > 500, `${px} lit samples`)
+
+rep.check('zero page errors across the drive', errors === 0, `${errors}`)
+rep.exit(browser)
