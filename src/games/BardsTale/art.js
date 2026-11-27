@@ -21,6 +21,14 @@ function shade(hex, k) {
     return `rgb(${r},${g},${b})`
 }
 
+// Stable per-column grain/jitter — never shimmers, never Math.random. Used as a
+// deterministic texture on the raycast walls so corridors read as stone, not paint.
+function grainHash(x, y, z) {
+    let h = (x * 374761393 + y * 668265263 + z * 2246822519) | 0
+    h = (h ^ (h >> 13)) * 1274126177
+    return ((h ^ (h >> 16)) >>> 0) / 4294967296
+}
+
 // ---------------------------------------------------------------- dungeon view ----
 // DDA raycast, symmetric FOV. depth in cells; brightness falls off with distance.
 export function drawDungeon(ctx, st, t) {
@@ -36,12 +44,23 @@ export function drawDungeon(ctx, st, t) {
     fg.addColorStop(0, shade(pal.floor, 0.7)); fg.addColorStop(1, shade(pal.floor, 1.6))
     ctx.fillStyle = fg; ctx.fillRect(0, horizon, VW, VH - horizon)
 
-    // floor rungs for a sense of travel
-    ctx.strokeStyle = shade(pal.floor, 1.2); ctx.lineWidth = 1
-    for (let i = 1; i <= 5; i++) {
-        const y = horizon + Math.pow(i / 5, 2) * (VH - horizon)
-        ctx.globalAlpha = 0.35
-        ctx.beginPath(); ctx.moveTo(0, y + bob * (i / 5)); ctx.lineTo(VW, y + bob * (i / 5)); ctx.stroke()
+    // floor rungs for a sense of travel — deeper rungs + cross tufts so the floor
+    // reads as paved stone, not a single fill.
+    ctx.strokeStyle = shade(pal.floor, 1.35); ctx.lineWidth = 1
+    for (let i = 1; i <= 6; i++) {
+        const y = horizon + Math.pow(i / 6, 2) * (VH - horizon)
+        const rungAlpha = 0.28 + (i / 6) * 0.3
+        const rungY = y + bob * (i / 6)
+        ctx.globalAlpha = rungAlpha
+        ctx.beginPath(); ctx.moveTo(0, rungY); ctx.lineTo(VW, rungY); ctx.stroke()
+        // faint cross-tufts so the rungs read as individual stones, not a band
+        ctx.globalAlpha = rungAlpha * 0.6
+        const tuftCount = 4 + i * 2
+        for (let k = 0; k < tuftCount; k++) {
+            const fx = (k + 0.5 + Math.sin(i * 3.1 + k * 1.7) * 0.35) / tuftCount * VW
+            const tuftW = 9 + grainHash(k, i, 7) * 22
+            ctx.beginPath(); ctx.moveTo(fx, rungY - 1); ctx.lineTo(fx + tuftW, rungY - 1); ctx.stroke()
+        }
     }
     ctx.globalAlpha = 1
 
@@ -68,13 +87,50 @@ export function drawDungeon(ctx, st, t) {
         const dist = Math.max(0.6, (side === 0 ? sideX - ddx : sideY - ddy))
         const lineH = Math.min(VH * 2, Math.floor(VH / dist))
         const top = horizon - lineH / 2 + bob
-        const lit = Math.max(0.35, 1 - dist / range)
-        ctx.fillStyle = shade(side === 1 ? pal.wall : pal.wallLit, lit)
-        ctx.fillRect(Math.floor(s * colW), top, Math.ceil(colW) + 1, lineH)
+        const grain = 0.86 + grainHash(mapX, mapY, side) * 0.28
+        const lit = Math.max(0.35, 1 - dist / range) * grain
+        const base = side === 1 ? pal.wall : pal.wallLit
+        const x = Math.floor(s * colW)
+        const w = Math.ceil(colW) + 1
+        // per-column gradient: lit at the bottom edge, darker toward the top — a tiny
+        // amount of height makes each column read as its own slab of stone.
+        const grad = ctx.createLinearGradient(0, top, 0, top + lineH)
+        grad.addColorStop(0, shade(base, lit * 0.72))
+        grad.addColorStop(0.55, shade(base, lit))
+        grad.addColorStop(1, shade(base, lit * 1.18))
+        ctx.fillStyle = grad
+        ctx.fillRect(x, top, w, lineH)
+        // brick courses: 3-4 horizontal seams + a short staggered vertical hint so the
+        // wall reads as coursed stone, not one flat fill.
+        const courses = 3 + Math.floor(grainHash(mapX, mapY, side + 10) * 2)
+        const courseStep = lineH / (courses + 1)
+        ctx.fillStyle = shade(base, lit * 0.5)
+        for (let c = 1; c <= courses; c++) {
+            const cy = top + c * courseStep
+            ctx.fillRect(x, cy, w, 2)
+            // staggered vertical hint on alternate courses
+            if ((mapX + mapY + side + c) % 2 === 0) {
+                const vx = x + ((grainHash(mapX + c, mapY, side) * 0.8 + 0.1) * w)
+                ctx.fillRect(vx, cy, 2, courseStep)
+            }
+        }
+        // lighter cap at the top edge of the wall
+        ctx.fillStyle = shade(base, lit * 1.45)
+        ctx.fillRect(x, top, w, 3)
+        // dark baseboard at the bottom edge
+        ctx.fillStyle = shade(base, lit * 0.4)
+        ctx.fillRect(x, top + lineH - 4, w, 4)
         // faint vertical seam so columns read as blocks
         ctx.fillStyle = shade(pal.wall, lit * 0.7)
-        ctx.fillRect(Math.floor(s * colW), top, 1, lineH)
+        ctx.fillRect(x, top, 1, lineH)
     }
+
+    // soft vignette so the edges fall dark — depth cues at every range, not just the centre
+    const vg = ctx.createRadialGradient(VW / 2, VH / 2, VH * 0.3, VW / 2, VH / 2, VH * 0.95)
+    vg.addColorStop(0, 'rgba(0,0,0,0)')
+    vg.addColorStop(1, 'rgba(0,0,0,0.42)')
+    ctx.fillStyle = vg
+    ctx.fillRect(0, 0, VW, VH)
 }
 
 // ---------------------------------------------------------------- town view ----
