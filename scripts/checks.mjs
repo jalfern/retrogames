@@ -254,6 +254,9 @@ export const MANUAL_CHECKS = [
   "scripts/stickwalkcheck.mjs",
   "scripts/stormcheck.mjs",
   "scripts/textfitcheck.mjs",
+  // #3645: TIDE POOL — browser-driven demo gate (Chrome via CDP over file://,
+  // no dev server); advisory from the lane: npm run tidepoolcheck.
+  "scripts/tidepoolcheck.mjs",
   "scripts/tidycheck.mjs",
   "scripts/tmdlinkcheck.mjs",
   // #2287: phone-viewport drive — needs the dev server + a touch-capable
