@@ -106,27 +106,34 @@
   function buildTown() {
     const r2 = mulberry(90210);
     town = [];
-    let x = W * 0.07;
-    const xEnd = W * 0.93;
+    let x = W * 0.045;
+    const xEnd = W * 0.955;
     while (x < xEnd) {
-      const bw = W * (0.045 + r2() * 0.045);
-      const bh = H * (0.075 + r2() * 0.075) * (portrait ? 1.08 : 0.92);
+      const roll = r2();
+      const isSteeple = roll < 0.10;
+      const bw = isSteeple ? W * (0.020 + r2() * 0.016) : W * (0.048 + r2() * 0.045);
+      const bh = H * (0.048 + r2() * 0.062) * (portrait ? 1.06 : 0.92) * (isSteeple ? 1.42 : 1);
+      // roof shape: gabled house / flat with chimney / little tower
+      const roof = isSteeple ? 'steeple' : (roll >= 0.10 && r2() < 0.44 ? 'gable' : (r2() < 0.60 ? 'flat' : 'tower'));
+      const isHouse = roof === 'gable' || roof === 'flat';
       const cx = x + bw / 2;
       const wins = [];
-      const cols = Math.max(1, Math.floor(bw / (bw < W * 0.055 ? 12 : 15)));
-      const rows = Math.max(1, Math.floor(bh / 20));
+      const cols = isSteeple ? 1 : Math.max(1, Math.floor(bw / (bw < W * 0.055 ? 11 : 13)));
+      const rows = Math.max(1, Math.floor((bh - (isSteeple ? 34 : 20)) / 16));
       for (let c = 0; c < cols; c++) for (let r = 0; r < rows; r++) {
-        if (r2() < 0.55) {
+        if (r2() < 0.62) {
           wins.push({
-            x: x + 3 + c * ((bw - 6) / cols) + r2() * 2,
-            y: hy - bh + 7 + r * Math.min(17, bh / rows),
-            w: 4 + r2() * 3, h: 5 + r2() * 3.5,
+            x: x + 4 + c * ((bw - 8) / cols) + r2() * 2.5,
+            y: hy - bh + 10 + r * Math.min(18, (bh - 14) / rows),
+            w: 3.5 + r2() * 2.6, h: 4.6 + r2() * 2.8,
             hue: r2(), ph: r2() * 6.28, f: 0.5 + r2() * 1.4,
           });
         }
       }
-      town.push({ x, bw, bh, wins, spire: r2() < 0.3, tower: r2() < 0.3 });
-      x += bw + W * (0.008 + r2() * 0.02);
+      const chimney = !isSteeple && roof === 'flat' && r2() < 0.7;
+      const chimneySide = r2() < 0.5 ? -1 : 1;
+      town.push({ x, bw, bh, wins, roof, chimney, chimneySide, steeple: isSteeple, tower: roof === 'tower', house: isHouse });
+      x += bw + W * (0.012 + r2() * 0.02);
     }
   }
 
@@ -232,6 +239,16 @@
     if (lanterns.length > MAX_LANTERNS) lanterns.splice(0, lanterns.length - MAX_LANTERNS);
   }
 
+  // ambient lanterns already drifting (a few, left/right of the centre river column)
+  const MAX_AMBIENT = 4;
+  let ambientTimer = 0.8;
+  function spawnAmbient(x, y) {
+    const left = rng() < 0.5;
+    const px = x != null ? x : (left ? W * (0.10 + rng() * 0.24) : W * (0.66 + rng() * 0.24));
+    const py = y != null ? y : H * (0.66 + rng() * 0.18);
+    addLantern(px, py);
+  }
+
   // ---------- ripples ----------
   const ripples = [];
 
@@ -315,7 +332,7 @@
     frames: 0,
     launch: (x, y) => { addLantern(x, y); addRipple(x, y, 40, 0.9, '#f2d6a0', 1.6); },
     state: () => ({ ready: DEV.ready, frames: DEV.frames, lanterns: lanterns.length, time: tGlobal }),
-    reset: () => { lanterns.length = 0; ripples.length = 0; windT = 0.4; },
+    reset: () => { lanterns.length = 0; ripples.length = 0; windT = 0.4; ambientTimer = 9999; },
   };
   window.__lanternTest = DEV;
 
@@ -364,52 +381,125 @@
   }
 
   function drawHillLayer(hills, color, t) {
-    ctx.fillStyle = color;
-    ctx.beginPath();
-    ctx.moveTo(-44, hy + 2);
     const N = 60;
-    for (let i = 0; i <= N; i++) {
-      const x = -44 + (W + 88) * (i / N);
-      let y = hy;
-      for (const h of hills) {
-        const d = (x - h.x) / h.width;
-        y -= Math.max(0, 1 - d * d) * h.hgt;
+    const ridge = (offsetY) => {
+      ctx.beginPath();
+      for (let i = 0; i <= N; i++) {
+        const x = -44 + (W + 88) * (i / N);
+        let y = hy;
+        for (const h of hills) {
+          const d = (x - h.x) / h.width;
+          y -= Math.max(0, 1 - d * d) * h.hgt;
+        }
+        y -= H * 0.028 * (0.6 + 0.4 * Math.sin(x * 0.008 + 2.1));
+        y += offsetY;
+        if (i === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
       }
-      // a low rolling floor far behind
-      y -= H * 0.028 * (0.6 + 0.4 * Math.sin(x * 0.008 + 2.1));
-      ctx.lineTo(x, y);
-    }
-    ctx.lineTo(W + 44, hy + 2);
-    ctx.closePath();
-    ctx.fill();
+    };
+    const path = (offsetY) => {
+      ridge(offsetY);
+      ctx.lineTo(W + 44, hy + 2);
+      ctx.lineTo(-44, hy + 2);
+      ctx.closePath();
+    };
+    // paper-cut shadow under the silhouette
+    path(6); ctx.fillStyle = 'rgba(4,6,16,0.30)'; ctx.fill();
+    // the layer itself
+    path(0); ctx.fillStyle = color; ctx.fill();
+    // paper-edge ridge highlight
+    ridge(0);
+    ctx.strokeStyle = 'rgba(238,232,214,0.11)';
+    ctx.lineWidth = 1.4;
+    ctx.stroke();
   }
 
   function drawTown(t) {
+    // paper-cut shadow under the whole town silhouette
+    ctx.save();
+    ctx.fillStyle = 'rgba(4,6,14,0.34)';
+    for (const b of town) {
+      ctx.fillRect(b.x - 1, hy - b.bh + 4, b.bw + 2, b.bh - 4);
+    }
+    ctx.restore();
+
     ctx.fillStyle = '#0e1322';
     for (const b of town) {
       ctx.fillRect(b.x, hy - b.bh, b.bw, b.bh);
-      // little roofline
-      if (b.spire) {
+      if (b.roof === 'gable') {
+        // pitched roof with a small overhang
+        const rh = portrait ? 12 : 9;
         ctx.beginPath();
-        ctx.moveTo(b.x + b.bw * 0.5, hy - b.bh - (portrait ? 14 : 11));
-        ctx.lineTo(b.x + b.bw * 0.62, hy - b.bh);
-        ctx.lineTo(b.x + b.bw * 0.38, hy - b.bh);
+        ctx.moveTo(b.x - 2.4, hy - b.bh);
+        ctx.lineTo(b.x + b.bw / 2, hy - b.bh - rh);
+        ctx.lineTo(b.x + b.bw + 2.4, hy - b.bh);
         ctx.closePath(); ctx.fill();
-      }
-      if (b.tower) {
-        ctx.fillRect(b.x + b.bw * 0.42, hy - b.bh - (portrait ? 10 : 8), b.bw * 0.16, portrait ? 10 : 8);
+      } else if (b.roof === 'flat') {
+        // low parapet + optional chimney
+        ctx.fillRect(b.x - 1.5, hy - b.bh - 3, b.bw + 3, 3);
+        if (b.chimney) {
+          const chw = Math.max(3, b.bw * 0.12);
+          const chx = b.chimneySide < 0 ? b.x + 3 : b.x + b.bw - 3 - chw;
+          ctx.fillRect(chx, hy - b.bh - (portrait ? 12 : 9), chw, portrait ? 12 : 9);
+        }
+      } else if (b.roof === 'tower') {
+        // narrow attic stub with a little pitched cap
+        const tw = b.bw * 0.42;
+        const tx = b.x + (b.bw - tw) / 2;
+        ctx.fillRect(tx, hy - b.bh - (portrait ? 11 : 8), tw, portrait ? 11 : 8);
+        const rh = portrait ? 6 : 5;
+        ctx.beginPath();
+        ctx.moveTo(tx - 1.5, hy - b.bh - (portrait ? 11 : 8));
+        ctx.lineTo(tx + tw / 2, hy - b.bh - (portrait ? 11 : 8) - rh);
+        ctx.lineTo(tx + tw + 1.5, hy - b.bh - (portrait ? 11 : 8));
+        ctx.closePath(); ctx.fill();
+      } else if (b.roof === 'steeple') {
+        // tall spire with a tiny vane
+        const sw = b.bw * 1.15;
+        const sx = b.x + b.bw / 2;
+        ctx.beginPath();
+        ctx.moveTo(sx - sw / 2, hy - b.bh);
+        ctx.lineTo(sx, hy - b.bh - (portrait ? 30 : 24));
+        ctx.lineTo(sx + sw / 2, hy - b.bh);
+        ctx.closePath(); ctx.fill();
+        ctx.fillRect(sx - 0.8, hy - b.bh - (portrait ? 36 : 29), 1.6, portrait ? 8 : 6);
       }
     }
-    // far bank strip
+    // paper edge: light stroke along each roofline / ridge
+    ctx.strokeStyle = 'rgba(238,232,214,0.12)';
+    ctx.lineWidth = 1.3;
+    for (const b of town) {
+      ctx.beginPath();
+      ctx.moveTo(b.x, hy - b.bh);
+      ctx.lineTo(b.x + b.bw, hy - b.bh);
+      ctx.stroke();
+      if (b.roof === 'gable') {
+        const rh = portrait ? 12 : 9;
+        ctx.beginPath();
+        ctx.moveTo(b.x + b.bw / 2, hy - b.bh - rh);
+        ctx.lineTo(b.x + b.bw + 2.4, hy - b.bh);
+        ctx.moveTo(b.x + b.bw / 2, hy - b.bh - rh);
+        ctx.lineTo(b.x - 2.4, hy - b.bh);
+        ctx.stroke();
+      }
+    }
+    // far bank strip (paper edge on the river lip)
     ctx.fillStyle = '#11152c';
     ctx.fillRect(-44, hy - 1, W + 88, 5);
-    // lit windows
+    ctx.fillStyle = 'rgba(238,232,214,0.10)';
+    ctx.fillRect(-44, hy - 2.5, W + 88, 1.5);
+    // lit windows with a little warm glow bleed
     for (const b of town) {
       for (const w of b.wins) {
         const flick = 0.78 + 0.22 * Math.sin(t * w.f * 6.28 + w.ph);
         const lit = flick >= 0.64;
         if (!lit) continue;
         const warm = w.hue < 0.7 ? '#f6c453' : (w.hue < 0.9 ? '#ffde8a' : '#f2a54a');
+        const cx = w.x + w.w / 2, cy = w.y + w.h / 2;
+        const glow = ctx.createRadialGradient(cx, cy, 0.5, cx, cy, w.w * 2.6);
+        glow.addColorStop(0, 'rgba(246,196,83,0.24)');
+        glow.addColorStop(1, 'rgba(246,196,83,0)');
+        ctx.fillStyle = glow;
+        ctx.beginPath(); ctx.arc(cx, cy, w.w * 2.6, 0, 6.283); ctx.fill();
         ctx.fillStyle = warm;
         ctx.globalAlpha = 0.45 + 0.55 * flick;
         ctx.fillRect(w.x, w.y, w.w, w.h);
@@ -437,29 +527,47 @@
   function drawMoonReflection(t) {
     const { x, y, r } = G.moon;
     if (y > hy) return;
-    const w0 = r * 1.05;
-    const len = H - hy;
+    const w0 = r * 0.62;
+    const len = H - hy - 6;
     ctx.save();
-    const n = 20;
-    for (let i = 0; i < n; i++) {
-      const f = i / (n - 1);
+    const n = 26;
+    const pts = [];
+    for (let i = 0; i <= n; i++) {
+      const f = i / n;
       const yy = hy + 6 + len * f * 0.94;
-      const ww = w0 * (1 - f * 0.55) * (1 + 0.35 * Math.sin(t * 1.5 + i * 2.2));
-      const wob = Math.sin(t * 1.4 + i * 1.05 + 2.2) * (5 + f * 16);
-      ctx.globalAlpha = 0.085 * (1 - f * 0.78) * (0.72 + 0.28 * Math.sin(t * 2.0 + i * 1.8));
-      ctx.fillStyle = '#f4eaca';
-      ctx.beginPath();
-      ctx.ellipse(x + wob, yy, ww / 2, len / n * 0.85, 0, 0, 6.283);
-      ctx.fill();
+      const wob = Math.sin(t * 1.5 + f * 4.6 + 2.2) * (6 + f * 18)
+                + Math.sin(t * 2.3 + f * 7.6 + 0.9) * (2.5 + f * 5);
+      const ww = w0 * (1 - f * 0.55) * (1 + 0.18 * Math.sin(t * 1.9 + f * 5.5 + 1.4));
+      pts.push({ x: x + wob, y: yy, w: Math.max(2, ww) });
     }
+    const g = ctx.createLinearGradient(0, hy, 0, hy + len);
+    g.addColorStop(0, 'rgba(244,234,202,0.62)');
+    g.addColorStop(0.5, 'rgba(244,234,202,0.30)');
+    g.addColorStop(1, 'rgba(244,234,202,0)');
+    ctx.globalAlpha = 0.14;
+    ctx.fillStyle = g;
+    ctx.beginPath();
+    ctx.moveTo(pts[0].x - pts[0].w / 2, pts[0].y);
+    for (let i = 1; i <= n; i++) ctx.lineTo(pts[i].x - pts[i].w / 2, pts[i].y);
+    for (let i = n; i >= 0; i--) ctx.lineTo(pts[i].x + pts[i].w / 2, pts[i].y);
+    ctx.closePath(); ctx.fill();
     ctx.restore();
     ctx.globalAlpha = 1;
   }
 
   function drawReeds(t) {
     const bankH = Math.max(9, H * 0.032);
+    // paper-cut shadow above the near bank
+    const sh = ctx.createLinearGradient(0, H - bankH - 10, 0, H);
+    sh.addColorStop(0, 'rgba(4,6,14,0)');
+    sh.addColorStop(1, 'rgba(4,6,14,0.30)');
+    ctx.fillStyle = sh;
+    ctx.fillRect(-44, H - bankH - 10, W + 88, 10 + bankH);
     ctx.fillStyle = '#090d1c';
     ctx.fillRect(-44, H - bankH, W + 88, bankH);
+    // paper edge on the near bank lip
+    ctx.fillStyle = 'rgba(238,232,214,0.09)';
+    ctx.fillRect(-44, H - bankH, W + 88, 1.6);
     // soft vignette over the bank edge
     const bw = ctx.createLinearGradient(0, H - bankH - 8, 0, H);
     bw.addColorStop(0, 'rgba(9,13,28,0)');
@@ -603,6 +711,15 @@
 
   function update(dt) {
     windRipple(dt);
+    ambientTimer -= dt;
+    if (ambientTimer <= 0) {
+      if (lanterns.length < MAX_AMBIENT) {
+        spawnAmbient();
+        ambientTimer = 5.5 + rng() * 4.5;
+      } else {
+        ambientTimer = 2.0;
+      }
+    }
     for (let i = lanterns.length - 1; i >= 0; i--) {
       const L = lanterns[i];
       L.age += dt;
@@ -654,26 +771,49 @@
   function drawLanternReflectionsOne(L, t) {
     const horizonY = hy + H * 0.02;
     const k = Math.max(0, Math.min(1, (L.y0 - L.y) / (L.y0 - horizonY)));
-    const alpha = (1 - k * 0.55) * 0.22 * (L.age < L.life - 1.6 ? 1 : Math.max(0, (L.life - L.age) / 1.6));
+    const alpha = (1 - k * 0.55) * (L.age < L.life - 1.6 ? 1 : Math.max(0, (L.life - L.age) / 1.6));
     if (alpha <= 0.01) return;
     const sway = Math.sin(t * L.swaySpeed + L.swayPhase) * L.swayAmp;
     const lx = L.x + sway;
     const yTop = Math.min(L.y + 11, H - 6);
     const len = H - yTop - 2;
-    ctx.globalAlpha = alpha;
-    const w0 = 15 * L.scale0 * (1 - 0.74 * k) * 0.62;
-    const n = 16;
-    for (let i = 0; i < n; i++) {
-      const f = i / (n - 1);
-      const yy = yTop + 3 + len * f;
-      const ww = w0 * (1 - f * 0.45) * (1 + 0.35 * Math.sin(t * 2.2 + i * 1.7 + L.seed));
-      const wob = Math.sin(t * 2.1 + i * 1.4 + L.seed) * (2.5 + f * 6.5);
-      ctx.fillStyle = '#ffcf7a';
-      ctx.beginPath();
-      ctx.ellipse(lx + wob, yy, ww / 2, len / n * 0.72, 0, 0, 6.283);
-      ctx.fill();
+    if (len <= 0) return;
+    const w0 = 16 * L.scale0 * (1 - 0.74 * k) * 0.62;
+    const n = 30;
+    // tapered ribbon: slow sine weave across the strip, hard clip at the river bottom
+    const pts = [];
+    for (let i = 0; i <= n; i++) {
+      const f = i / n;
+      const yy = yTop + len * f;
+      const wob = Math.sin(t * 1.9 + f * 2.6 + L.seed) * (3 + f * 7)
+                + Math.sin(t * 2.7 + f * 4.9 + L.seed * 0.7) * (2 + f * 3.5);
+      const ww = w0 * (1 - f * 0.48) * (1 + 0.16 * Math.sin(t * 2.2 + f * 4.7 + L.seed * 1.3));
+      pts.push({ x: lx + wob, y: yy, w: Math.max(2.2, ww) });
     }
-    ctx.globalAlpha = 1;
+    // soft wide glow pass (paper-cut light bleed)
+    ctx.save();
+    ctx.globalAlpha = 0.22 * alpha;
+    ctx.fillStyle = '#ffcf7a';
+    ctx.beginPath();
+    ctx.moveTo(pts[0].x - pts[0].w * 1.5, pts[0].y);
+    for (let i = 1; i <= n; i++) ctx.lineTo(pts[i].x - pts[i].w * 1.5, pts[i].y);
+    for (let i = n; i >= 0; i--) ctx.lineTo(pts[i].x + pts[i].w * 1.5, pts[i].y);
+    ctx.closePath(); ctx.fill();
+    ctx.restore();
+    // bright core, gradient along the ribbon
+    ctx.save();
+    ctx.globalAlpha = 0.92 * alpha;
+    const g = ctx.createLinearGradient(0, yTop, 0, yTop + len);
+    g.addColorStop(0, '#ffda84');
+    g.addColorStop(0.45, '#ffcf7a');
+    g.addColorStop(1, 'rgba(255,170,84,0)');
+    ctx.fillStyle = g;
+    ctx.beginPath();
+    ctx.moveTo(pts[0].x - pts[0].w / 2, pts[0].y);
+    for (let i = 1; i <= n; i++) ctx.lineTo(pts[i].x - pts[i].w / 2, pts[i].y);
+    for (let i = n; i >= 0; i--) ctx.lineTo(pts[i].x + pts[i].w / 2, pts[i].y);
+    ctx.closePath(); ctx.fill();
+    ctx.restore();
   }
 
   function loop(ts) {
@@ -690,6 +830,10 @@
   // ---------- boot ----------
   function init() {
     layout();
+    spawnAmbient(W * 0.18, H * 0.72);
+    spawnAmbient(W * 0.70, H * 0.68);
+    spawnAmbient(W * 0.30, H * 0.80);
+    ambientTimer = 6 + rng() * 4;
     window.addEventListener('resize', layout);
     lastTime = 0;
     requestAnimationFrame(loop);
