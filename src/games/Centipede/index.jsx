@@ -1063,8 +1063,8 @@ const CentipedeGame = () => {
                 }),
                 hurt: () => { if (!over && playerAlive()) killPlayer() },
                 sting: () => {
-                    const m = state.mushrooms.find((x) => !x.poison && x.health === 3)
-                    return m ? poisonMushroom(m) : false
+                    const cap = state.mushrooms.find((x) => !x.poison && x.health === 3)
+                    return cap ? poisonMushroom(cap) : false
                 },
                 chip: () => {
                     const m = state.mushrooms.find((x) => !x.poison && x.health === 3)
