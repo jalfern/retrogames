@@ -60,6 +60,29 @@ waves pays 100 per living city and 50 per spare missile, then reloads.
     and the attract pilot leads it — the feature advertises itself. Scripted
     by tick, NOT dice: two different seeds see identical sightings, which is
     the check's proof the determinism story survives the ad.
+- **SMART BOMBS (#3630) — the evasive warhead and its arcade counter.**
+  Wikipedia (arcade article): "smart bombs that can evade a less-than-perfectly
+  targeted missile", and verbatim: "The missiles of the center battery fly to
+  their targets at much greater speed than those fired from the other two; only
+  these missiles can effectively destroy a smart bomb at a distance." Atari
+  1981 manual §6: the smart cruise missiles "can detect and evade your ABM
+  explosions"; §7 hint 3: aimed directly on them "the enemy cannot detect your
+  ABMs". Rules as built: entry from wave 7 (one guaranteed, +1 every four, cap
+  two — the same §6 line that put ferries at wave 6, one wave behind, and the
+  RNG stays untouched below the gate so waves 1..6 — and every saucer pin —
+  replay byte-identical). A smart bomb senses live blasts within 60 px and
+  in-flight ABMs within 70 px and sidesteps for 12 ticks, curving back onto
+  its target — the bend in the trail is the read. The blind spot is the lead
+  window: an aim within 32 px of the core at launch is undetectable, which is
+  exactly what a 28 px/tick center ABM threads and a 15 px/tick outer one
+  never can — the fast battery makes the expert's shot geometrically possible.
+  Hard counter-rule: only center-battery fireballs kill it (25, arcade ICBM-
+  class tax; VCS Table 1 bills cruise 125 — that slot already belongs to the
+  ferry craft). The watch answers smart bombs only from the center battery and
+  only with blind solutions, using the arcade's three-button law (any base may
+  be told to shoot anywhere) so outer-sector bombs are still defended; a
+  covered-until-lapse retry loop covers the dodge. The gunner branch is inert
+  below the gate, so the waves 1..5 sweep proof is byte-untouched.
 - **Restart was missing entirely before the batch-15 port** — the GAME OVER
   screen was dead. `startRun()` now rebuilds cities, silos, ammo, score, wave
   and spawn state from any key, click, or canvas tap (phones included).
@@ -81,27 +104,41 @@ waves pays 100 per living city and 50 per spare missile, then reloads.
 
 ## Verify
 ```
-npm run missilecmdcheck             # 60 checks: raid replay, sweep 24 seeds waves 1-5 clean,
+npm run missilecmdcheck             # 83 checks: raid replay, sweep 24 seeds waves 1-5 clean,
                                   #   doctrine pins (safe altitude, urgency, cover), saucers
                                   #   (byte-exact gate, entry/launch/kill/hold), deep doctrine
-                                  #   A/B waves 6-10, juice, attract ad, wiring + registry
-npm run missilecmdcheck -- --mutant # 17 mutants, all must die
+                                  #   A/B waves 6-10, juice, attract ad, smart bombs (speed
+                                  #   split, gate, evade, blind-spot kill, center-only kill,
+                                  #   wave hold, watch center doctrine), wiring + registry
+npm run missilecmdcheck -- --mutant # 24 mutants, all must die
 npm run mcsaucerdrive             # live browser ferry drive (11 checks): gate negative, probe↔pixels,
                                   #   attract ad, orange cruise-trail pixels, real mouse+Space 125
                                   #   kill with kill-juice sighting (needs the dev server)
-npm run watchcheck                # live browser pilot (needs the dev server)
+npm run mcsmartdrive              # live browser smart-bomb drive: gate negative, speed split
+                                  #   through the probe, probe↔core pixels, real mouse blind
+                                  #   kill for 25, watch holds the wave (needs the dev server)
+npm run watchcheck -- --only missilecommand  # live browser pilot (needs the dev server)
 npm run feedbackcheck             # pin law + rollout floor (48)
 npm run attractcheck              # attract screen rule 6
 ```
 
 ## Honest gaps
-- No smart/missile-silo split, no two-player alternating game (#3630).
+- No two-player alternating game (#3630, slice 2 — manual §6: games 18–34,
+  players alternate one wave at a time, both scores displayed; AGENTS.md law:
+  CPU default via `gunnerStep`, two humans a desktop keyboard option).
+- Human clicks obey the nearest-battery |dx| click law; the arcade's per-base
+  three buttons are modelled for the watch's smart-bomb shots (`cmd.silo`) but
+  not exposed to the player — you can only call the fast battery by aiming in
+  its sector. Field-of-fire arcs per battery (gap 4 below) would replace both.
 - Cities revive only between games (original revives every 10k points).
-- The gunner is proven to wave 5 (the sweep's bar); ferries make the deep
-  arithmetic bind earlier (~wave 9–10 pays 28–30 warheads plus the ferry
-  salvo's cruises against 30 shells), so there losing cities is volume, not
-  style — the §deep A/B proves the bonus adds nothing to that bill (the
-  reserve rule holds the 125 until the magazine truly has surplus, and the
-  watch never prioritizes the ferry over a city).
+- The gunner is proven to wave 5 (the sweep's bar); ferries and (from wave 7)
+  smart bombs make the deep arithmetic bind earlier (~wave 9–10 pays 28–30
+  warheads plus the ferry salvo's cruises against 30 shells), so there losing
+  cities is volume, not style — the §deep A/B proves the bonus adds nothing to
+  that bill (the reserve rule holds the 125 until the magazine truly has
+  surplus, and the watch never prioritizes the ferry over a city). The watch
+  likewise holds fire on a smart bomb until a blind solution exists, and its
+  smart-bomb branch is inert below wave 7, so the deep doctrine numbers were
+  re-measured with the #3630 arrivals switched off at the source.
 - Outer batteries fire by nearest-silo |dx| like the human click law — the
   original's field-of-fire arcs per battery are not modelled.

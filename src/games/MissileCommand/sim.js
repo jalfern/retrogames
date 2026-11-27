@@ -46,6 +46,33 @@ export const PROVEN_WAVES = 5 // the sweep's bar: clear waves 1..PROVEN_WAVES un
 // wave 1..5 proof byte-identical — the RNG is never consulted below the gate.
 export const SAUCER_FIRST_WAVE = 6
 export const SAUCER_SCORE = 125
+// Smart bombs (#3630) — the evasive warhead. Wikipedia (arcade article): "smart
+// bombs that can evade a less-than-perfectly targeted missile", and the counter
+// rule verbatim: "The missiles of the center battery fly to their targets at
+// much greater speed than those fired from the other two; only these missiles
+// can effectively destroy a smart bomb at a distance." Atari 1981 manual §6:
+// the smart cruise missiles "can detect and evade your ABM explosions"; §7
+// hint 3: aimed directly on them "the enemy cannot detect your ABMs" (blind
+// spot). Same §6 line that put ferries at wave 6 gates the smart bomb one wave
+// behind — the RNG stays untouched below the gate so waves 1..6 (and every
+// saucer pin) replay byte-identical.
+export const SMART_FIRST_WAVE = 7
+export const SMART_SCORE = 25 // arcade bills it as an ICBM-class warhead; VCS Table 1's 125 cruise slot already belongs to the ferry craft
+export const CENTER_SILO_X = 400 // the battery of the "much greater speed"
+export const CENTER_ABM_SPEED = 28
+export const SMART_DETECT_R = 60 // a live blast inside this line is sensed
+export const SMART_SENSOR_R = 70 // an incoming ABM is only detected this close — the slow outer missile loiters in range, the fast center blips past before the bomb can run
+export const SMART_PERFECT_R = 32 // blind spot (§7 hint 3): aim on the bomb and it never sees the shot. 32 px — not the head, but the lead window: it must swallow the bomb's own travel while the ABM flies, which is why fast center shots thread it where careful outer ones never can.
+export const SMART_EV_TICKS = 12
+export const SMART_EV_SPEED = 2.6
+export const SMART_CORE_R = 4 // blast-meets-core envelope, the saucer rule at warhead scale
+
+// The arcade's battery law (#3630): from the wave smart bombs are live, the
+// center battery's ABMs fly much faster. Below the gate every ABM is still 15,
+// so the waves 1..6 proofs replay untouched.
+export function siloSpeed(gs, silo) {
+    return gs.smartWave && silo.x === CENTER_SILO_X ? CENTER_ABM_SPEED : ABM_SPEED
+}
 export const SAUCER_Y_MIN = 120
 export const SAUCER_Y_MAX = 200
 export const SAUCER_SPEED_BASE = 1.6
@@ -80,6 +107,9 @@ export function makeRun(seed) {
         debris: [], // #3638 kill sparks — cosmetic, never gates a wave clear
         flash: null, // #3638 white kill-flash ticks
         attractFerries: 0, // scripted ferry counter for the attract ad (#3638)
+        smartLeftInWave: 0, // evasive warheads (#3630), empty below SMART_FIRST_WAVE
+        smartTimer: 0,
+        smartWave: false, // #3630: the wave-scoped battery-speed rule — startWave flips it from the gate; harnesses that grade other doctrine clear it
         crosshair: { x: SCREEN_WIDTH / 2, y: SCREEN_HEIGHT / 2 },
         state: 'playing', // playing | waveEnd | gameOver
         spawning: true,
@@ -95,7 +125,7 @@ export function makeRun(seed) {
 
 export const citiesAlive = (gs) => gs.cities.filter((c) => c.alive).length
 
-export function startWave(gs) {
+export function startWave(gs, opts = {}) {
     gs.missilesLeftInWave = 10 + gs.wave * 2
     // #3629: the cruise salvo rolls only at or past the gate — below
     // SAUCER_FIRST_WAVE the seeded stream is untouched, so every wave 1..5
@@ -105,6 +135,17 @@ export function startWave(gs) {
         gs.saucerTimer = 60 + Math.floor(gs.rand() * 200)
     } else {
         gs.saucersLeftInWave = 0
+    }
+    // #3630 smart bombs: one guaranteed per wave from the gate, +1 every four,
+    // cap two. Rolls ride after the saucer rolls, below the gate never.
+    // opts.noSmart is the doctrine-harness opt-out: not just the arrivals but
+    // the DIE too, so a graded wave replays bit-exact against the pre-smart sim.
+    gs.smartWave = gs.wave >= SMART_FIRST_WAVE && !opts.noSmart
+    if (gs.smartWave) {
+        gs.smartLeftInWave = Math.min(2, 1 + Math.floor((gs.wave - SMART_FIRST_WAVE) / 4))
+        gs.smartTimer = 120 + Math.floor(gs.rand() * 240)
+    } else {
+        gs.smartLeftInWave = 0
     }
     gs.spawning = true
     gs.state = 'playing'
@@ -138,12 +179,24 @@ export function fireAt(gs, x, y, wid = null) {
     if (gs.state !== 'playing') return false
     const silo = nearestSilo(gs, x)
     if (!silo) return false
+    return fireFrom(gs, silo, x, y, wid)
+}
+
+function fireFrom(gs, silo, x, y, wid) {
+    if (!silo || !silo.alive || silo.ammo <= 0) return false
     silo.ammo--
+    // #3630: the center battery flies the arcade's "much greater speed" once
+    // smart bombs are live. A shot aimed directly on a smart bomb (≤ 16 px,
+    // manual §7 hint 3) is blind — the enemy cannot detect it.
+    const blind = gs.warheads.some((m) => !m.dead && m.smart &&
+        Math.hypot(m.x - x, m.y - y) <= SMART_PERFECT_R)
     gs.abms.push({
         x: silo.x, y: silo.y,
         startX: silo.x, startY: silo.y,
         targetX: x, targetY: y,
-        speed: ABM_SPEED,
+        speed: siloSpeed(gs, silo),
+        center: silo.x === CENTER_SILO_X, // only center blasts can hurt a smart bomb
+        blind,
         color: '#00ffff',
         wid,
         boom: null, // tick the shot detonates — the driver's cover window
@@ -152,11 +205,12 @@ export function fireAt(gs, x, y, wid = null) {
     return true
 }
 
-function spawnBlast(gs, x, y) {
+function spawnBlast(gs, x, y, center = false) {
     gs.blasts.push({
         x, y,
         radius: 1,
         growing: true,
+        center, // #3630: only a center-battery fireball can kill a smart bomb
         color: gs.rand() > 0.5 ? '#ffffff' : '#ff0000',
     })
     gs.events.push('boom')
@@ -184,8 +238,53 @@ export function stepWarhead(m, steps) {
 // ABM arrival rule of the update below: launched before tick n moves, it
 // detonates on floor(d/speed)+1 — the strict `dist < speed` test costs the
 // extra tick on exact multiples; predictions that miss it hit early.
-export function abmArrivalTicks(d) {
-    return Math.floor(d / ABM_SPEED) + 1
+export function abmArrivalTicks(d, speed = ABM_SPEED) {
+    return Math.floor(d / speed) + 1
+}
+
+// One tick of a smart bomb (#3630). It senses live blasts within SMART_DETECT_R
+// and incoming ABMs within SMART_SENSOR_R (§6 "detect and evade your ABM
+// explosions") — blind shots (aim directly on it, §7 hint 3) are never seen.
+// Threatened, it sidesteps away for a burst of ticks, curving back onto its
+// target after; the bend is why the arcade said you'd know one when you saw it.
+function stepSmartBomb(gs, m) {
+    let tx = null
+    let ty = null
+    for (const e of gs.blasts) {
+        if (Math.hypot(m.x - e.x, m.y - e.y) < SMART_DETECT_R) { tx = e.x; ty = e.y; break }
+    }
+    if (tx === null) {
+        for (const a of gs.abms) {
+            if (a.blind) continue // enemy cannot detect your ABMs — when it is directly on them
+            if (Math.hypot(m.x - a.x, m.y - a.y) < SMART_SENSOR_R) { tx = a.targetX; ty = a.targetY; break }
+        }
+    }
+    if (tx !== null) { m.evadeX = tx; m.evadeY = ty; m.evTicks = SMART_EV_TICKS }
+    if (m.evTicks > 0) {
+        m.evTicks--
+        let nx = m.x - m.evadeX
+        let ny = m.y - m.evadeY
+        const nl = Math.hypot(nx, ny) || 1
+        nx /= nl; ny /= nl
+        if (ny < 0.35) { // it escapes across the sky, not up and away
+            ny = 0.35
+            const rl = Math.hypot(nx, ny)
+            nx /= rl; ny /= rl
+        }
+        m.x += nx * SMART_EV_SPEED
+        m.y += ny * SMART_EV_SPEED
+        m.x = Math.max(4, Math.min(SCREEN_WIDTH - 4, m.x))
+    } else {
+        const dx = m.targetX - m.x
+        const dy = m.targetY - m.y
+        const dist = Math.sqrt(dx * dx + dy * dy)
+        if (dist < m.speed) { spawnBlast(gs, m.targetX, m.targetY); m.dead = true; return }
+        const a = Math.atan2(dy, dx)
+        m.x += Math.cos(a) * m.speed
+        m.y += Math.sin(a) * m.speed
+    }
+    m.trail.push([m.x, m.y])
+    if (m.trail.length > 96) m.trail.shift()
 }
 
 // One fixed tick. `cmd` is { aimX, aimY, wid? } when something decides to
@@ -195,7 +294,14 @@ export function tickMc(gs, cmd = null) {
     gs.events.length = 0
     if (gs.state === 'gameOver') return
 
-    if (cmd && gs.state === 'playing') fireAt(gs, cmd.aimX, cmd.aimY, cmd.wid ?? null)
+    // cmd may name its battery (`silo`): the arcade had three buttons and any
+    // base could be told to shoot anywhere — the watch uses that for smart
+    // bombs (only the center battery's fireball can kill one). No silo named
+    // means the engine's own nearest-silo click law.
+    if (cmd && gs.state === 'playing') {
+        if (cmd.silo != null) fireFrom(gs, gs.silos[cmd.silo], cmd.aimX, cmd.aimY, cmd.wid ?? null)
+        else fireAt(gs, cmd.aimX, cmd.aimY, cmd.wid ?? null)
+    }
 
     if (gs.state === 'waveEnd') {
         gs.waveBreak--
@@ -222,6 +328,36 @@ export function tickMc(gs, cmd = null) {
                 gs.saucersLeftInWave--
                 gs.events.push('saucer')
                 if (gs.saucersLeftInWave > 0) gs.saucerTimer = 120 + Math.floor(gs.rand() * 160)
+            }
+        }
+
+        // #3630 smart bombs: seeded entry, one guaranteed per wave from the
+        // gate (+1 every four, cap two). They ride the warhead spawn dice to a
+        // live target, then read the sky on the way down.
+        if (gs.smartLeftInWave > 0) {
+            gs.smartTimer--
+            if (gs.smartTimer <= 0) {
+                const targets = [...gs.cities, ...gs.silos].filter((t) => t.alive)
+                if (targets.length > 0) {
+                    const pick = chooseEnemySpawn(gs.rand, targets)
+                    gs.warheads.push({
+                        id: gs.nextId++,
+                        x: pick.x, y: 0, startX: pick.x, startY: 0,
+                        targetX: pick.target.x,
+                        targetY: pick.target.y,
+                        speed: WARHEAD_SPEED_BASE + gs.wave * 0.1,
+                        color: '#ff0000',
+                        coverUntil: 0,
+                        smart: true,
+                        evTicks: 0,
+                        evadeX: 0,
+                        evadeY: 0,
+                        trail: [],
+                    })
+                    gs.events.push('smart')
+                    gs.smartLeftInWave--
+                }
+                if (gs.smartLeftInWave > 0) gs.smartTimer = 160 + Math.floor(gs.rand() * 220)
             }
         }
 
@@ -252,9 +388,11 @@ export function tickMc(gs, cmd = null) {
         }
 
         // Wave clears only when the sky AND the fire are empty (verbatim law),
-        // and — #3629 — once every owed cruise craft has crossed or burned.
+        // once every owed cruise craft has crossed or burned (#3629), and —
+        // #3630 — once every owed smart bomb has fallen or been killed.
         if (!gs.spawning && gs.warheads.length === 0 && gs.blasts.length === 0 &&
-            gs.saucers.length === 0 && gs.saucersLeftInWave === 0) {
+            gs.saucers.length === 0 && gs.saucersLeftInWave === 0 &&
+            gs.smartLeftInWave === 0) {
             nextWave(gs)
         }
     }
@@ -264,7 +402,7 @@ export function tickMc(gs, cmd = null) {
         const dy = m.targetY - m.y
         const dist = Math.sqrt(dx * dx + dy * dy)
         if (dist < m.speed) {
-            spawnBlast(gs, m.targetX, m.targetY)
+            spawnBlast(gs, m.targetX, m.targetY, !!m.center)
             m.dead = true
         } else {
             const a = Math.atan2(dy, dx)
@@ -275,8 +413,10 @@ export function tickMc(gs, cmd = null) {
     gs.abms = gs.abms.filter((m) => !m.dead)
 
     const saucerWrecks = []
+    const smartWrecks = []
 
     gs.warheads.forEach((m) => {
+        if (m.smart) { stepSmartBomb(gs, m); return } // #3630 — it reads the sky, not just its target
         const dx = m.targetX - m.x
         const dy = m.targetY - m.y
         const dist = Math.sqrt(dx * dx + dy * dy)
@@ -330,9 +470,17 @@ export function tickMc(gs, cmd = null) {
         gs.warheads.forEach((m) => {
             const dx = m.x - e.x
             const dy = m.y - e.y
-            if (Math.sqrt(dx * dx + dy * dy) < e.radius) {
+            if (Math.sqrt(dx * dx + dy * dy) < e.radius + (m.smart ? SMART_CORE_R : 0)) {
+                // #3630 hard counter-rule (Wikipedia, verbatim): "only these
+                // [center battery] missiles can effectively destroy a smart
+                // bomb" — an outer-battery fireball passes harmlessly through.
+                if (m.smart && !e.center) return
                 m.dead = true
                 gs.score += 25
+                if (m.smart) {
+                    gs.events.push('smartkill')
+                    smartWrecks.push([m.x, m.y])
+                }
             }
         })
         // #3629: any fireball that touches the hull burns the cruise craft —
@@ -389,6 +537,7 @@ export function tickMc(gs, cmd = null) {
     // Wreck fireballs spawn after the pass so a kill's blast starts its own
     // grow-shrink life next tick (no mid-iteration reentry into gs.blasts).
     for (const [wx, wy] of saucerWrecks) spawnBlast(gs, wx, wy)
+    for (const [wx, wy] of smartWrecks) spawnBlast(gs, wx, wy, true)
     gs.saucers = gs.saucers.filter((s) => !s.dead)
 }
 
@@ -426,7 +575,7 @@ export function attractFerry(gs) {
 // A/B sweep can prove the bonus never costs a city.
 export function gunnerStep(gs, opts = {}) {
     if (gs.state !== 'playing') return null
-    const live = gs.warheads.filter((m) => !m.dead).sort((a, b) => b.y - a.y)
+    const live = gs.warheads.filter((m) => !m.dead && !m.smart).sort((a, b) => b.y - a.y)
     for (const w of live) {
         if (gs.tick < w.coverUntil) continue // a shot is already promised to it
         let fired = null
@@ -436,7 +585,10 @@ export function gunnerStep(gs, opts = {}) {
             const silo = nearestSilo(gs, p.x)
             if (!silo) return null // batteries dry or dead — nothing to spend
             const d = Math.hypot(p.x - silo.x, p.y - silo.y)
-            const k = abmArrivalTicks(d)
+            // #3630: predict with the launching silo's real speed — from the
+            // smart gate the center flies 28, and a boom computed at 15
+            // detonates early and misses. Below the gate this is ABM_SPEED.
+            const k = abmArrivalTicks(d, siloSpeed(gs, silo))
             if (k <= j) {
                 // Detonates at tick now+k with radius >= 1; the warhead is at
                 // this exact point at now+j >= now+k — distance 0 < radius.
@@ -450,6 +602,43 @@ export function gunnerStep(gs, opts = {}) {
         }
         // No safe intercept exists for the lowest warhead — higher ones are
         // covered by their own shots already in the air or by the next tick.
+    }
+    // #3630 smart bombs — the arcade's own counter is the center battery
+    // ("only these missiles can effectively destroy a smart bomb at a
+    // distance"), so the watch never burns outer ammo on one: it solves the
+    // straight-line meet from the center silo at center speed. The bomb's
+    // sidestep is bounded (2.6 px/tick against 28 px/tick of ABM) — the fast
+    // missile is exactly what made the expert's shot land. Warheads above,
+    // ferry below: cities before bonus, doctrine before opportunism.
+    const center = gs.silos.find((s) => s.alive && s.ammo > 0 && s.x === CENTER_SILO_X)
+    if (center) {
+        const centerIdx = gs.silos.indexOf(center)
+        const bombs = gs.warheads.filter((m) => !m.dead && m.smart).sort((a, b) => b.y - a.y)
+        for (const w of bombs) {
+            if (gs.tick < w.coverUntil) continue
+            let fired = null
+            for (let j = 1; j <= 500; j++) {
+                const p = stepWarhead(w, j)
+                if (p.y > SAFE_Y) break
+                // Only blind solutions (§7 hint 3): the aim must sit inside the
+                // blind radius of the bomb at launch, else the seen shot gets
+                // dodged and the ammo is just noise. The center battery's speed
+                // is what makes such a point exist at range — the arcade proof.
+                if (Math.hypot(w.x - p.x, w.y - p.y) > SMART_PERFECT_R) continue
+                const d = Math.hypot(p.x - center.x, p.y - center.y)
+                const k = abmArrivalTicks(d, CENTER_ABM_SPEED)
+                if (k <= j) {
+                    // arcade three-button law: any base may be told to shoot
+                    // anywhere, so outer-sector bombs are still defended.
+                    fired = { aimX: p.x, aimY: p.y, wid: w.id, boom: gs.tick + k, silo: centerIdx }
+                    break
+                }
+            }
+            if (fired) {
+                w.coverUntil = fired.boom + 4
+                return fired
+            }
+        }
     }
     // #3629 opportunism, doctrine-clean: spend on a saucer only when the
     // warhead sky is fully covered (or empty) AND the craft is well over the
@@ -480,7 +669,7 @@ export function gunnerStep(gs, opts = {}) {
             const silo = nearestSilo(gs, px)
             if (!silo) break // batteries dry or dead — nothing to spend
             const d = Math.hypot(px - silo.x, saucer.y - silo.y)
-            const k = abmArrivalTicks(d)
+            const k = abmArrivalTicks(d, siloSpeed(gs, silo)) // #3630 center flies 28
             if (k <= j) {
                 saucer.coverUntil = gs.tick + k + 4
                 return { aimX: px, aimY: saucer.y, wid: saucer.id, boom: gs.tick + k }

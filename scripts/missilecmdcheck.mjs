@@ -22,6 +22,7 @@ import {
     chooseEnemySpawn, makeRun, tickMc, gunnerStep, citiesAlive, fireAt, startWave,
     SCREEN_WIDTH, SAFE_Y, WAVE_BREAK_TICKS, PROVEN_WAVES, attractFerry, ATTRACT_FERRY_EVERY,
     SAUCER_FIRST_WAVE, SAUCER_SCORE,
+    SMART_FIRST_WAVE, SMART_SCORE, CENTER_SILO_X, CENTER_ABM_SPEED,
 } from '../src/games/MissileCommand/sim.js'
 import { seedRng, seedFromQuery } from '../src/utils/gameContract.js'
 import { plant, pull } from './lib/mutateguard.mjs'
@@ -312,7 +313,7 @@ console.log('saucers (#3638): deep doctrine waves 6..10, bonus on vs off')
     const run = (seed, wave, noBonus) => {
         const gs = makeRun(seed)
         gs.wave = wave
-        startWave(gs)
+        startWave(gs, { noSmart: true }) // #3630 isolation: ferry doctrine graded bit-exact against the pre-smart sim (arrivals AND their die)
         let guard = 0
         while (gs.wave <= wave && !gs.over && guard++ < 40000) tickMc(gs, gunnerStep(gs, { noBonus }))
         return { over: gs.over, wave: gs.wave, cities: citiesAlive(gs), score: gs.score }
@@ -401,6 +402,182 @@ console.log('saucers (#3638): kill juice, and the attract ferry scripted by tick
     ok(second && second.y === 156 && second.dir === -1, 'the second sighting alternates side and altitude (advertising, not a loop frozen on one frame)', JSON.stringify(second))
 }
 
+// ---------------------------------------------------------- smart bombs --------
+// #3630 — the evasive warhead and its arcade counter. Wikipedia (verbatim):
+// "The missiles of the center battery fly to their targets at much greater
+// speed than those fired from the other two; only these missiles can
+// effectively destroy a smart bomb at a distance." Manual §6: they "detect and
+// evade your ABM explosions"; §7 hint 3: aimed directly on them "the enemy
+// cannot detect your ABMs". The gate at wave 7 keeps the waves 1..6 RNG and
+// every saucer pin byte-identical.
+console.log('smart bombs (#3630): the wave gate holds, the batteries split by speed')
+{
+    ok(SMART_FIRST_WAVE === 7, 'the smart-bomb gate sits one wave behind the ferry (§6 "after the 6th wave")', `${SMART_FIRST_WAVE}`)
+    ok(CENTER_ABM_SPEED === 28, 'the center battery flies much greater speed (28 vs 15)', `${CENTER_ABM_SPEED}`)
+    // the speed split is live-fire, per battery, and only from the gate
+    const g1 = makeRun(4001); tickMc(g1, { aimX: 400, aimY: 300 })
+    ok(g1.abms.length === 1 && g1.abms[0].speed === 15, 'below the gate the center battery still flies 15 (byte-parity preserved)')
+    const g2 = makeRun(4002); g2.wave = SMART_FIRST_WAVE; startWave(g2)
+    tickMc(g2, { aimX: 400, aimY: 300 })
+    tickMc(g2, { aimX: 120, aimY: 300 })
+    ok(g2.abms[0].speed === CENTER_ABM_SPEED && g2.abms[0].center === true,
+        'from the gate, a center click launches the fast ABM', `speed ${g2.abms[0].speed}`)
+    ok(g2.abms[1].speed === 15 && g2.abms[1].center === false,
+        'outer batteries keep the slow ABM — only the center is the counter')
+    // structural: nothing smart lives or is owed below the gate, on every wave
+    let early = 0
+    for (let s = 1; s <= 8; s++) {
+        const gs = makeRun(s * 7919 + 3)
+        let guard = 0
+        while (gs.wave < SMART_FIRST_WAVE && !gs.over && guard++ < 40000) {
+            tickMc(gs, gunnerStep(gs))
+            if (gs.warheads.some((m) => m.smart) || gs.smartLeftInWave > 0) early++
+        }
+    }
+    ok(early === 0, 'no smart bomb lives or is owed below the gate (8 seeds)', `${early}`)
+}
+
+console.log('smart bombs (#3630): entry, evade, the center-only kill, the wave hold')
+{
+    // guaranteed entry at the gate on every seed, aimed at live structures
+    const STRUCT_X = [120, 200, 280, 520, 600, 680, 40, 400, 760]
+    let entered = 0, onTarget = 0, total = 0
+    for (let s = 1; s <= 12; s++) {
+        const gs = makeRun(s * 7919 + 3)
+        let guard = 0, saw = 0
+        while (gs.wave <= SMART_FIRST_WAVE && !gs.over && guard++ < 40000) {
+            const before = gs.warheads.length
+            tickMc(gs, gunnerStep(gs))
+            if (gs.events.includes('smart')) {
+                saw++
+                const m = gs.warheads.slice(before).find((w) => w.smart) || gs.warheads.find((w) => w.smart)
+                total++
+                if (m && STRUCT_X.includes(m.targetX)) onTarget++
+            }
+        }
+        if (saw > 0) entered++
+    }
+    ok(entered === 12, 'every seed sees a smart bomb in its wave-7 raid (12/12)', `${entered}/12`)
+    ok(onTarget === total, `smart bombs aim at live structures (${onTarget}/${total})`)
+    // deterministic replay across the gate
+    const t7 = (seed) => {
+        const gs = makeRun(seed)
+        let h = 2166136261
+        const mix = (n) => { h ^= Math.round(n * 1000) + 0x7fffffff; h = Math.imul(h, 16777619) }
+        let guard = 0
+        while (gs.wave <= SMART_FIRST_WAVE && !gs.over && guard++ < 40000) {
+            tickMc(gs, gunnerStep(gs))
+            mix(gs.tick); mix(gs.score); mix(gs.warheads.length); mix(gs.abms.length)
+            for (const m of gs.warheads) { mix(m.x); mix(m.y); mix(m.smart ? 1 : 0); mix(m.evTicks) }
+            for (const a of gs.abms) { mix(a.speed); mix(a.blind ? 1 : 0); mix(a.center ? 1 : 0) }
+        }
+        return h >>> 0
+    }
+    ok(t7(9090) === t7(9090), 'the wave-7 raid replays byte-equal from the seed')
+    ok(t7(9090) !== t7(9091), 'different seed → different smart-bomb raid')
+    // hard counter-rule: an outer-battery fireball passes through a smart bomb
+    const mk = (seed) => {
+        const g = makeRun(seed)
+        g.wave = SMART_FIRST_WAVE; startWave(g)
+        g.spawning = false; g.missilesLeftInWave = 0; g.warheads = []; g.blasts = []; g.abms = []
+        g.saucersLeftInWave = 0; g.saucers = []
+        return g
+    }
+    const bomb = (id, x, y, tx) => ({ id, x, y, startX: x, startY: 0, targetX: tx, targetY: 550,
+        speed: 1.6, coverUntil: 0, smart: true, evTicks: 0, evadeX: 0, evadeY: 0, trail: [] })
+    const g3 = mk(77)
+    g3.warheads = [bomb(1, 300, 300, 280)]
+    g3.blasts = [{ x: 300, y: 300, radius: 10, growing: true, center: false, color: '#fff' }]
+    const s0 = g3.score
+    tickMc(g3, null)
+    ok(g3.warheads.length === 1 && g3.score === s0, 'an outer-battery fireball cannot kill a smart bomb (arcade counter-rule)')
+    const g4 = mk(78)
+    g4.warheads = [bomb(1, 300, 300, 280)]
+    g4.blasts = [{ x: 300, y: 300, radius: 10, growing: true, center: true, color: '#fff' }]
+    const s1 = g4.score
+    tickMc(g4, null)
+    ok(g4.warheads.length === 0 && g4.score - s1 === SMART_SCORE && g4.events.includes('smartkill'),
+        `a center-battery fireball kills it for ${SMART_SCORE} (arcade ICBM-class tax)`)
+    ok(g4.blasts.some((b) => b.center), 'the kill leaves its own wreck fireball')
+    // §6 detect & evade: an incoming, seen ABM pushes the bomb off its line
+    const g5 = mk(79)
+    g5.warheads = [bomb(1, 400, 300, 400)]
+    g5.silos[1].ammo = 10
+    fireAt(g5, 440, 300) // seen (40 px off the core) and its path crosses the bomb's — the bomb must read it coming
+    const straight = { x: 400, y: 300 + 1.6 }
+    let drift = 0
+    for (let i = 0; i < 12 && g5.abms.length; i++) {
+        tickMc(g5, null)
+        const m = g5.warheads[0]
+        if (m) drift = Math.max(drift, Math.abs(m.x - straight.x))
+        g5.abms.forEach((a) => { if (a.dead) return })
+    }
+    ok(drift > 4, `a seen ABM bends the smart bomb off its line (${Math.round(drift)} px lateral)`)
+    // §7 hint 3: aimed directly on it, the enemy cannot detect the shot
+    const g6 = mk(80)
+    g6.warheads = [bomb(1, 400, 300, 400)]
+    fireAt(g6, 400, 310) // ~10 px off the core → blind
+    ok(g6.abms[0] && g6.abms[0].blind === true, 'a crosshair ON the bomb is a blind shot (manual §7 hint 3)')
+    let guard6 = 0
+    while (guard6++ < 40 && g6.warheads.length > 0) tickMc(g6, null)
+    ok(g6.warheads.length === 0, 'the blind shot kills — evasion never registers it')
+    const g7 = mk(81)
+    g7.warheads = [bomb(1, 400, 300, 400)]
+    fireAt(g7, 470, 300) // 70 px off → seen
+    ok(g7.abms[0] && g7.abms[0].blind === false, 'a shot 70 px off is detected')
+    // the wave cannot clear while a smart bomb is owed or falling
+    const g8 = mk(82)
+    g8.smartLeftInWave = 1
+    g8.smartTimer = 30
+    let clearTooEarly = 0, guard8 = 0
+    while (g8.state === 'playing' && guard8++ < 3000) {
+        tickMc(g8, null)
+        if (g8.state === 'playing' && (g8.smartLeftInWave > 0 || g8.warheads.some((m) => m.smart))) clearTooEarly++
+    }
+    ok(g8.state === 'waveEnd' && g8.wave === SMART_FIRST_WAVE + 1,
+        'the wave holds until the owed smart bomb falls, then clears', `${g8.state}/w${g8.wave}`)
+    ok(clearTooEarly > 0, 'a wave with a smart bomb still owed never reads clear', `${clearTooEarly}`)
+}
+
+console.log('smart bombs (#3630): the watch fights back with the center battery')
+{
+    // one falling smart bomb over the board: the watch answers with the ONLY
+    // battery that can kill it and keeps every city. Cross-sector counts too —
+    // the arcade's three buttons let the center reach any part of the sky.
+    const scenario = (bx, by, tx, seed) => {
+        const g = makeRun(seed)
+        g.wave = SMART_FIRST_WAVE; startWave(g)
+        g.spawning = false; g.missilesLeftInWave = 0; g.warheads = []; g.blasts = []; g.abms = []
+        g.saucersLeftInWave = 0; g.saucers = []
+        g.warheads = [({ id: 1, x: bx, y: by, startX: bx, startY: 0, targetX: tx, targetY: 550,
+            speed: 1.7, coverUntil: 0, smart: true, evTicks: 0, evadeX: 0, evadeY: 0, trail: [] })]
+        let guard = 0, shots = 0, killed = false, everCenterOrigin = false
+        while (guard++ < 700 && !g.over) {
+            const cmd = gunnerStep(g)
+            if (cmd && cmd.silo != null) { shots++; everCenterOrigin = g.silos[cmd.silo].x === CENTER_SILO_X }
+            tickMc(g, cmd)
+            if (g.events.includes('smartkill')) { killed = true; break }
+        }
+        return { killed, shots, cities: citiesAlive(g), everCenterOrigin }
+    }
+    const c = scenario(400, 140, 400, 1234)
+    ok(c.killed && c.cities === 6, 'watch kills a center-sector smart bomb with the cities untouched', `killed ${c.killed}, cities ${c.cities}, ${c.shots} shots`)
+    ok(c.everCenterOrigin && c.shots <= 5, 'the answer comes from the center battery, without spraying', `${c.shots} shots`)
+    const l = scenario(200, 120, 120, 2345)
+    ok(l.killed && l.cities === 6, 'a smart bomb over the OUTER sector still dies — center battery reaches cross-sector (3-button law)', `killed ${l.killed}, cities ${l.cities}, ${l.shots} shots`)
+    // doctrine: an uncovered warhead outranks the exotic
+    const g = makeRun(3456)
+    g.wave = SMART_FIRST_WAVE; startWave(g)
+    g.spawning = false; g.missilesLeftInWave = 0; g.warheads = []; g.blasts = []; g.abms = []
+    g.saucersLeftInWave = 0; g.saucers = []
+    g.warheads = [
+        { id: 9, x: 100, y: 80, startX: 100, startY: 0, targetX: 120, targetY: 550, speed: 1.1, color: '#f00', coverUntil: 0 },
+        { id: 8, x: 400, y: 140, startX: 400, startY: 0, targetX: 400, targetY: 550, speed: 1.7, coverUntil: 0, smart: true, evTicks: 0, evadeX: 0, evadeY: 0, trail: [] },
+    ]
+    const shot = gunnerStep(g)
+    ok(shot && shot.wid === 9, 'cities before exotics: the uncovered ICBM owns the shot ahead of the smart bomb', `wid ${shot && shot.wid}`)
+}
+
 // -------------------------------------------------------------------- the law ----
 console.log('component wiring: pin, report, restart, seat')
 {
@@ -455,8 +632,8 @@ if (process.argv.includes('--mutant')) {
             `export const SAFE_Y = 485`,
             `export const SAFE_Y = 528`],
         ['the gunner chases the highest warhead (urgency inverted)', S,
-            `const live = gs.warheads.filter((m) => !m.dead).sort((a, b) => b.y - a.y)`,
-            `const live = gs.warheads.filter((m) => !m.dead).sort((a, b) => a.y - b.y)`],
+            `const live = gs.warheads.filter((m) => !m.dead && !m.smart).sort((a, b) => b.y - a.y)`,
+            `const live = gs.warheads.filter((m) => !m.dead && !m.smart).sort((a, b) => a.y - b.y)`],
         ['no-lead prediction (aims where the warhead was, not where it will be)', S,
             `const p = stepWarhead(w, j)`,
             `const p = stepWarhead(w, 1)`],
@@ -492,6 +669,27 @@ if (process.argv.includes('--mutant')) {
         ['#3638: the attract ferry rolls dice (determinism story dies)', S,
             `y: 130 + (n % 3) * 26,`,
             `y: SAUCER_Y_MIN + Math.floor(gs.rand() * (SAUCER_Y_MAX - SAUCER_Y_MIN)),`],
+        ['the smart-bomb gate opens at wave 1 (byte-parity floor shatters)', S,
+            `gs.smartWave = gs.wave >= SMART_FIRST_WAVE && !opts.noSmart`,
+            `gs.smartWave = true`],
+        ['the center battery keeps the slow speed (arcade counter-rule gone)', S,
+            `export const CENTER_ABM_SPEED = 28`,
+            `export const CENTER_ABM_SPEED = 15`],
+        ['outer fire kills smart bombs too (the counter-rule is inverted)', S,
+            `if (m.smart && !e.center) return`,
+            `if (m.smart && e.center) return`],
+        ['smart bombs see nothing (the §6 evade is gone)', S,
+            `if (tx !== null) { m.evadeX = tx`,
+            `if (false && tx !== null) { m.evadeX = tx`],
+        ['hint 3 dropped — an on-bomb aim is still detected', S,
+            `Math.hypot(m.x - x, m.y - y) <= SMART_PERFECT_R`,
+            `Math.hypot(m.x - x, m.y - y) <= 0`],
+        ['the wave clears regardless of owed smart bombs', S,
+            `gs.smartLeftInWave === 0) {`,
+            `true) {`],
+        ['the watch sprays outer ammo at smart bombs (3-button doctrine lost)', S,
+            `fired = { aimX: p.x, aimY: p.y, wid: w.id, boom: gs.tick + k, silo: centerIdx }`,
+            `fired = { aimX: p.x, aimY: p.y, wid: w.id, boom: gs.tick + k, silo: gs.silos.findIndex((s) => s.alive && s.ammo > 0) }`],
     ]
     let died = 0
     for (const [name, file, from, to] of MUTANTS) {
