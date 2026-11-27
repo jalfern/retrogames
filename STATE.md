@@ -1,57 +1,66 @@
-# STATE — forge board snapshot (slot b, 2026-11-27 — ASTEROIDS kiting dance SHIPPED `50f73b4`)
+# STATE — forge board snapshot (slot a, 2026-11-27 — CENTIPEDE's garden bites, shipped `29d4458`)
 
-## This session (slot b) — resumed slot b's own corpse and finished it
-- TARGET #3689 (warden assign) was NOT taken: step 1b found #3706
-  (ASTEROIDS kiting) `building` with pushed `forge/asteroids-kite` and open
-  PR #3717 — a corpse this slot died on after the PR but before merge.
-  Resume outranks claim ("never claim a second issue while one is
-  half-built"). #3689 meanwhile went `building-qa` on its own — QA holds it.
-- Predecessor's work verified independently at `4394580`, not trusted:
-  asteroidscheck **136/0**, asteroidsdrive **10/10** live on :5178 (seed 42,
-  2 bounties banked on the real seat, zero page errors), eslint on all six
-  changed files + lint:mario/fps/ai + build green, main-ok green, no
-  `.mutant-running`, tree clean, no hold comments on #3717.
-- smoke failed once on the PR head (advisory). Rerun launched pre-merge per
-  rule 3; not waited on; triage note written into QA pass #3730 item 4.
-- Merged via `scripts/forge-merge.sh` → `50f73b4`, cleanup self-completed
-  (remote branch gone, lane re-detached).
-- Prod verified: bundle `index-B2TRuLYJ.js` carries the ledger line
-  `saucerKilled&&(s+=lE[..]*1.2)` — the dance is live at
-  https://jalfern.com/retrogames/asteroids. Lesson kept: prod asset URLs
-  301 to www — curl them with `-L` or the marker grep is meaningless.
-- Step 8b filed **QA — ASTEROIDS: polish pass #3730** (bounty credit popup +
-  saucer-pitch ping, who-is-flying ON AUTO/MANUAL tell, phone legibility
-  probe, smoke triage note).
+## This session (slot a) — never-dry rung, one game, shipped
+- TARGET #3706 REFUSED at claim (slot b live, 84 min < 90 min window — the
+  liveness namespace working exactly as built; b shipped it as `50f73b4`).
+  Normal ladder: no steer, `next` #1712 is waiting-jon, queue empty, QA
+  sessions live (borrow blocked), flagship stage spent (every flagship gap
+  CLOSED/BLOCKED/owned) → NEVER-DRY: `weakestStage` scored CENTIPEDE 5,
+  next title 4. Three of the five were `~~shipped~~` phantoms (#3670 shape);
+  the oldest genuine gap was bug-vs-bug. Filed #3726 with why-weakest,
+  claimed, shipped: **the menagerie bites** (PR #3728).
+- Laws (pinned spec — the arcade's exact bug-vs-bug frames are unwitnessed):
+  spider devours segments (lunch pays 0, leaves no mushroom, chain re-heads,
+  rear takes the #3631 boost, one chew/tick); scorpion stings segments
+  red-fast via the caps' venom law. Dice-free — `?seed=N` bit-exact.
+- Proof: centipedechek **183/0**, **41/41 mutants die**; centipedadrive
+  **27/27** real Chrome (2 bites banked live 10→8 = bites, heads 1→2,
+  score 0→0, sting raced, zero page errors); eslint + lint:mario/fps/ai/
+  centipede + build green. Advisory `smoke` red once — rerun per rule 3.
+- **Harness fact paid (#8.8 lesson): the mutant walk caught a pin collision.**
+  My new bite loop re-implemented the split-boost line verbatim; the old
+  full-src pin `state.centipedes[j].spd = splitSpd(...)` then matched EITHER
+  loop, so the 'cuts never accelerate' mutant survived (39/40). Fix: scope
+  pins to their own loop body (`hitSeg`-anchored regex), and mortalise the
+  new loop with its own mutant. Two identical laws = two scoped pins.
+- **Harness fact paid: DEV witnesses don't ship.** `__cTest`/`exposeGame`
+  are DEV-only, so grepping the prod bundle for `stingSeg`/`devour` can
+  never verify a ship — poll the hash (`C2e-szns`→`BGVulaco`), check the
+  Vercel check on the merge sha, and treat the at-head browser drive as the
+  live proof. I lost 8 min of polling to the wrong string.
+- Filed #3733 (`QA — CENTIPEDE: polish pass`, feedback): bite/sting lack
+  visual tells; natural bites rare in waves 1–3 (rollout banked 0); kill-pop
+  debris grammar is the remaining README look gap.
 
 ## BOARD facts at close
-- main GREEN at `50f73b4`. building: #3726 (CENTIPEDE menagerie — other
-  lane). building-qa: #3707 (MC three-button), #3689 (MC hot-seat).
-  game-queue: empty. `next`: #1712 (PLAICRAFT S2, waiting-jon). halt: 0.
-- Rule 4 satisfied: game code merged this slot (#3717).
-- Open jonq: #3335 (QA, due Nov 27 14:14Z), #3516 (Arkanoid, Nov 28) —
-  both AWAITING, none mine. Asked nothing new; every call measured.
+- main GREEN at `8ad170a`. building: #3698 (MC fairness — QA lane).
+  game-queue: empty. shipped this shift: #3706 (b), #3726 (a), plus mini
+  QA #3689/#3707 rides (`66c5339`, `8ad170a`).
+- Rule 4 satisfied (game code merged this slot, #3728). Shift report pushed.
+- Open `next`: #1712 (PLAICRAFT S2, waiting-jon). AWAITING jonq: #3335,
+  #3516. None mine.
 
 ## PLAYABLE on main right now
-- ASTEROIDS — the watch now plays the dance: it stands its ground when the
-  hull is outside the same 45-tick margin rocks obey, leads the crossing on
-  the saucer, and the magazine pays 200/1000 to the driver who banks it:
-  https://jalfern.com/retrogames/asteroids
-- MISSILE COMMAND knot doctrine (#3716), FROGGER duel-seat (#3721), SONAR
-  hash grain (#3718), ROGUE cart laws (#3710/#3715), ORRERY demo (#3701).
+- CENTIPEDE — the garden is an ecosystem: the spider chews the column (kill
+  it with timing or let the menagerie halve it for free — but bug-kills pay
+  nothing), and the scorpion's path races segments red before they reach you:
+  https://jalfern.com/retrogames/centipede
+- ASTEROIDS kiting bounty dance (#3706), MC knot doctrine + HUD tell
+  (#3711/#3727), FROGGER duel-seat (#3721), ROGUE cart laws (#3710).
 
 ## Open questions (links only — #605)
 - #3335, #3516, #3244, #2971, #1712 (all AWAITING; none mine this session).
 
 ## Next claims (for whoever is free)
-1. game-queue empty. #3726 held by the other builder; #3707/#3689 are QA's.
-   Fresh feedback from this slot: #3730 (ASTEROIDS polish) for the QA ladder.
-2. #3689 was the warden's TARGET for slot b but QA claimed it — if the warden
-   re-assigns slot b, ladder normally (oldest feedback / never-dry stages).
-3. #3670 (`~~` phantom filter + em-dash ownership miss) remains the cleanest
-   small harness job between games.
+1. game-queue empty; #3698 is QA's. Fresh feedback: #3733 (CENTIPEDE bite/
+   sting tells) is the newest builder-adjacent item — QA's by lane law.
+2. If never-dry fires again: CENTIPEDE's remaining owned-note is the kill-pop
+   debris gap; #3670 (`~~` phantom filter in `parseGaps`) stays the cleanest
+   small harness job — three phantom gaps on CENTIPEDE alone this week.
+3. Weakest after this ship (from today's scoring): PAC-MAN 4 (gaps 3 named 1),
+   FROGGER/PINBALL 2.
 
 ## Slot state at handoff
-- Slot-b dev server :5178 stopped via `scripts/devstop.sh` at close.
-- Worktree ~/Dev/retrogames-forge-asteroids-kite PRUNED (#3717 merged,
-  tree clean) — docs PR carries this STATE to main; also parked with
-  `statepark.mjs park b`.
+- Slot-a dev server :5173 stopped via `scripts/devstop.sh` at close.
+- Worktree ~/Dev/retrogames-forge-centipede-bite detached at origin/main
+  (#3728 merged); parked with `statepark.mjs park a`; docs PR carries here.
