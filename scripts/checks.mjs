@@ -17,7 +17,7 @@ export const CORE = {
 // here; the rewritten check is browser-only (requireDevServer hard-exits, and no
 // --mutate path survives the rewrite), so it froze the browser-free nightly
 // static job red every night from 2026-11-06 (#601). Smoke carries it now.
-'runwaycheck', 'claimcheck', 'neverbudrycheck', 'robokitcheck', 'tpscheck', 'lanecheck', 'sleepwatchcheck', 'rewritecheck', 'watchsoakcheck', 'watchphonecheck', 'watchpillcheck', 'watchrespawncheck', 'watchlayoutcheck', 'watchbudgetcheck', 'nightlyverdictcheck', 'worktreepurgecheck', 'mergecheck', ['muteguardcheck', true], 'reactcheck', ['keycheck', true],
+'runwaycheck', 'claimcheck', 'neverbudrycheck', 'robokitcheck', 'tpscheck', 'lanecheck', 'sleepwatchcheck', 'rewritecheck', 'watchsoakcheck', 'watchphonecheck', 'watchpillcheck', 'watchrespawncheck', 'watchlayoutcheck', 'watchbudgetcheck', 'nightlyverdictcheck', 'worktreepurgecheck', 'mergecheck', 'plumbingcheck', ['muteguardcheck', true], 'reactcheck', ['keycheck', true],
     // #1711: the take-grader's offline proof (relaysim + synth takes, loopback
     // only, no gh, no browser — verified #601-safe) on the nightly board.
     'gradeselftest'],

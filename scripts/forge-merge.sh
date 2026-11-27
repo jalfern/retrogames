@@ -29,6 +29,11 @@ if [[ "$branch" == main ]]; then
     exit 1
 fi
 node scripts/lib/mergeclean.mjs reap   # advisory; a dirty squat is named, not destroyed
+# #3735 — the plumbing checkout must hold HEAD truth when a merge lands: a lane's
+# stray edits there make every cleanup/prune decision ambiguous (#2047's shape).
+# Park any foreign dirt verbatim (STATE.md permitted) and restore the tree; if
+# parking can't complete, refuse rather than merge over a tree that lies.
+node scripts/lib/plumbguard.mjs park || { echo "forge-merge: plumbing checkout carries foreign dirt that could not be parked — refusing to merge (#3735)" >&2; exit 1; }
 scripts/main-ok.sh || exit 1
 # #3120 — an unknown state is NOT the end of the wait. `gh pr checks` exits
 # non-zero while CI has not registered runs for the pushed head yet ("no checks

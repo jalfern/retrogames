@@ -415,7 +415,8 @@
     "grindcheck": "node scripts/grindcheck.mjs",
     "grindlinedrive": "node scripts/grindlinedrive.mjs",
     "tidaldrive": "node scripts/tidaldrive.mjs",
-    "invadersdrive": "node scripts/invadersdrive.mjs"
+    "invadersdrive": "node scripts/invadersdrive.mjs",
+    "plumbingcheck": "node scripts/plumbingcheck.mjs"
   },
   "dependencies": {
     "cannon-es": "^0.20.0",
