@@ -198,6 +198,9 @@ export const MANUAL_CHECKS = [
   // kongcheck: the b27 DonkeyKong harness — seeded sim sweep + mutants, run by hand
   // (browser-free, but the lane cadence keeps it out of the static scope).
   "scripts/kongcheck.mjs",
+  // #3603: KOI POND — browser-driven demo gate (Chrome via CDP over file://,
+  // no dev server); advisory from the lane: npm run koicheck.
+  "scripts/koicheck.mjs",
   "scripts/landerreplaycheck.mjs",
   "scripts/learnedwalkcheck.mjs",
   "scripts/levelcheck.mjs",
