@@ -55,7 +55,7 @@ const CentipedeGame = () => {
             frame: 0
         }
 
-        // #3634 — render-only bookkeeping: the scorpion's venom trail.
+        // #3633 — render-only bookkeeping: the scorpion's venom trail.
         // Never read by the sim; cleared on exit/respawn.
         let scorpionTrail = []
 
@@ -629,7 +629,7 @@ const CentipedeGame = () => {
                 // Venom trail: every full cap under the streak turns red.
                 state.mushrooms.forEach((m) => {
                     if (Math.abs(m.x - s.x) < 10 && Math.abs(m.y - s.y) < 10 && poisonMushroom(m)) {
-                        m.poisonAt = tickN // #3634 — the crawl stamps the moment
+                        m.poisonAt = tickN // #3633 — the crawl stamps the moment
                         // #3632 — venom sizzles: a detuned two-note fizz, not a
                         // plain blip (each cap is only sizzled once — no spam).
                         audioController.playTone(820, 0.03, 'sawtooth', 0.045)
@@ -689,7 +689,7 @@ const CentipedeGame = () => {
             ctx.fillRect(stemX, stemY, 4, 4)
             ctx.fillStyle = '#c8b17f'
             ctx.fillRect(stemX + 3, stemY, 1, 4)
-            // #3634 — the venom crawl: poisoned caps fill column-by-column
+            // #3633 — the venom crawl: poisoned caps fill column-by-column
             // from the left tip (a drip trails the frontier), then settle in
             // a red that glints. Render-only — the hit law is untouched.
             const crawl = m.poison ? (m.poisonAt == null ? 1 : Math.min(1, (tickN - m.poisonAt) / 60)) : 1
@@ -830,7 +830,7 @@ const CentipedeGame = () => {
             // caps are the scorpion's venom (#3604).
             state.mushrooms.forEach(drawMushroom)
 
-            // #3634 — the streak's venom trail: fading red wisps left behind
+            // #3633 — the streak's venom trail: fading red wisps left behind
             // it, oldest first, so its path reads at a glance. Render-only.
             scorpionTrail = scorpionTrail.filter((t) => tickN - t.born < 34)
             if (state.scorpion) {
@@ -856,7 +856,7 @@ const CentipedeGame = () => {
             if (state.flea) drawFlea(state.flea)
 
             // Centipede — a venom-racing segment wears the same red as the
-            // caps (#3634), lightly shimmering, so the chain carrying the
+            // caps (#3633), lightly shimmering, so the chain carrying the
             // venom reads at a glance. Render-only.
             const segShimmer = Math.floor(tickN / 6) % 2 === 0
             state.centipedes.forEach(c => {
