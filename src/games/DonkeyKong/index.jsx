@@ -701,6 +701,9 @@ const DonkeyKongGame = () => {
                     gs.rivetPhase = true
                     if (gs.collapse === 0 && gs.winTimer === 0 && gs.deathTimer === 0) gs.collapse = 1
                 },
+                // honest death for the drive (idling on the start corner is not
+                // reliably lethal here — barrels roll away from it).
+                kill: () => { gs.deathTimer = 90; gs.lives = 1 },
             }
             mountDbg({
                 title: 'DONKEY KONG',
