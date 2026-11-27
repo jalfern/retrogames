@@ -37,6 +37,21 @@ export const SAFE_Y = 485
 export const START_WAVE = 1
 export const PROVEN_WAVES = 5 // the sweep's bar: clear waves 1..PROVEN_WAVES untouched
 
+// Cruise saucers (#3629) — the original introduces new weapons in later waves:
+// satellite-shaped craft that cross the screen launching missiles of their own
+// (Wikipedia, arcade article). The Atari 1981 manual fixes the rules: §2
+// "Cruise missiles look like satellites, but they are just as deadly"; §6
+// "After the 6th wave … the enemy may attack with cruise missiles"; Table 1
+// scores an enemy cruise missile at 125 points. Starting at wave 6 keeps every
+// wave 1..5 proof byte-identical — the RNG is never consulted below the gate.
+export const SAUCER_FIRST_WAVE = 6
+export const SAUCER_SCORE = 125
+export const SAUCER_Y_MIN = 120
+export const SAUCER_Y_MAX = 200
+export const SAUCER_SPEED_BASE = 1.6
+export const SAUCER_HIT_R = 14 // blast-meets-hull envelope
+export const SAUCER_EDGE = 30 // spawn/exit margin past the screen edge
+
 export function chooseEnemySpawn(rand, targets, width = SCREEN_WIDTH) {
     const target = targets[Math.floor(rand() * targets.length)]
     return { target, x: rand() * width, startX: rand() * width }
@@ -59,6 +74,9 @@ export function makeRun(seed) {
         abms: [],
         warheads: [],
         blasts: [],
+        saucers: [], // cruise craft (#3629), empty below SAUCER_FIRST_WAVE
+        saucersLeftInWave: 0,
+        saucerTimer: 0,
         crosshair: { x: SCREEN_WIDTH / 2, y: SCREEN_HEIGHT / 2 },
         state: 'playing', // playing | waveEnd | gameOver
         spawning: true,
@@ -76,6 +94,15 @@ export const citiesAlive = (gs) => gs.cities.filter((c) => c.alive).length
 
 export function startWave(gs) {
     gs.missilesLeftInWave = 10 + gs.wave * 2
+    // #3629: the cruise salvo rolls only at or past the gate — below
+    // SAUCER_FIRST_WAVE the seeded stream is untouched, so every wave 1..5
+    // proof replays byte-identical.
+    if (gs.wave >= SAUCER_FIRST_WAVE) {
+        gs.saucersLeftInWave = Math.min(2, 1 + Math.floor((gs.wave - SAUCER_FIRST_WAVE) / 3))
+        gs.saucerTimer = 60 + Math.floor(gs.rand() * 200)
+    } else {
+        gs.saucersLeftInWave = 0
+    }
     gs.spawning = true
     gs.state = 'playing'
 }
@@ -173,6 +200,28 @@ export function tickMc(gs, cmd = null) {
     }
 
     if (gs.state === 'playing') {
+        // #3629 cruise salvo: seeded entry, once guaranteed per wave from the
+        // gate (a second joins every three waves). Timer only ticks while a
+        // saucer is still owed, so the wave can't clear with one pending.
+        if (gs.saucersLeftInWave > 0) {
+            gs.saucerTimer--
+            if (gs.saucerTimer <= 0) {
+                const dir = gs.rand() > 0.5 ? 1 : -1
+                gs.saucers.push({
+                    id: gs.nextId++,
+                    x: dir === 1 ? -SAUCER_EDGE : SCREEN_WIDTH + SAUCER_EDGE,
+                    y: SAUCER_Y_MIN + Math.floor(gs.rand() * (SAUCER_Y_MAX - SAUCER_Y_MIN)),
+                    dir,
+                    speed: SAUCER_SPEED_BASE + gs.wave * 0.08,
+                    fireTimer: 40 + Math.floor(gs.rand() * 40),
+                    frame: 0,
+                })
+                gs.saucersLeftInWave--
+                gs.events.push('saucer')
+                if (gs.saucersLeftInWave > 0) gs.saucerTimer = 120 + Math.floor(gs.rand() * 160)
+            }
+        }
+
         if (gs.spawning) {
             gs.spawnTimer--
             if (gs.spawnTimer <= 0) {
@@ -199,8 +248,10 @@ export function tickMc(gs, cmd = null) {
             }
         }
 
-        // Wave clears only when the sky AND the fire are empty (verbatim law).
-        if (!gs.spawning && gs.warheads.length === 0 && gs.blasts.length === 0) {
+        // Wave clears only when the sky AND the fire are empty (verbatim law),
+        // and — #3629 — once every owed cruise craft has crossed or burned.
+        if (!gs.spawning && gs.warheads.length === 0 && gs.blasts.length === 0 &&
+            gs.saucers.length === 0 && gs.saucersLeftInWave === 0) {
             nextWave(gs)
         }
     }
@@ -220,6 +271,8 @@ export function tickMc(gs, cmd = null) {
     })
     gs.abms = gs.abms.filter((m) => !m.dead)
 
+    const saucerWrecks = []
+
     gs.warheads.forEach((m) => {
         const dx = m.targetX - m.x
         const dy = m.targetY - m.y
@@ -233,6 +286,35 @@ export function tickMc(gs, cmd = null) {
             m.y += Math.sin(a) * m.speed
         }
     })
+
+    // #3629 saucers cross the sky and launch of their own accord. Their
+    // missiles ride the exact warhead physics (speed, trails, blast rules), so
+    // the gunner's lowest-warhead doctrine covers them with no seat change.
+    gs.saucers.forEach((s) => {
+        s.x += s.dir * s.speed
+        s.frame = Math.floor(gs.tick / 8) % 4 // 4-frame hover cycle (#ART.md bar 2)
+        s.fireTimer--
+        if (s.fireTimer <= 0 && s.x > 40 && s.x < SCREEN_WIDTH - 40) {
+            const targets = [...gs.cities, ...gs.silos].filter((t) => t.alive)
+            if (targets.length > 0) {
+                const pick = targets[Math.floor(gs.rand() * targets.length)]
+                gs.warheads.push({
+                    id: gs.nextId++,
+                    x: s.x, y: s.y, startX: s.x, startY: s.y,
+                    targetX: pick.x, targetY: pick.y,
+                    speed: WARHEAD_SPEED_BASE + gs.wave * 0.1,
+                    color: '#ff0000',
+                    coverUntil: 0,
+                    cruise: true, // fell from the saucer, not launched by a battery
+                })
+                gs.events.push('cruisefire')
+                s.fireTimer = 50 + Math.floor(gs.rand() * 50)
+            }
+        }
+        if ((s.dir === 1 && s.x > SCREEN_WIDTH + SAUCER_EDGE) ||
+            (s.dir === -1 && s.x < -SAUCER_EDGE)) s.dead = true
+    })
+    gs.saucers = gs.saucers.filter((s) => !s.dead)
 
     gs.blasts.forEach((e) => {
         if (e.growing) {
@@ -248,6 +330,19 @@ export function tickMc(gs, cmd = null) {
             if (Math.sqrt(dx * dx + dy * dy) < e.radius) {
                 m.dead = true
                 gs.score += 25
+            }
+        })
+        // #3629: any fireball that touches the hull burns the cruise craft —
+        // 125 points, Atari 1981 manual Table 1 (enemy cruise missile).
+        gs.saucers.forEach((s) => {
+            if (s.dead) return
+            const dx = s.x - e.x
+            const dy = s.y - e.y
+            if (Math.sqrt(dx * dx + dy * dy) < e.radius + SAUCER_HIT_R) {
+                s.dead = true
+                gs.score += SAUCER_SCORE
+                gs.events.push('saucerkill')
+                saucerWrecks.push([s.x, s.y])
             }
         })
         ;[...gs.cities, ...gs.silos].forEach((t) => {
@@ -267,6 +362,10 @@ export function tickMc(gs, cmd = null) {
     })
     gs.blasts = gs.blasts.filter((e) => !e.dead)
     gs.warheads = gs.warheads.filter((m) => !m.dead)
+    // Wreck fireballs spawn after the pass so a kill's blast starts its own
+    // grow-shrink life next tick (no mid-iteration reentry into gs.blasts).
+    for (const [wx, wy] of saucerWrecks) spawnBlast(gs, wx, wy)
+    gs.saucers = gs.saucers.filter((s) => !s.dead)
 }
 
 // ---------------------------------------------------------- the gunner -------
@@ -300,6 +399,27 @@ export function gunnerStep(gs) {
         }
         // No safe intercept exists for the lowest warhead — higher ones are
         // covered by their own shots already in the air or by the next tick.
+    }
+    // #3629 opportunism, doctrine-clean: spend on a saucer only when the
+    // warhead sky is fully covered (or empty) AND the craft is well over the
+    // board — never a cheap edge pop. This is how arcade experts took the
+    // 125-point bonus: one eye on the cities, a free shot at the ferry.
+    const anyLive = gs.warheads.some((w) => !w.dead && gs.tick >= w.coverUntil)
+    const saucer = gs.saucers.find((s) => !s.dead && gs.tick >= (s.coverUntil || 0) &&
+        (s.dir === 1 ? s.x > SCREEN_WIDTH * 0.25 : s.x < SCREEN_WIDTH * 0.75))
+    if (!anyLive && saucer) {
+        for (let j = 1; j <= 500; j++) {
+            const px = saucer.x + saucer.dir * saucer.speed * j
+            if (px < -SAUCER_EDGE || px > SCREEN_WIDTH + SAUCER_EDGE) break
+            const silo = nearestSilo(gs, px)
+            if (!silo) break // batteries dry or dead — nothing to spend
+            const d = Math.hypot(px - silo.x, saucer.y - silo.y)
+            const k = abmArrivalTicks(d)
+            if (k <= j) {
+                saucer.coverUntil = gs.tick + k + 4
+                return { aimX: px, aimY: saucer.y, wid: saucer.id, boom: gs.tick + k }
+            }
+        }
     }
     return null
 }
