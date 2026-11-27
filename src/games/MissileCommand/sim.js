@@ -77,6 +77,9 @@ export function makeRun(seed) {
         saucers: [], // cruise craft (#3629), empty below SAUCER_FIRST_WAVE
         saucersLeftInWave: 0,
         saucerTimer: 0,
+        debris: [], // #3638 kill sparks — cosmetic, never gates a wave clear
+        flash: null, // #3638 white kill-flash ticks
+        attractFerries: 0, // scripted ferry counter for the attract ad (#3638)
         crosshair: { x: SCREEN_WIDTH / 2, y: SCREEN_HEIGHT / 2 },
         state: 'playing', // playing | waveEnd | gameOver
         spawning: true,
@@ -343,6 +346,20 @@ export function tickMc(gs, cmd = null) {
                 gs.score += SAUCER_SCORE
                 gs.events.push('saucerkill')
                 saucerWrecks.push([s.x, s.y])
+                // #3638 kill juice — a white flash plus six debris ticks, the
+                // Atari-era spectacle the plain fireball lacked. The dice here
+                // roll only on a kill, and kills exist only at/after the gate,
+                // so the wave 1..5 byte pins stay untouched.
+                gs.flash = { x: s.x, y: s.y, t: 4 }
+                for (let i = 0; i < 6; i++) {
+                    gs.debris.push({
+                        x: s.x, y: s.y,
+                        vx: gs.rand() * 4 - 2,
+                        vy: gs.rand() * 2.4 - 1.7,
+                        life: 26 + Math.floor(gs.rand() * 18),
+                        color: i % 3 === 0 ? '#ffffff' : (i % 3 === 1 ? '#ffd23d' : '#ff9a3d'),
+                    })
+                }
             }
         })
         ;[...gs.cities, ...gs.silos].forEach((t) => {
@@ -362,10 +379,42 @@ export function tickMc(gs, cmd = null) {
     })
     gs.blasts = gs.blasts.filter((e) => !e.dead)
     gs.warheads = gs.warheads.filter((m) => !m.dead)
+    // #3638 cosmetic layers: the flash fades on the sim clock, sparks fall
+    // with light gravity. Neither ever joins the wave-clear law.
+    if (gs.flash && --gs.flash.t <= 0) gs.flash = null
+    if (gs.debris.length > 0) {
+        gs.debris.forEach((d) => { d.x += d.vx; d.y += d.vy; d.vy += 0.08; d.life-- })
+        gs.debris = gs.debris.filter((d) => d.life > 0)
+    }
     // Wreck fireballs spawn after the pass so a kill's blast starts its own
     // grow-shrink life next tick (no mid-iteration reentry into gs.blasts).
     for (const [wx, wy] of saucerWrecks) spawnBlast(gs, wx, wy)
     gs.saucers = gs.saucers.filter((s) => !s.dead)
+}
+
+// --------------------------------------------------------- attract ferry -----
+// #3638: the attract screen advertises the wave-6 feature. Scripted by tick,
+// NOT dice — every sighting is the same craft at the same places whatever the
+// seed, which is both the proof it consults nothing and why the determinism
+// story below the gate stays byte-clean. One ferry in the sky at a time; the
+// attract pilot leads it like a warhead and the kill pays the real 125.
+export const ATTRACT_FERRY_EVERY = 360
+export function attractFerry(gs) {
+    if (gs.state !== 'playing' || gs.saucers.length > 0) return
+    if (gs.tick > 0 && gs.tick % ATTRACT_FERRY_EVERY === 0) {
+        const n = gs.attractFerries
+        gs.attractFerries++
+        gs.saucers.push({
+            id: gs.nextId++,
+            x: n % 2 === 0 ? -SAUCER_EDGE : SCREEN_WIDTH + SAUCER_EDGE,
+            y: 130 + (n % 3) * 26,
+            dir: n % 2 === 0 ? 1 : -1,
+            speed: 2.2,
+            fireTimer: 90,
+            frame: 0,
+        })
+        gs.events.push('saucer')
+    }
 }
 
 // ---------------------------------------------------------- the gunner -------
@@ -373,7 +422,9 @@ export function tickMc(gs, cmd = null) {
 // hand it back mid-barrage. Priority is the LOWEST live warhead (the one
 // closest to getting a city), and each warhead gets exactly one shot in
 // flight; when its cover lapses and it still lives, the next tick re-solves.
-export function gunnerStep(gs) {
+// `opts.noBonus` (harness-only, #3638) strips the ferry opportunism so the
+// A/B sweep can prove the bonus never costs a city.
+export function gunnerStep(gs, opts = {}) {
     if (gs.state !== 'playing') return null
     const live = gs.warheads.filter((m) => !m.dead).sort((a, b) => b.y - a.y)
     for (const w of live) {
@@ -404,10 +455,25 @@ export function gunnerStep(gs) {
     // warhead sky is fully covered (or empty) AND the craft is well over the
     // board — never a cheap edge pop. This is how arcade experts took the
     // 125-point bonus: one eye on the cities, a free shot at the ferry.
+    // #3638 reserve rule (measured, not vibes): "free" means the magazine can
+    // still pay for it. The debt is every warhead the wave can still field —
+    // the ICBM ladder left to spawn PLUS the cruise launches of ferries other
+    // than the target (a crossing ferry drops one every 50–99 ticks, ~6 per
+    // crossing at these speeds; owed ferries count their whole crossing).
+    // Killing THIS ferry cancels its launches — the trade the rule rewards.
+    // A/B sweep (missilecmdcheck §deep, 12 seeds × waves 6–10): with the rule
+    // the bonus never costs a city, and every wave still clears.
     const anyLive = gs.warheads.some((w) => !w.dead && gs.tick >= w.coverUntil)
-    const saucer = gs.saucers.find((s) => !s.dead && gs.tick >= (s.coverUntil || 0) &&
+    const saucer = opts.noBonus ? undefined : gs.saucers.find((s) => !s.dead && gs.tick >= (s.coverUntil || 0) &&
         (s.dir === 1 ? s.x > SCREEN_WIDTH * 0.25 : s.x < SCREEN_WIDTH * 0.75))
-    if (!anyLive && saucer) {
+    const ammoLeft = gs.silos.reduce((a, s) => a + (s.alive ? s.ammo : 0), 0)
+    const launchLeft = (s) => Math.ceil(Math.max(0,
+        (s.dir === 1 ? SCREEN_WIDTH + SAUCER_EDGE - s.x : s.x + SAUCER_EDGE) / s.speed) / 70)
+    const crossingTicks = (SCREEN_WIDTH + 2 * SAUCER_EDGE) / (SAUCER_SPEED_BASE + gs.wave * 0.08)
+    const reserve = gs.missilesLeftInWave +
+        gs.saucersLeftInWave * Math.max(1, Math.round(crossingTicks / 70)) +
+        gs.saucers.reduce((a, s) => a + (s === saucer || s.dead ? 0 : launchLeft(s)), 0)
+    if (!anyLive && saucer && ammoLeft - 1 >= reserve) {
         for (let j = 1; j <= 500; j++) {
             const px = saucer.x + saucer.dir * saucer.speed * j
             if (px < -SAUCER_EDGE || px > SCREEN_WIDTH + SAUCER_EDGE) break
