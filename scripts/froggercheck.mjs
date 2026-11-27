@@ -7,7 +7,7 @@
 
 import { readFileSync, writeFileSync } from 'node:fs'
 import { spawnSync } from 'node:child_process'
-import { attractFrame, INFO_MSGS, HOLD, PRESS, DIM, HUD, estWidth } from '../src/games/Frogger/attract.js'
+import { attractFrame, INFO_MSGS, HOLD, PRESS, FOOTER, DIM, HUD, estWidth } from '../src/games/Frogger/attract.js'
 import { makeLane, DIVE_CYCLE, deathStyle, bankEdgeX, SPLAT_BANK_PAD, makeRun, tickFrogger, watchStep,
     ROW_FREEZE, timeBonus, TIME_LIMIT, START_ROW, ROAD_BOT, CELL, W,
     addScore, die, ONE_UP_AT, LADY_BONUS, RIVER_CFG, RIVER_TOP, HOUSE_COLS, spansOf } from '../src/games/Frogger/sim.js'
@@ -36,7 +36,9 @@ console.log('attract (rule 6)')
         const seen = new Set()
         for (let t = 0; t < span; t++) {
             const lines = attractFrame(t, w, h, HUD)
-            const info = lines.filter((l) => l.text !== 'FROGGER' && l.text !== PRESS)
+            // #3703: the static footer is a control hint like the blinking PRESS prompt
+            // (#365) — pinned separately below, never counted as an informational message.
+            const info = lines.filter((l) => l.text !== 'FROGGER' && l.text !== PRESS && l.text !== FOOTER)
             if (info.length > 1) stacked++
             info.forEach((l) => seen.add(l.text))
             for (const l of lines) {
@@ -58,6 +60,18 @@ console.log('attract (rule 6)')
     let off = 0
     for (let t = 0; t < 48; t++) (attractFrame(t, 260, 266, HUD).some((l) => l.text === PRESS) ? on++ : off++)
     ok(on > 0 && off > 0, 'the press prompt blinks', `on ${on} off ${off}`)
+    // #3703: the static footer is a control hint like the blinking PRESS prompt —
+    // present every frame, never blinking, never counted as an informational message.
+    let footerEveryFrame = true
+    let footerBlinked = false
+    for (let t = 0; t < span; t++) {
+        const f = attractFrame(t, 260, 266, HUD).find((l) => l.text === FOOTER)
+        if (!f) footerEveryFrame = false
+        else if (f.blink) footerBlinked = true
+    }
+    ok(footerEveryFrame, 'the static footer is present every frame')
+    ok(!footerBlinked, 'the footer never blinks')
+    ok(/2/.test(FOOTER), 'the footer hints the duel entry (2)', FOOTER)
     ok(parseFloat(DIM.match(/([\d.]+)\)$/)?.[1]) >= 0.3, 'the demo dims behind the attract text', DIM)
 }
 
@@ -457,6 +471,22 @@ console.log('lady frog + bonus frog + rollover (#3692)')
         'the shell sounds the pickup chirp and the one-up jingle')
     ok(/SCORE_WRAP/.test(src3) && /padStart\(5, '0'\)/.test(src3),
         'the HUD pads the score to five digits (the rollover is visible)')
+
+    // #3703 — duel seat identity: each seat row carries its own color and a
+    // mini-frog icon, the incoming seat blinks with the banner cadence, and
+    // the banner band carries both totals. Source-text pins (the pixels are
+    // eyeballed in the shot leg ~above). The 1P HUD stays byte-identical.
+    ok(/SEAT_COL = \['#ffe14d', '#4fc3f7'\]/.test(src3)
+        && /SEAT_SHADE = \['#a67c1a', '#2b7ca6'\]/.test(src3)
+        && /drawFrog\(11, icY, 0\.55, SEAT_COL/.test(src3),
+        'the duel rows draw seat-colored mini-frogs, one per seat')
+    ok(/const blinkOn = gs\.banner > 0 && Math\.floor\(gs\.banner \/ 20\) % 2 === 0/.test(src3)
+        && /const bright = active && \(gs\.banner === 0 || blinkOn\)/.test(src3),
+        'the incoming seat row blinks with the banner cadence')
+    ok(/rgba\(0,0,0,0\.75\)/.test(src3)
+        && /P1 \$\{pad5\(gs\.scores\[0\]\)\}\s+P2 \$\{pad5\(gs\.scores\[1\]\)\}/.test(src3)
+        && /fillRect\(0, bannerY - 21, W, 2\)/.test(src3),
+        'the banner band carries both totals, with amber rails')
 }
 
 if (process.argv.includes('--mutate')) {
@@ -472,8 +502,8 @@ if (process.argv.includes('--mutate')) {
             `const flyIdx = Math.floor(Math.random() * gs.houses.length)`,
             'src/games/Frogger/sim.js'],
         ['attract stacks a second message',
-            `        { text: msg, x: w / 2, y: hud + region * 0.36, size: fitSize(msg, w, 11), col: '#ffffff', glow: 0 },`,
-            `        { text: msg, x: w / 2, y: hud + region * 0.36, size: fitSize(msg, w, 11), col: '#ffffff', glow: 0 },
+            `        { text: msg, x: w / 2, y: hud + region * 0.40, size: fitSize(msg, w, 11), col: '#ffffff', glow: 0 },`,
+            `        { text: msg, x: w / 2, y: hud + region * 0.40, size: fitSize(msg, w, 11), col: '#ffffff', glow: 0 },
         { text: 'HOP ON LOGS', x: w / 2, y: hud + region * 0.86, size: 8, col: '#8f8f8f', glow: 0 },`],
         ['attract message never cycles',
             `cycleAttract(tick, INFO_MSGS, HOLD)`,
@@ -482,10 +512,10 @@ if (process.argv.includes('--mutate')) {
             `size: fitSize(msg, w, 11),`,
             `size: 60,`],
         ['text creeps up over the HUD',
-            `y: hud + region * 0.20,`,
+            `y: hud + region * 0.16,`,
             `y: hud * 0.4,`],
         ['the prompt drops into the WATCH-pill band (#3436)',
-            `y: hud + region * 0.48,`,
+            `y: hud + region * 0.52,`,
             `y: hud + region * 0.70,`],
         ['the press prompt never blinks',
             `!l.blink || Math.floor(tick / 24) % 2 === 0`,
