@@ -73,6 +73,32 @@ ears got taller. Proven by law hooks (`maneCoeff(n)`, `tufts()`, `ruts()`,
 `streaks(p)`, `setTravel(m)`) plus pixel bands pinned at a deterministic
 travel; mutants (flat mane noise, no rut strips) each kill exactly their gates.
 
+## snowglobe.html engine notes (#3648 — SNOW GLOBE)
+
+A warm hand-painted gouache little room: a glass snow globe on a wooden base,
+a tiny village (houses, church, pines, skating pond), snow that drifts down
+forever. Raw Canvas 2D, self-contained single file, zero libraries, zero image
+assets — everything is painted procedurally and the flakes are particles.
+
+How it works: the canvas letterboxes to any viewport; layout is a pure function
+of W/H (portrait-first 390×844, landscape via `H > W`). The dusk oscillates
+slowly (0.1..0.94) and eases toward its target; every lit window checks
+`dusk >= threshold` (church 0.42, house1 0.30/0.44, house2 0.55/0.69, house3
+0.70/0.84) so the village lights one window at a time. Snow flakes fall from
+above the globe's rim, drift with a seeded per-flake phase, and settle on
+the roof-line/base band (or the pond). Tilt the phone (deviceorientation)
+or drag / tap to shake: a spherical curl field swirls the air, snow rides it,
+and the globe's glass catches the tilt. Synthesized Web Audio (optional chime
+on window light-up). `window.__snowglobeTest` exposes `ready`, `frames`,
+`t`, `dusk`, `swirl`, `shake`, `setDusk`, `clearDusk`, `windowsLit` and
+`reset`; `?dusk=0..1` pins the start.
+
+**Preview**: open `public/demos/index.html`, tap to shake, hold to tilt-follow.
+`npm run snowglobecheck` proves it: 10 gates — self-contained, DEV hook, no
+network assets, no games.js registration, boots with zero page errors, rAF
+advancing, dusk sweep (warm 0.05 → dark 0.92), 0 → 7 windows lit, shake impulse
+peaks then rests, flake drift.
+
 ## Files
 
 - `credits.js` — shared credits injector (#674), configured via

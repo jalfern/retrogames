@@ -1,0 +1,1058 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+<meta name="theme-color" content="#141117">
+<title>SNOW GLOBE — a tiny winter village that settles</title>
+<style>
+  html, body { margin: 0; padding: 0; height: 100%; overflow: hidden; background: #141117;
+    -webkit-user-select: none; user-select: none; overscroll-behavior: none; -webkit-touch-callout: none; }
+  canvas { display: block; width: 100vw; height: 100vh; touch-action: none; }
+  #hud {
+    position: fixed; left: 50%; transform: translateX(-50%);
+    top: max(16px, env(safe-area-inset-top));
+    z-index: 4; pointer-events: none; white-space: nowrap;
+    font: 9px/1.7 Georgia, serif; letter-spacing: .28em; text-transform: uppercase;
+    color: #d9c9a8; background: rgba(20, 17, 23, .55); border: 1px solid rgba(217, 201, 168, .28);
+    padding: 7px 14px; border-radius: 999px; backdrop-filter: blur(2px);
+    transition: opacity 1.4s;
+  }
+  #hud.gone { opacity: 0; }
+  @media (max-width: 640px) {
+    #hud { font-size: 8px; letter-spacing: .16em; padding: 6px 12px; top: max(10px, env(safe-area-inset-top)); }
+  }
+</style>
+</head>
+<body>
+<canvas id="scene"></canvas>
+<div id="hud">shake · tilt · drag &nbsp;—&nbsp; let the snow settle</div>
+<script>
+(function () {
+  'use strict'
+  var canvas = document.getElementById('scene')
+  var ctx = canvas.getContext('2d')
+  var hudEl = document.getElementById('hud')
+  var W = 0, H = 0, DPR = 1, portrait = false
+  var cx = 0, cy = 0, R = 0, IR = 0  // IR = interior radius
+
+  // ---------- seeded rng ----------
+  function mulberry(seed) {
+    var a = seed >>> 0
+    return function () {
+      a |= 0; a = (a + 0x6D2B79F5) | 0
+      var t = Math.imul(a ^ (a >>> 15), 1 | a)
+      t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t
+      return ((t ^ (t >>> 14)) >>> 0) / 4294967296
+    }
+  }
+  // ---------- scene state ----------
+  var t = 0, last = 0
+  var dusk = 0.42, duskTarget = 0.42
+  var curl = { x: 0, y: 0 }            // active swirl current
+  var frames = 0, ready = false
+  var flakes = [], buildings = [], windows = []
+  var skaters = []
+  var bokeh = []
+  var speckles = []
+  var brushTufts = []
+
+  // window set for the "lights one by one" pass
+  function buildScene() {
+    var r = mulberry(7)
+    buildings = []; windows = []; flakes = []; skaters = []
+
+    var r_in = IR
+    var gy = cy + 0.30 * r_in          // village ground line
+    var horizonY = cy + 0.02 * r_in    // ridge
+
+    // church (left)
+    var church = { kind: 'church', x: cx - 0.44 * r_in, base: gy, scale: 0.95, pile: 0, roofY: 0 }
+    church.roofY = gy - 0.34 * church.scale * r_in
+    buildings.push(church)
+    windows.push({ x: church.x - 0.045 * church.scale * r_in, y: gy - 0.20 * church.scale * r_in, w: 0.09 * church.scale * r_in, h: 0.10 * church.scale * r_in, threshold: 0.42, church: true })
+
+    // houses (right + centre-left)
+    var houseSpecs = [
+      { x: cx + 0.30 * r_in,  base: gy, scale: 1.00, threshold: 0.30 },
+      { x: cx - 0.06 * r_in, base: gy + 0.02 * r_in, scale: 0.72, threshold: 0.55 },
+      { x: cx + 0.58 * r_in, base: gy, scale: 0.58, threshold: 0.70 }
+    ]
+    for (var i = 0; i < houseSpecs.length; i++) {
+      var s = houseSpecs[i]
+      var b = { kind: 'house', x: s.x, base: s.base, scale: s.scale, pile: 0, roofY: 0 }
+      b.roofY = s.base - 0.22 * s.scale * r_in
+      buildings.push(b)
+      windows.push({ x: b.x - 0.07 * s.scale * r_in, y: s.base - 0.12 * s.scale * r_in, w: 0.07 * s.scale * r_in, h: 0.07 * s.scale * r_in, threshold: s.threshold })
+      windows.push({ x: b.x + 0.06 * s.scale * r_in, y: s.base - 0.12 * s.scale * r_in, w: 0.06 * s.scale * r_in, h: 0.07 * s.scale * r_in, threshold: s.threshold + 0.14 })
+    }
+
+    // pines (far row + near)
+    var pineSpecs = [
+      { x: cx - 0.74 * r_in, base: gy - 0.02 * r_in, scale: 0.62 },
+      { x: cx - 0.62 * r_in, base: gy + 0.02 * r_in, scale: 0.86 },
+      { x: cx + 0.76 * r_in, base: gy - 0.02 * r_in, scale: 0.70 },
+      { x: cx + 0.68 * r_in, base: gy + 0.04 * r_in, scale: 0.95 },
+      { x: cx - 0.24 * r_in, base: gy - 0.03 * r_in, scale: 0.50 },
+      { x: cx + 0.14 * r_in, base: gy - 0.03 * r_in, scale: 0.46 }
+    ]
+    for (var j = 0; j < pineSpecs.length; j++) {
+      var p = pineSpecs[j]
+      buildings.push({ kind: 'pine', x: p.x, base: p.base, scale: p.scale, pile: 0, roofY: p.base - 0.30 * p.scale * r_in })
+    }
+
+    // sort by x so far-row pins draw first
+    buildings.sort(function (a, b2) { return a.x - b2.x })
+
+    // pond
+    window.__pond = { cx: cx, cy: cy + 0.56 * r_in, rx: 0.40 * r_in, ry: 0.115 * r_in }
+
+    // skaters (circle the pond)
+    for (var k = 0; k < 3; k++) {
+      skaters.push({ offset: r() * Math.PI * 2, speed: 0.35 + r() * 0.25, depth: 0.6 + r() * 0.4 })
+    }
+
+    // flakes
+    for (var f = 0; f < 135; f++) {
+      flakes.push(newFlake(true))
+    }
+
+    // paper speckles (stable across resizes)
+    speckles = []
+    var sr = mulberry(4242)
+    for (var i = 0; i < 170; i++) {
+      speckles.push({ x: sr() * W, y: sr() * H, r: 0.4 + sr() * 0.9, a: 0.02 + sr() * 0.04 })
+    }
+
+    // gouache brush tufts across the scene (stable)
+    brushTufts = []
+    var bt = mulberry(555)
+    for (var i = 0; i < 42; i++) {
+      brushTufts.push({
+        x: cx + (bt() * 2 - 1) * IR * 0.95,
+        y: cy + (bt() * 2 - 1) * IR * 0.95,
+        r: 6 + bt() * 22,
+        a: 0.05 + bt() * 0.07,
+        col: bt() > 0.5 ? '255, 238, 210' : '150, 160, 190'
+      })
+    }
+
+    // bokeh dots (kept stable across resizes — generated once per layout)
+    var br = mulberry(99)
+    bokeh = []
+    for (var i = 0; i < 9; i++) {
+      bokeh.push({
+        x: (br() * 1.2 - 0.1) * W,
+        y: (br() * 0.9 - 0.05) * H,
+        r: 10 + br() * 34,
+        a: 0.05 + br() * 0.10
+      })
+    }
+  }
+
+  function newFlake(anywhere) {
+    var r_in = IR
+    var yTop = -0.92 * r_in
+    var y = anywhere ? yTop + (0.9 * r_in) * Math.random() : yTop
+    var x = (Math.random() - 0.5) * 1.5 * r_in
+    return {
+      x: x, y: y,
+      size: 0.5 + Math.random() * 1.15,
+      depth: 0.35 + Math.random() * 0.65,
+      phase: Math.random() * Math.PI * 2,
+      vyMax: 0.10 + Math.random() * 0.10,
+      front: Math.random() > 0.5
+    }
+  }
+
+  function layout() {
+    DPR = Math.min(window.devicePixelRatio || 1, 2)
+    W = window.innerWidth; H = window.innerHeight
+    portrait = H > W
+    canvas.width = Math.round(W * DPR); canvas.height = Math.round(H * DPR)
+    ctx.setTransform(DPR, 0, 0, DPR, 0, 0)
+    cx = W / 2
+    cy = portrait ? H * 0.41 : H * 0.42
+    R = Math.min(W * 0.485, H * 0.34)
+    IR = R * 0.92
+    buildScene()
+  }
+
+  // ---------- input: tilt / shake / drag ----------
+  var lastMag = 0
+  function bumpCurl(ix, iy) {
+    curl.x += ix * 0.62
+    curl.y += iy * 0.36
+    var m = Math.sqrt(curl.x * curl.x + curl.y * curl.y)
+    if (m > 1.15) { curl.x = curl.x / m * 1.15; curl.y = curl.y / m * 1.15 }
+  }
+  function shakeAt(mag) {
+    // random impulse with a little upward lift
+    bumpCurl((Math.random() - 0.5) * 2.3 * mag, (Math.random() - 0.5) * 0.7 * mag + 0.35 * mag)
+    chime()
+  }
+
+  var dragging = false, dragX = 0, lastTapT = 0
+  function onDown(e) {
+    if (typeof DeviceMotionEvent !== 'undefined' && typeof DeviceMotionEvent.requestPermission === 'function') {
+      DeviceMotionEvent.requestPermission().catch(function () {})
+    }
+    dragging = true; dragX = lastX(e); lastTapT = performance.now()
+  }
+  function lastX(e) {
+    if (e.touches) return e.touches[0].clientX
+    return e.clientX
+  }
+  function onMove(e) {
+    if (!dragging) return
+    var x = lastX(e)
+    var dx = (x - dragX) / Math.max(1, W * 0.18)
+    bumpCurl(dx * 0.85, 0)
+    dragX = x
+  }
+  function onUp() {
+    dragging = false
+    // quick tap = a shake
+    if (performance.now() - lastTapT < 220) shakeAt(1)
+  }
+  function onMotion(e) {
+    var a = e.accelerationIncludingGravity
+    if (!a) return
+    var mag = Math.sqrt((a.x || 0) * (a.x || 0) + (a.y || 0) * (a.y || 0) + (a.z || 0) * (a.z || 0))
+    var delta = Math.abs(mag - lastMag)
+    lastMag = mag
+    if (delta > 3.4) {
+      shakeAt(Math.min(1.25, delta * 0.30))
+    }
+    var beta = e.beta != null ? e.beta : 0
+    var gamma = e.gamma != null ? e.gamma : 0
+    // tilt-driven current: lean the phone and the snow leans too
+    bumpCurl(Math.sin(gamma * Math.PI / 180) * 0.0065 + Math.sin(beta * Math.PI / 180) * 0.0022, 0)
+  }
+  document.addEventListener('pointerdown', onDown)
+  document.addEventListener('pointermove', onMove)
+  document.addEventListener('pointerup', onUp)
+  document.addEventListener('pointercancel', onUp)
+  window.addEventListener('devicemotion', onMotion)
+
+  // ---------- audio (quiet chime, user-gesture unlocked) ----------
+  var audio = null
+  function ensureAudio() {
+    if (audio || typeof window.AudioContext === 'undefined') return
+    try { audio = new window.AudioContext() } catch (e) { audio = null }
+  }
+  function chime() {
+    ensureAudio()
+    if (!audio || audio.state === 'suspended') {
+      if (audio && audio.state === 'suspended') audio.resume().catch(function () {})
+      return
+    }
+    try {
+      var t0 = audio.currentTime
+      var master = audio.createGain(); master.gain.value = 0.12
+      master.connect(audio.destination)
+      var f = 660 + Math.random() * 320
+      for (var ch = 0; ch < 2; ch++) {
+        var o = audio.createOscillator(); o.type = 'triangle'
+        o.frequency.value = f * (ch === 0 ? 1 : 0.5)
+        var g = audio.createGain()
+        g.gain.setValueAtTime(0.055, t0)
+        g.gain.exponentialRampToValueAtTime(0.0008, t0 + 0.85)
+        o.connect(g); g.connect(master)
+        o.start(t0); o.stop(t0 + 0.85)
+      }
+    } catch (e) { /* ignore */ }
+  }
+  document.addEventListener('pointerdown', ensureAudio)
+
+  // ---------- helpers ----------
+  function lerp(a, b, t2) { return a + (b - a) * t2 }
+  function clamp(v, lo, hi) { return v < lo ? lo : v > hi ? hi : v
+  }
+  function rr(x, y, w, h, r) {
+    var q = Math.min(r, w / 2, h / 2)
+    ctx.beginPath()
+    ctx.moveTo(x + q, y)
+    ctx.arcTo(x + w, y, x + w, y + h, q)
+    ctx.arcTo(x + w, y + h, x, y + h, q)
+    ctx.arcTo(x, y + h, x, y, q)
+    ctx.arcTo(x, y, x + w, y, q)
+    ctx.closePath()
+  }
+  function circle(x, y, r) { ctx.beginPath(); ctx.arc(x, y, r, 0, Math.PI * 2); ctx.closePath() }
+  function ellipse(x, y, rx, ry) { ctx.beginPath(); ctx.ellipse(x, y, rx, ry, 0, 0, Math.PI * 2); ctx.closePath() }
+
+  // ---------- palettes (dusk 0..1 lerp) ----------
+  function skyTop(d)  { return lerpRgb([70, 78, 112], [18, 22, 42], d) }
+  function skyMid(d)  { return lerpRgb([148, 140, 158], [58, 62, 92], d) }
+  function skyHor(d)  { return lerpRgb([244, 176, 106], [92, 62, 74], d) }
+  function lilac(d)   { return lerpRgb([244, 224, 200], [120, 126, 156], d) }
+  function snowFar(d) { return lerpRgb([236, 224, 209], [188, 190, 214], d) }
+  function snow(d)    { return lerpRgb([248, 242, 230], [214, 216, 232], d) }
+  function lerpRgb(a, b, t2) {
+    return 'rgb(' + Math.round(lerp(a[0], b[0], t2)) + ',' + Math.round(lerp(a[1], b[1], t2)) + ',' + Math.round(lerp(a[2], b[2], t2)) + ')'
+  }
+  function lerpRgbA(a, b, t2, alpha) {
+    return 'rgba(' + Math.round(lerp(a[0], b[0], t2)) + ',' + Math.round(lerp(a[1], b[1], t2)) + ',' + Math.round(lerp(a[2], b[2], t2)) + ',' + alpha + ')'
+  }
+
+  // ---------- room ----------
+  function drawRoom() {
+    var grad = ctx.createRadialGradient(W * 0.5, H * 0.26, 10, W * 0.5, H * 0.30, Math.max(W, H) * 0.80)
+    grad.addColorStop(0, '#5c412b')
+    grad.addColorStop(0.45, '#3d2c20')
+    grad.addColorStop(1, '#201712')
+    ctx.fillStyle = grad
+    ctx.fillRect(0, 0, W, H)
+
+    // lamplight halo
+    var lamp = ctx.createRadialGradient(cx, cy - R * 1.28, R * 0.05, cx, cy - R * 1.28, R * 1.75)
+    lamp.addColorStop(0, 'rgba(255, 214, 150, 0.42)')
+    lamp.addColorStop(0.55, 'rgba(255, 196, 120, 0.18)')
+    lamp.addColorStop(1, 'rgba(255, 196, 120, 0)')
+    ctx.fillStyle = lamp
+    ctx.fillRect(0, 0, W, H)
+
+    // soft background bokeh dots
+    ctx.save()
+    for (var i = 0; i < bokeh.length; i++) {
+      var s = bokeh[i]
+      var bg = ctx.createRadialGradient(s.x, s.y, 0, s.x, s.y, s.r)
+      bg.addColorStop(0, 'rgba(255, 225, 170, ' + s.a + ')')
+      bg.addColorStop(1, 'rgba(255, 225, 170, 0)')
+      ctx.fillStyle = bg
+      ctx.fillRect(s.x - s.r, s.y - s.r, s.r * 2, s.r * 2)
+    }
+    ctx.restore()
+
+    // warm glow haloing the globe
+    var halo = ctx.createRadialGradient(cx, cy, R * 0.4, cx, cy, R * 1.9)
+    halo.addColorStop(0, 'rgba(255, 205, 135, 0.24)')
+    halo.addColorStop(0.6, 'rgba(255, 200, 128, 0.11)')
+    halo.addColorStop(1, 'rgba(255, 200, 128, 0)')
+    ctx.fillStyle = halo
+    ctx.fillRect(cx - R * 1.8, cy - R * 1.8, R * 3.6, R * 3.6)
+
+    // table band
+    var tableY = cy + R * 0.92
+    var tableGrad = ctx.createLinearGradient(0, tableY, 0, H)
+    tableGrad.addColorStop(0, '#2c1f16')
+    tableGrad.addColorStop(0.4, '#20150e')
+    tableGrad.addColorStop(1, '#140d09')
+    ctx.fillStyle = tableGrad
+    ctx.fillRect(0, tableY, W, H - tableY)
+
+    // warm rim of table against base
+    ctx.fillStyle = 'rgba(255, 208, 140, 0.14)'
+    ctx.fillRect(0, tableY, W, 2)
+
+    // vignette to frame the room
+    var vig = ctx.createRadialGradient(cx, cy, R * 1.2, cx, cy, Math.max(W, H) * 0.9)
+    vig.addColorStop(0, 'rgba(0,0,0,0)')
+    vig.addColorStop(1, 'rgba(8,4,2,0.45)')
+    ctx.fillStyle = vig
+    ctx.fillRect(0, 0, W, H)
+
+    // warm pool of lamplight on the table under the base
+    var warm = ctx.createRadialGradient(cx, tableY + 8, 4, cx, tableY + 8, R * 1.7)
+    warm.addColorStop(0, 'rgba(255, 196, 120, 0.15)')
+    warm.addColorStop(0.6, 'rgba(255, 180, 100, 0.06)')
+    warm.addColorStop(1, 'rgba(255, 180, 100, 0)')
+    ctx.fillStyle = warm
+    ctx.save()
+    ctx.translate(cx, tableY + 8); ctx.scale(1, 1.35); ctx.translate(-cx, -(tableY + 8))
+    ctx.fillRect(cx - R * 1.8, tableY - R * 1.8, R * 3.6, R * 3.6)
+    ctx.restore()
+
+    // soft shadow under the base
+    var sh = ctx.createRadialGradient(cx, tableY + 6, 2, cx, tableY + 6, R * 1.10)
+    sh.addColorStop(0, 'rgba(0,0,0,0.55)')
+    sh.addColorStop(1, 'rgba(0,0,0,0)')
+    ctx.fillStyle = sh
+    ctx.save()
+    ctx.translate(cx, tableY + 6); ctx.scale(1, 0.22); ctx.translate(-cx, -(tableY + 6))
+    ctx.fillRect(cx - R * 1.2, tableY - R * 0.4, R * 2.4, R * 0.8)
+    ctx.restore()
+  }
+
+  // ---------- wooden base ----------
+  function drawBase() {
+    var baseY = cy + R * 0.80
+    var baseH = R * 0.46
+    var baseW = R * 1.78
+    var x = cx - baseW / 2
+    // main body: rounded trapezoid
+    var grad = ctx.createLinearGradient(0, baseY, 0, baseY + baseH)
+    grad.addColorStop(0, '#6a4423')
+    grad.addColorStop(0.45, '#4f3018')
+    grad.addColorStop(1, '#331d0d')
+    ctx.fillStyle = grad
+    ctx.beginPath()
+    ctx.moveTo(x + baseW * 0.055, baseY)
+    ctx.lineTo(x + baseW * 0.945, baseY)
+    ctx.lineTo(x + baseW, baseY + baseH)
+    ctx.lineTo(x, baseY + baseH)
+    ctx.closePath()
+    ctx.fill()
+
+    // plank lines
+    ctx.strokeStyle = 'rgba(0,0,0,0.20)'
+    ctx.lineWidth = 1.2
+    for (var i = 1; i < 4; i++) {
+      var yy = baseY + (baseH * i / 4)
+      ctx.beginPath(); ctx.moveTo(x + baseW * 0.03, yy); ctx.lineTo(x + baseW * 0.97, yy); ctx.stroke()
+    }
+
+    // top rim (brass)
+    ctx.fillStyle = '#c89a4a'
+    ctx.fillRect(x - baseW * 0.015, baseY - 4, baseW * 1.03, 6)
+    ctx.fillStyle = 'rgba(255, 235, 180, 0.55)'
+    ctx.fillRect(x - baseW * 0.015, baseY - 4, baseW * 1.03, 2)
+    // brass plate serif
+    ctx.fillStyle = 'rgba(0,0,0,0.16)'
+    ctx.fillRect(x, baseY + baseH - 5, baseW, 5)
+
+    // warm pool of light on the base top (bokeh reflection of lamp)
+    ctx.fillStyle = 'rgba(255, 210, 140, 0.10)'
+    ctx.fillRect(x + baseW * 0.12, baseY, baseW * 0.76, 2)
+
+    // brass name plate
+    var plateW = baseW * 0.30
+    var plateH = 10
+    var plateX = cx - plateW / 2
+    var plateY = baseY + baseH * 0.46
+    ctx.fillStyle = '#a8763a'
+    rr(plateX, plateY, plateW, plateH, 4); ctx.fill()
+    ctx.fillStyle = '#d9b06a'
+    rr(plateX + 2, plateY + 2, plateW - 4, plateH - 4, 3); ctx.fill()
+    ctx.fillStyle = 'rgba(60, 36, 12, 0.85)'
+    ctx.font = '600 ' + (plateH - 5) + 'px Georgia, serif'
+    ctx.textAlign = 'center'; ctx.textBaseline = 'middle'
+    ctx.fillText('S N O W', cx, plateY + plateH / 2 + 0.5)
+  }
+
+  // ---------- building art ----------
+  function drawSnowCap(x, y, w, pile) {
+    // snow lying across a horizontal surface, grows with pile 0..1
+    var h = 2.4 + 5.6 * (pile || 0)
+    ctx.fillStyle = '#f4ede0'
+    ctx.beginPath()
+    ctx.ellipse(x, y, w / 2, h, 0, 0, Math.PI * 2)
+    ctx.fill()
+  }
+
+  function drawChurch(b, d) {
+    var scale = b.scale, r_in = IR
+    var w = 0.34 * scale * r_in, h = 0.30 * scale * r_in
+    var x = b.x, base = b.base
+    // walls
+    ctx.fillStyle = lerpRgb([116, 74, 52], [92, 58, 44], d)
+    ctx.fillRect(x - w / 2, base - h, w, h)
+    // roof (steep, gothic)
+    ctx.fillStyle = lerpRgb([90, 72, 88], [58, 48, 66], d)
+    ctx.beginPath()
+    ctx.moveTo(x - w / 2 - 3, base - h)
+    ctx.lineTo(x, base - h - 0.34 * scale * r_in)
+    ctx.lineTo(x + w / 2 + 3, base - h)
+    ctx.closePath()
+    ctx.fill()
+    // steeple
+    ctx.fillStyle = lerpRgb([98, 62, 44], [70, 46, 32], d)
+    var stW = 0.085 * scale * r_in
+    var stH = 0.34 * scale * r_in
+    var stX = x - stW / 2, stY = base - h - stH
+    ctx.fillRect(stX, stY, stW, stH)
+    ctx.fillStyle = lerpRgb([88, 68, 84], [56, 46, 62], d)
+    ctx.beginPath()
+    ctx.moveTo(stX - 2, stY)
+    ctx.lineTo(x, stY - 0.20 * scale * r_in)
+    ctx.lineTo(stX + stW + 2, stY)
+    ctx.closePath()
+    ctx.fill()
+    // cross
+    ctx.strokeStyle = 'rgba(228, 208, 176, 0.85)'
+    ctx.lineWidth = 1.2
+    ctx.beginPath()
+    ctx.moveTo(x, stY - 0.18 * scale * r_in - 4); ctx.lineTo(x, stY - 0.18 * scale * r_in - 9)
+    ctx.moveTo(x - 2.2, stY - 0.18 * scale * r_in - 6); ctx.lineTo(x + 2.2, stY - 0.18 * scale * r_in - 6)
+    ctx.stroke()
+    // roof snow
+    drawSnowCap(x, base - h, w + 6, b.pile)
+    // arched window glow will be painted in the lit pass
+  }
+
+  function drawHouse(b, d) {
+    var scale = b.scale, r_in = IR
+    var w = 0.26 * scale * r_in, h = 0.17 * scale * r_in
+    var x = b.x, base = b.base
+    // walls
+    ctx.fillStyle = lerpRgb([140, 98, 66], [102, 70, 52], d)
+    ctx.fillRect(x - w / 2, base - h, w, h)
+    // roof
+    ctx.fillStyle = lerpRgb([62, 54, 74], [40, 36, 52], d)
+    ctx.beginPath()
+    ctx.moveTo(x - w / 2 - 4, base - h)
+    ctx.lineTo(x, base - h - 0.20 * scale * r_in)
+    ctx.lineTo(x + w / 2 + 4, base - h)
+    ctx.closePath()
+    ctx.fill()
+    // chimney
+    ctx.fillStyle = lerpRgb([90, 60, 44], [66, 44, 32], d)
+    var chW = 0.05 * scale * r_in
+    var chX = x + w * 0.26
+    ctx.fillRect(chX, base - h - 0.13 * scale * r_in, chW, 0.13 * scale * r_in)
+    drawSnowCap(chX + chW / 2, base - h - 0.13 * scale * r_in, chW + 2, b.pile * 0.8)
+    drawSnowCap(x, base - h, w + 4, b.pile)
+  }
+
+  function drawPine(b, d) {
+    var scale = b.scale, r_in = IR
+    var h = 0.34 * scale * r_in
+    var w = 0.20 * scale * r_in
+    var x = b.x, base = b.base
+    // trunk
+    ctx.fillStyle = lerpRgb([74, 48, 30], [48, 30, 18], d)
+    ctx.fillRect(x - 1.6 * scale, base - h * 0.10, 3.2 * scale, h * 0.12)
+    // 3 tiers
+    for (var i = 0; i < 3; i++) {
+      var tierW = w * (1 - i * 0.26)
+      var tierY = base - h * (0.22 + i * 0.30)
+      var tierH = h * 0.34
+      var tierG = ctx.createLinearGradient(0, tierY, 0, tierY + tierH)
+      tierG.addColorStop(0, lerpRgb([56, 90, 66], [38, 62, 46], d))
+      tierG.addColorStop(1, lerpRgb([38, 66, 52], [26, 44, 34], d))
+      ctx.fillStyle = tierG
+      ctx.beginPath()
+      ctx.moveTo(x - tierW / 2, tierY + tierH)
+      ctx.lineTo(x, tierY)
+      ctx.lineTo(x + tierW / 2, tierY + tierH)
+      ctx.closePath()
+      ctx.fill()
+      // snow stripe on tier
+      ctx.fillStyle = 'rgba(244, 237, 224, 0.85)'
+      ctx.beginPath()
+      ctx.moveTo(x - tierW * 0.36, tierY + tierH * 0.58)
+      ctx.lineTo(x, tierY + tierH * 0.20)
+      ctx.lineTo(x + tierW * 0.36, tierY + tierH * 0.58)
+      ctx.closePath()
+      ctx.fill()
+    }
+    // snow at base grown by pile
+    if (b.pile > 0.02) {
+      ctx.fillStyle = '#f2ebdd'
+      ctx.beginPath()
+      ctx.ellipse(x, base - 1, w * 0.55, 1.6 + 3 * b.pile, 0, 0, Math.PI * 2)
+      ctx.fill()
+    }
+  }
+
+  function drawPond(d) {
+    var pond = window.__pond
+    // ice body
+    var grad = ctx.createLinearGradient(0, pond.cy - pond.ry, 0, pond.cy + pond.ry)
+    grad.addColorStop(0, lerpRgbA([190, 210, 224], [104, 120, 158], d, 1))
+    grad.addColorStop(0.6, lerpRgbA([148, 172, 194], [66, 82, 118], d, 1))
+    grad.addColorStop(1, lerpRgbA([98, 122, 148], [40, 52, 78], d, 1))
+    ctx.fillStyle = grad
+    ellipse(pond.cx, pond.cy, pond.rx, pond.ry)
+    ctx.fill()
+    // faint white swirl lines (skating grooves)
+    ctx.save()
+    ctx.clip()
+    ctx.strokeStyle = 'rgba(255,255,255,0.16)'
+    ctx.lineWidth = 1.3
+    for (var i = 0; i < 3; i++) {
+      ctx.beginPath()
+      ctx.ellipse(pond.cx, pond.cy, pond.rx * (0.55 + i * 0.20), pond.ry * (0.50 + i * 0.22), 0, 0, Math.PI * 2)
+      ctx.stroke()
+    }
+    // warm rim light top edge
+    ctx.strokeStyle = 'rgba(255, 214, 166, 0.34)'
+    ctx.lineWidth = 2
+    ctx.beginPath()
+    ctx.ellipse(pond.cx, pond.cy, pond.rx, pond.ry, 0, Math.PI * 1.05, Math.PI * 1.85)
+    ctx.stroke()
+    // faint cracks
+    ctx.strokeStyle = 'rgba(255,255,255,0.20)'
+    ctx.lineWidth = 1
+    ctx.beginPath()
+    ctx.moveTo(pond.cx - pond.rx * 0.55, pond.cy)
+    ctx.lineTo(pond.cx - pond.rx * 0.10, pond.cy + pond.ry * 0.18)
+    ctx.lineTo(pond.cx + pond.rx * 0.30, pond.cy + pond.ry * 0.10)
+    ctx.stroke()
+    ctx.restore()
+  }
+
+  function drawSkaters(d) {
+    var pond = window.__pond
+    for (var i = 0; i < skaters.length; i++) {
+      var sk = skaters[i]
+      var a = sk.offset + t * sk.speed
+      var x = pond.cx + Math.cos(a) * pond.rx * 0.62
+      var y = pond.cy + Math.sin(a) * pond.ry * 0.62
+      var sc = 0.72 + 0.30 * (Math.sin(a) * 0.5 + 0.5)
+      ctx.save()
+      ctx.translate(x, y)
+      ctx.scale(sc, sc)
+      // glide silhouette — little scarf, head-dot, legs
+      ctx.fillStyle = '#20242f'
+      circle(0, -4.2, 1.9); ctx.fill()
+      ctx.strokeStyle = '#20242f'
+      ctx.lineWidth = 1.7
+      ctx.beginPath(); ctx.moveTo(0, -2.6); ctx.lineTo(0, 1.6); ctx.stroke()
+      ctx.lineWidth = 1.25
+      ctx.beginPath()
+      ctx.moveTo(0, 1.6); ctx.lineTo(Math.cos(a + 2.1) * 2.4, 3.2)
+      ctx.moveTo(0, 1.6); ctx.lineTo(Math.cos(a - 2.1) * 2.4, 3.2)
+      ctx.stroke()
+      ctx.lineWidth = 1.3
+      ctx.beginPath()
+      ctx.moveTo(0, -1.9); ctx.lineTo(Math.cos(a + 0.6) * 3.0, -3.6)
+      ctx.moveTo(0, -1.9); ctx.lineTo(Math.cos(a - 0.6) * 3.0, -3.6)
+      ctx.stroke()
+      // scarf pinch
+      ctx.fillStyle = '#d8b06a'
+      circle(Math.cos(a + 1.9) * 2.2, -3.4, 1.5); ctx.fill()
+      ctx.restore()
+    }
+  }
+
+  function drawHouseWindows(d, lit) {
+    for (var i = 0; i < windows.length; i++) {
+      var wn = windows[i]
+      var isLit = d >= wn.threshold && lit
+      var w = wn.w, h = wn.h
+      if (isLit) {
+        var grad = ctx.createRadialGradient(wn.x + w / 2, wn.y + h / 2, 0, wn.x + w / 2, wn.y + h / 2, w * 2.1)
+        grad.addColorStop(0, 'rgba(255, 214, 130, 0.85)')
+        grad.addColorStop(0.4, 'rgba(255, 176, 90, 0.30)')
+        grad.addColorStop(1, 'rgba(255, 176, 90, 0)')
+        ctx.fillStyle = grad
+        ctx.fillRect(wn.x - w * 1.7, wn.y - w * 1.7, w * 4.4, h * 4.4)
+        ctx.fillStyle = '#ffd277'
+        ctx.fillRect(wn.x, wn.y, w, h)
+        // mullion cross
+        ctx.strokeStyle = 'rgba(70, 40, 22, 0.85)'
+        ctx.lineWidth = 1
+        ctx.beginPath()
+        ctx.moveTo(wn.x + w / 2, wn.y); ctx.lineTo(wn.x + w / 2, wn.y + h)
+        ctx.moveTo(wn.x, wn.y + h / 2); ctx.lineTo(wn.x + w, wn.y + h / 2)
+        ctx.stroke()
+      } else {
+        ctx.fillStyle = lerpRgbA([42, 46, 62], [24, 26, 38], d, 0.92)
+        ctx.fillRect(wn.x, wn.y, w, h)
+        ctx.strokeStyle = 'rgba(200, 210, 228, 0.18)'
+        ctx.lineWidth = 1
+        ctx.strokeRect(wn.x, wn.y, w, h)
+      }
+    }
+  }
+
+  // ---------- scene (inside the globe) ----------
+  function drawScene(d) {
+    var r_in = IR
+    // clip to interior circle
+    ctx.save()
+    circle(cx, cy, r_in)
+    ctx.clip()
+
+    // sky
+    var sky = ctx.createLinearGradient(0, cy - r_in, 0, cy + r_in * 0.45)
+    sky.addColorStop(0, lerpRgbA([56, 58, 88], [14, 18, 36], d, 1))
+    sky.addColorStop(0.55, skyMid(d))
+    sky.addColorStop(0.86, skyHor(d))
+    sky.addColorStop(1, skyHor(d))
+    ctx.fillStyle = sky
+    ctx.fillRect(cx - r_in, cy - r_in, r_in * 2, r_in * 2)
+
+    // horizon warm glow (dusk light falling)
+    var hg = ctx.createRadialGradient(cx, cy + 0.02 * r_in, 4, cx, cy + 0.02 * r_in, r_in * 1.05)
+    hg.addColorStop(0, 'rgba(255, 176, 92, ' + (0.55 - 0.34 * d) + ')')
+    hg.addColorStop(0.6, 'rgba(255, 162, 88, ' + (0.22 - 0.16 * d) + ')')
+    hg.addColorStop(1, 'rgba(255, 162, 88, 0)')
+    ctx.fillStyle = hg
+    ctx.fillRect(cx - r_in, cy - r_in, r_in * 2, r_in * 2)
+    // warm wash just above the village
+    var wash = ctx.createLinearGradient(0, cy + 0.04 * r_in, 0, cy + 0.30 * r_in)
+    wash.addColorStop(0, 'rgba(255, 188, 110, ' + (0.20 - 0.10 * d) + ')')
+    wash.addColorStop(1, 'rgba(255, 188, 110, 0)')
+    ctx.fillStyle = wash
+    ctx.fillRect(cx - r_in, cy + 0.04 * r_in, r_in * 2, 0.26 * r_in)
+
+    // stars
+    var starAlpha = clamp((d - 0.15) / 0.6, 0, 1) * 0.9
+    for (var i = 0; i < 34; i++) {
+      var sx = cx + Math.cos(i * 2.399963 + 0.4) * r_in * (0.18 + 0.68 * ((i * 0.618034) % 1))
+      var sy = cy - r_in * 0.88 + (i * 0.0707) % 0.62 * r_in
+      if (sy > cy - r_in * 0.18) continue
+      var tw = 0.5 + 0.5 * Math.sin(t * (0.7 + (i % 5) * 0.35) + i * 1.7)
+      ctx.fillStyle = 'rgba(255, 244, 222, ' + (starAlpha * (0.45 + 0.55 * tw)) + ')'
+      ctx.beginPath(); ctx.arc(sx, sy, 0.9 + (i % 3) * 0.55, 0, Math.PI * 2); ctx.fill()
+    }
+
+    // moon
+    var moonX = cx + 0.46 * r_in, moonY = cy - 0.60 * r_in
+    var moonA = 0.35 + 0.65 * clamp(d, 0, 1)
+    var moonG = ctx.createRadialGradient(moonX, moonY, 1, moonX, moonY, 0.26 * r_in)
+    moonG.addColorStop(0, 'rgba(255, 240, 214, ' + (0.55 * moonA) + ')')
+    moonG.addColorStop(1, 'rgba(255, 240, 214, 0)')
+    ctx.fillStyle = moonG
+    ctx.fillRect(moonX - 0.3 * r_in, moonY - 0.3 * r_in, 0.6 * r_in, 0.6 * r_in)
+    ctx.fillStyle = lerpRgbA([255, 226, 178], [226, 214, 218], d, moonA)
+    circle(moonX, moonY, 0.085 * r_in); ctx.fill()
+    ctx.fillStyle = 'rgba(226, 190, 158, 0.34)'
+    circle(moonX - 0.02 * r_in, moonY - 0.015 * r_in, 0.028 * r_in); ctx.fill()
+    circle(moonX + 0.024 * r_in, moonY + 0.018 * r_in, 0.02 * r_in); ctx.fill()
+    // faint craters
+    ctx.fillStyle = 'rgba(226, 190, 158, 0.26)'
+    circle(moonX + 0.008 * r_in, moonY - 0.030 * r_in, 0.012 * r_in); ctx.fill()
+
+    // far rolling hill (ridge dips down from the horizon)
+    var hillY = cy + 0.02 * r_in
+    ctx.fillStyle = snowFar(d)
+    ctx.beginPath()
+    ctx.moveTo(cx - r_in, hillY + 0.16 * r_in)
+    ctx.quadraticCurveTo(cx - 0.42 * r_in, hillY - 0.10 * r_in, cx + 0.05 * r_in, hillY + 0.03 * r_in)
+    ctx.quadraticCurveTo(cx + 0.50 * r_in, hillY + 0.11 * r_in, cx + r_in, hillY - 0.04 * r_in)
+    ctx.lineTo(cx + r_in, cy + r_in)
+    ctx.lineTo(cx - r_in, cy + r_in)
+    ctx.closePath()
+    ctx.fill()
+
+    // village ground band (flat snow in front of hill)
+    var gy = cy + 0.30 * r_in
+    var snowG = ctx.createLinearGradient(0, gy - 0.06 * r_in, 0, cy + r_in)
+    snowG.addColorStop(0, lerpRgbA([252, 244, 228], [226, 224, 238], d, 1))
+    snowG.addColorStop(0.55, snow(d))
+    snowG.addColorStop(1, lerpRgbA([224, 226, 240], [146, 152, 182], d, 1))
+    ctx.fillStyle = snowG
+    ctx.beginPath()
+    ctx.moveTo(cx - r_in, gy - 0.02 * r_in)
+    ctx.lineTo(cx + r_in, gy - 0.02 * r_in)
+    ctx.lineTo(cx + r_in, cy + r_in)
+    ctx.lineTo(cx - r_in, cy + r_in)
+    ctx.closePath()
+    ctx.fill()
+
+    // village, far row first (smaller pines drawn first since already sorted by x)
+    for (var i2 = 0; i2 < buildings.length; i2++) {
+      var b = buildings[i2]
+      if (b.kind === 'church') drawChurch(b, d)
+      else if (b.kind === 'house') drawHouse(b, d)
+      else drawPine(b, d)
+    }
+
+    // pond + skaters (in front of village)
+    drawPond(d)
+    drawSkaters(d)
+
+    // dusk dimming over the whole scene
+    ctx.fillStyle = 'rgba(16, 20, 44, ' + (0.30 * d) + ')'
+    ctx.fillRect(cx - r_in, cy - r_in, r_in * 2, r_in * 2)
+
+    // gouache brush tufts (texture)
+    for (var bt2 = 0; bt2 < brushTufts.length; bt2++) {
+      var btx = brushTufts[bt2]
+      var bx = btx.x, by = btx.y
+      // keep inside interior circle
+      var dd = Math.sqrt((bx - cx) * (bx - cx) + (by - cy) * (by - cy))
+      if (dd > IR * 0.94) continue
+      var bg2 = ctx.createRadialGradient(bx, by, 0, bx, by, btx.r)
+      bg2.addColorStop(0, 'rgba(' + btx.col + ',' + btx.a + ')')
+      bg2.addColorStop(1, 'rgba(' + btx.col + ',0)')
+      ctx.fillStyle = bg2
+      ctx.fillRect(bx - btx.r, by - btx.r, btx.r * 2, btx.r * 2)
+    }
+
+    // lit windows (drawn OVER dusk)
+    drawHouseWindows(d, true)
+
+    // warm light pools on snow under lit windows
+    for (var i = 0; i < windows.length; i++) {
+      var wn2 = windows[i]
+      if (d >= wn2.threshold) {
+        var poolX = wn2.x + wn2.w / 2
+        var poolY = wn2.y + wn2.h + 0.14 * IR
+        var pool = ctx.createRadialGradient(poolX, poolY, 0, poolX, poolY, wn2.w * 2.6)
+        pool.addColorStop(0, 'rgba(255, 188, 104, 0.16)')
+        pool.addColorStop(1, 'rgba(255, 188, 104, 0)')
+        ctx.fillStyle = pool
+        ctx.fillRect(poolX - wn2.w * 2.6, poolY - wn2.w * 2.6, wn2.w * 5.2, wn2.w * 5.2)
+      }
+    }
+
+    // pond moon shimmer after dim (subtle)
+    var pond = window.__pond
+    var shimmer = ctx.createRadialGradient(pond.cx, pond.cy, 0, pond.cx, pond.cy, pond.ry * 1.4)
+    shimmer.addColorStop(0, 'rgba(255, 240, 210, ' + (0.18 + 0.20 * d) + ')')
+    shimmer.addColorStop(1, 'rgba(255, 240, 210, 0)')
+    ctx.fillStyle = shimmer
+    ctx.fillRect(pond.cx - pond.ry * 1.5, pond.cy - pond.ry * 1.5, pond.ry * 3, pond.ry * 3)
+
+    // snow flakes (inside the globe)
+    for (var i3 = 0; i3 < flakes.length; i3++) {
+      var fl = flakes[i3]
+      var fa = 0.55 + 0.45 * fl.depth
+      var fr = (fl.size * (0.7 + 0.7 * fl.depth)) * 0.95
+      ctx.fillStyle = 'rgba(255, 255, 255, ' + (fa * 0.18) + ')'
+      ctx.beginPath(); ctx.arc(cx + fl.x, cy + fl.y, fr * 1.5, 0, Math.PI * 2); ctx.fill()
+      ctx.fillStyle = 'rgba(255, 255, 255, ' + fa + ')'
+      ctx.beginPath(); ctx.arc(cx + fl.x, cy + fl.y, fr * 0.9, 0, Math.PI * 2); ctx.fill()
+    }
+
+    ctx.restore()
+  }
+
+  // ---------- glass (drawn over scene) ----------
+  function drawGlass(d) {
+    var r_in = IR
+    // rim shadows at the edge
+    var rim = ctx.createRadialGradient(cx, cy, R * 0.78, cx, cy, R * 1.02)
+    rim.addColorStop(0, 'rgba(0,0,0,0)')
+    rim.addColorStop(0.80, 'rgba(0,0,0,0)')
+    rim.addColorStop(0.93, 'rgba(30, 34, 60, 0.32)')
+    rim.addColorStop(1, 'rgba(20, 22, 40, 0.55)')
+    ctx.fillStyle = rim
+    circle(cx, cy, R * 1.02); ctx.fill()
+
+    // outer rim light
+    ctx.strokeStyle = 'rgba(255, 246, 230, 0.40)'
+    ctx.lineWidth = 2.0
+    ctx.beginPath(); ctx.arc(cx, cy, R * 0.985, 0, Math.PI * 2); ctx.stroke()
+    ctx.strokeStyle = 'rgba(255, 246, 230, 0.10)'
+    ctx.lineWidth = 5
+    ctx.beginPath(); ctx.arc(cx, cy, R * 1.015, 0, Math.PI * 2); ctx.stroke()
+
+    // specular highlight (top-left)
+    ctx.save()
+    ctx.translate(cx, cy)
+    ctx.rotate(-0.52)
+    var spec = ctx.createRadialGradient(-R * 0.52, -R * 0.44, 0, -R * 0.52, -R * 0.44, R * 0.42)
+    spec.addColorStop(0, 'rgba(255, 255, 255, 0.30)')
+    spec.addColorStop(0.5, 'rgba(255, 255, 255, 0.09)')
+    spec.addColorStop(1, 'rgba(255, 255, 255, 0)')
+    ctx.fillStyle = spec
+    ctx.beginPath(); ctx.ellipse(-R * 0.52, -R * 0.44, R * 0.36, R * 0.26, -0.6, 0, Math.PI * 2); ctx.fill()
+    ctx.restore()
+
+    // warm reflection arc (bottom-right, from room lamp)
+    ctx.strokeStyle = 'rgba(255, 208, 140, 0.20)'
+    ctx.lineWidth = 4.5
+    ctx.beginPath(); ctx.arc(cx, cy, R * 0.86, Math.PI * 0.28, Math.PI * 0.62); ctx.stroke()
+    ctx.strokeStyle = 'rgba(255, 220, 160, 0.12)'
+    ctx.lineWidth = 8
+    ctx.beginPath(); ctx.arc(cx, cy, R * 0.74, Math.PI * 0.30, Math.PI * 0.60); ctx.stroke()
+
+    // bokeh streaks (soft blurred tubes of light)
+    var streaks = [
+      { x: cx - R * 0.28, y: cy - R * 0.52, len: R * 0.46, rot: -0.48, a: 0.16 },
+      { x: cx + R * 0.44, y: cy + R * 0.16, len: R * 0.30, rot: 0.42, a: 0.13 },
+      { x: cx - R * 0.46, y: cy + R * 0.34, len: R * 0.26, rot: 0.32, a: 0.15 }
+    ]
+    for (var i = 0; i < streaks.length; i++) {
+      var s = streaks[i]
+      ctx.save()
+      ctx.translate(s.x, s.y); ctx.rotate(s.rot)
+      var st = ctx.createLinearGradient(-s.len / 2, 0, s.len / 2, 0)
+      st.addColorStop(0, 'rgba(255, 226, 170, 0)')
+      st.addColorStop(0.5, 'rgba(255, 226, 170, ' + s.a + ')')
+      st.addColorStop(1, 'rgba(255, 226, 170, 0)')
+      ctx.fillStyle = st
+      ctx.fillRect(-s.len / 2, -1.9, s.len, 3.8)
+      ctx.restore()
+    }
+
+    // refraction arc along the bottom rim
+    ctx.strokeStyle = 'rgba(255, 186, 120, 0.16)'
+    ctx.lineWidth = 3
+    ctx.beginPath(); ctx.arc(cx, cy, R * 0.94, Math.PI * 0.18, Math.PI * 0.62); ctx.stroke()
+
+    // periodic glint on the glass edge
+    var glintA = clamp(Math.sin((t * 1.4) % (Math.PI * 2)), 0, 1)
+    if (glintA > 0.92) {
+      var ga = -2.27 + Math.sin(t * 0.23) * 0.2
+      var gx = cx + Math.cos(ga) * R * 0.96
+      var gy2 = cy + Math.sin(ga) * R * 0.96
+      ctx.save()
+      ctx.translate(gx, gy2)
+      ctx.fillStyle = 'rgba(255,255,255,' + ((glintA - 0.92) / 0.08) * 0.9 + ')'
+      ctx.fillRect(-0.7, -6, 1.4, 12)
+      ctx.fillRect(-6, -0.7, 12, 1.4)
+      ctx.restore()
+    }
+
+    // grain over globe
+    ctx.save()
+    circle(cx, cy, R)
+    ctx.clip()
+    var grain = ctx.createRadialGradient(cx, cy, R * 0.5, cx, cy, R * 1.05)
+    grain.addColorStop(0, 'rgba(0,0,0,0)')
+    grain.addColorStop(1, 'rgba(6,8,16,0.34)')
+    ctx.fillStyle = grain
+    ctx.fillRect(0, 0, W, H)
+    ctx.restore()
+
+    // paper grain across the whole frame
+    ctx.save()
+    for (var i = 0; i < speckles.length; i++) {
+      var sp = speckles[i]
+      ctx.fillStyle = 'rgba(255, 244, 224, ' + sp.a + ')'
+      ctx.beginPath(); ctx.arc(sp.x, sp.y, sp.r, 0, Math.PI * 2); ctx.fill()
+    }
+    ctx.restore()
+
+    // final soft vignette to seat the globe in place
+    var v2 = ctx.createRadialGradient(cx, cy, R * 1.05, cx, cy, Math.max(W, H) * 0.75)
+    v2.addColorStop(0, 'rgba(0,0,0,0)')
+    v2.addColorStop(1, 'rgba(10,6,3,0.5)')
+    ctx.fillStyle = v2
+    ctx.fillRect(0, 0, W, H)
+
+    // subtle sweeping light across glass (very slow)
+    var sweepA = Math.sin(t * 0.11)
+    var sweep = ctx.createLinearGradient(cx - R, cy - R * 0.8, cx + R, cy + R * 0.6)
+    var sweepLo = sweepA > 0 ? 0.06 : 0.02
+    sweep.addColorStop(0, 'rgba(255,255,255,0)')
+    sweep.addColorStop(0.5, 'rgba(255,255,255,' + sweepLo + ')')
+    sweep.addColorStop(1, 'rgba(255,255,255,0)')
+    ctx.fillStyle = sweep
+    ctx.save()
+    circle(cx, cy, R); ctx.clip()
+    ctx.fillRect(cx - R, cy - R, R * 2, R * 2)
+    ctx.restore()
+  }
+
+  // ---------- update ----------
+  function update(dt) {
+    t += dt
+
+    // dusk oscillates slowly between ~0.10 and ~0.97
+    var osc = Math.sin(t * 0.030 - 0.42)
+    duskTarget = 0.50 + 0.44 * osc
+    dusk += (duskTarget - dusk) * Math.min(1, dt * 0.22)
+
+    // current decay
+    var decay = Math.pow(0.42, dt)
+    curl.x *= decay
+    curl.y *= decay
+
+    // flakes
+    for (var i = 0; i < flakes.length; i++) {
+      var fl = flakes[i]
+      var w = Math.sin(fl.phase + t * (1.05 + fl.depth * 0.9)) * 0.05 * fl.depth
+      var vx = w + curl.x * (0.75 + 0.55 * fl.depth) * 0.62
+      var vy = fl.vyMax + 0.03 * fl.depth
+      var vyAdd = curl.y * (0.5 + 0.4 * fl.depth) * 0.55
+      fl.x += vx * dt * IR
+      fl.y += (vy + vyAdd) * dt * IR
+
+      // ground
+      var gy = 0.30 * IR
+      var pondY = 0.56 * IR
+      var ground = gy
+      if (fl.x > -0.42 * IR && fl.x < 0.42 * IR) ground = pondY // flakes land on pond centre area
+      if (fl.y >= ground) {
+        // settled: pile the nearest building or keep the ambient ground pile
+        var settled = false
+        for (var k = 0; k < buildings.length; k++) {
+          var b = buildings[k]
+          var span = (b.kind === 'church' ? 0.20 : b.kind === 'house' ? 0.17 : 0.12) * b.scale * IR
+          var localX = (cx + fl.x) - b.x
+          if (Math.abs(localX) < span) {
+            b.pile = Math.min(1, b.pile + 0.045)
+            settled = true
+            break
+          }
+        }
+        var nf = newFlake(false)
+        flakes[i] = nf
+      }
+      // keep inside circle
+      var dist = Math.sqrt(fl.x * fl.x + fl.y * fl.y)
+      if (dist > IR * 0.98) {
+        var nf2 = newFlake(false)
+        flakes[i] = nf2
+      }
+    }
+  }
+
+  // ---------- render ----------
+  function render() {
+    // room
+    drawRoom()
+
+    // base shadow
+    drawBase()
+
+    // globe
+    drawScene(dusk)
+
+    // glass over
+    drawGlass(dusk)
+  }
+
+  function loop() {
+    var now = performance.now()
+    var dt = last ? Math.min(0.05, (now - last) / 1000) : 1 / 60
+    last = now
+    update(dt)
+    render()
+    frames++
+    ready = true
+    requestAnimationFrame(loop)
+  }
+
+  function boot() {
+    layout()
+    window.addEventListener('resize', layout)
+    wireHUD()
+    requestAnimationFrame(loop)
+  }
+
+  function wireHUD() {
+    setTimeout(function () { hudEl.classList.add('gone') }, 6500)
+  }
+
+  // redraw caption hint after a shake for a moment so the affordance is alive
+  document.addEventListener('pointerdown', function () {
+    hudEl.classList.remove('gone')
+    setTimeout(function () { hudEl.classList.add('gone') }, 2400)
+  })
+
+  // ---------- DEV hook (QA/bots) ----------
+  window.__snowglobeTest = {
+    ready: function () { return ready && frames > 24 },
+    frames: function () { return frames },
+    t: function () { return t },
+    dusk: function () { return dusk },
+    swirl: function () { return Math.sqrt(curl.x * curl.x + curl.y * curl.y) },
+    shake: function (mag) { shakeAt(mag || 1) },
+    setDusk: function (v) { dusk = v; duskTarget = v },
+    clearDusk: function () { duskTarget = 0.42; dusk = 0.42 },
+    windowsLit: function () {
+      var n = 0
+      for (var i = 0; i < windows.length; i++) if (dusk >= windows[i].threshold) n++
+      return n
+    },
+    reset: function () { dusk = 0.42; duskTarget = 0.42; curl.x = curl.y = 0; frames = 0; t = 0 }
+  }
+
+  document.addEventListener('visibilitychange', function () {
+    if (document.hidden) { last = 0 }
+  })
+
+  boot()
+})()
+</script>
+<script>
+window.DEMO_CREDITS = {
+  name: 'SNOW GLOBE', accent: '#e8a55c',
+  builder: { tag: 'INKLING', model: 'Inkling-2-Mini-oQ4e-mtp', where: 'via opencode' },
+  issues: [3648], span: '~1 h', shipped: '2026-11-27',
+  assist: 'guided', note: 'Jon’s snow-globe brief: warm hand-painted gouache room, a tiny village that settles snow, skaters on the pond',
+};
+</script>
+<script src="credits.js"></script>
+<script src="feedback.js"></script>
+</body>
+</html>
