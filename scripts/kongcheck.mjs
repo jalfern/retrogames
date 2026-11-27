@@ -14,7 +14,7 @@
 
 import { readFileSync } from 'node:fs'
 import { spawnSync } from 'node:child_process'
-import { START_LIVES, WIN_SCORE, BARREL_SPEED, HAMMER_SWINGS, RIVET_SCORE, PULL_TICKS, COLLAPSE_TICKS, RIVET_X, DK_PLAT, TOP_PLAT, DK_FALL_STOP, BREAK_FRACS, BARREL_CLICK_EVERY, BARREL_CLICK_RANGE, barrelBoardVoice, barrelDangleVoice, barrelRollClick, BRACE_WIDTH, BRACE_PLATE, BRACE_PAD, barrelRideFrame, makeRun, tickDonkeyKong, watchStep, stateHash, rnd, getPlatformY, buildLevel, platformIndex } from '../src/games/DonkeyKong/sim.js'
+import { START_LIVES, WIN_SCORE, BARREL_SPEED, HAMMER_SWINGS, RIVET_SCORE, PULL_TICKS, COLLAPSE_TICKS, RIVET_X, DK_PLAT, TOP_PLAT, DK_FALL_STOP, BREAK_FRACS, BARREL_CLICK_EVERY, BARREL_CLICK_RANGE, barrelBoardVoice, barrelDangleVoice, barrelRollClick, BRACE_WIDTH, BRACE_PLATE, BRACE_PAD, barrelRideFrame, spanBoardY, makeRun, tickDonkeyKong, watchStep, stateHash, rnd, getPlatformY, buildLevel, platformIndex } from '../src/games/DonkeyKong/sim.js'
 import { seedRng, seedFromQuery } from '../src/utils/gameContract.js'
 import { parseGaps } from './lib/idle.mjs'
 import { plant, pull } from './lib/mutateguard.mjs'
@@ -166,7 +166,9 @@ console.log('half-rungs: broken ladders climb part-way (#3618)')
         'the half-rung gap no longer scores as open (CLOSED marker reaches parseGaps)')
     ok(!gaps.some(g => /dedicated 25 m rivet stage/i.test(g)),
         'the rivet-screen phantom stays retired (CLOSED marker reaches parseGaps)')
-    ok(gaps.length === 2, 'two honest gaps remain (oil drum, double-board drop onto a span)', `gaps=${gaps.length}`)
+    ok(!gaps.some(g => /double-board drop onto a span|sharing one span.*simplified/i.test(g)),
+        'the double-board gap is closed with the span body law (CLOSED marker reaches parseGaps)')
+    ok(gaps.length === 2, 'two honest gaps remain (oil drum flame, left-column corner pair)', `gaps=${gaps.length}`)
 }
 
 // ------------------------------------------------------------- core physics ----
@@ -649,6 +651,99 @@ console.log('corner pair #3622: mid-air takes at the fall-gap corner')
         }
     }
     ok(runnerR2 === 0, 'the runner never climbs the barrel-only outside ladder', `${runnerR2}`)
+}
+
+// #3657 — span body law. A span may host a DOUBLE board (the arcade lets two
+// barrels share one ladder), but riders never pass through each other. An
+// arrival above the span's topmost rider joins it — settling onto that head
+// whenever bodies would overlap, then riding at equal speed; one arriving
+// at/below that head is refused — the dive dice are already spent (same roll,
+// same order: the stream never shifts) and the gap carries the barrel toward
+// the next rung down.
+// Measured on the natural stream: arrivals never coincide with an occupied
+// span today (0 contested boards across 400 seeds), so every seeded floor
+// above is byte-identical — these gates make the law enforceable, not fiction.
+console.log('double board #3657: spans share, never clip')
+{
+    const b0 = { w: 10, h: 10, x: 100, y: 50 }
+    ok(spanBoardY({ barrels: [] }, b0, 3) === 50, 'an empty span boards at the arrival height')
+    ok(spanBoardY({ barrels: [{ onLadder: true, ladderIdx: 3, x: 100, y: 74, w: 10, h: 10 }] }, b0, 3) === 50,
+        'an arrival clear of the rider boards untouched')
+    ok(spanBoardY({ barrels: [{ onLadder: true, ladderIdx: 3, x: 100, y: 55, w: 10, h: 10 }] }, b0, 3) === 45,
+        'an overlapping arrival settles onto the rider head')
+    ok(spanBoardY({ barrels: [{ onLadder: true, ladderIdx: 3, x: 100, y: 40, w: 10, h: 10 }] }, b0, 3) === false,
+        'an arrival at/below the rider head is refused')
+    ok(spanBoardY({ barrels: [{ onLadder: true, ladderIdx: 7, x: 100, y: 55, w: 10, h: 10 }] }, b0, 3) === 50,
+        'a rider on another span does not occupy this one')
+
+    // Real physics: plant a rider on the corner rung R2 and drop a second
+    // barrel into the same column behind it. Dice decide board-vs-fall per
+    // seed; the LAW must hold on every outcome, and a head-rest must be seen.
+    const { ladders } = buildLevel()
+    const ri = ladders.findIndex(l => l.barrelOnly)
+    const R2 = ladders[ri]
+    let boards = 0, clean = 0, refuses = 0
+    for (const seed of [7919, 15838, 31676, 3, 42, 77, 101, 202, 555, 909]) {
+        const gs = makeRun(seed)
+        for (let t = 0; t < 600 && gs.barrels.length === 0; t++) tickDonkeyKong(gs, {})
+        const A = gs.barrels[0]
+        if (!A || gs.gameOver) continue
+        Object.assign(A, {
+            onLadder: true, falling: false, vx: 0, vy: 0, rot: 0,
+            x: R2.x - A.w / 2, y: R2.yTop + 2, ladderBot: R2.yBot,
+            ladderIdx: ri, takenBits: 1 << ri,
+        })
+        const B = {
+            x: R2.x - 5, y: R2.yTop - 30, w: 10, h: 10, vx: 0, vy: 1, rot: 0,
+            onLadder: false, falling: true, takenBits: 0, ladderIdx: -1,
+        }
+        gs.barrels.push(B)
+        for (let t = 0; t < 120 && !gs.gameOver; t++) {
+            const wasOn = B.onLadder
+            tickDonkeyKong(gs, {})
+            if (B.onLadder && !wasOn) {
+                boards++
+                // Law (global): vs the topmost rider of whichever span B
+                // joined (the corner column hosts R1 above R2 — both are legal
+                // catches). Never below a rider, never clipped into it. Equal
+                // descent speed then holds the offset; spanBoardY's settle
+                // (unit-gated above) closes any overlap.
+                const top = gs.barrels.filter(o => o !== B && o.onLadder && o.ladderIdx === B.ladderIdx)
+                    .reduce((m, o) => (m === null || o.y < m.y ? o : m), null)
+                if (top === null || B.y + B.h <= top.y + 0.01) clean++
+                break
+            }
+            if (!B.falling && !B.onLadder && (B.takenBits & (1 << ri))) {
+                // landed without riding: dice miss or refusal — either way the
+                // span was never entered below the rider's head.
+                if (B.y > A.y) refuses++
+                break
+            }
+        }
+    }
+    ok(boards > 0, 'the planted meeting boards on seeded dice', `boards=${boards}`)
+    ok(boards === clean, 'no double board ever enters the span below or inside the rider', `clean=${clean}/${boards}`)
+
+    // Natural stream: the law must never be violated, and riders must carry
+    // their span id. 360 s × three corner seeds, parked runner.
+    let clip = 0, blind = 0
+    for (const seed of [7919, 15838, 31676]) {
+        const gs = makeRun(seed)
+        for (let t = 0; t < 60 * 360; t++) {
+            tickDonkeyKong(gs, {})
+            const riders = gs.barrels.filter(bb => bb.onLadder)
+            for (const bb of riders) if (bb.ladderIdx < 0) blind++
+            for (let i = 0; i < riders.length; i++) {
+                for (let j = i + 1; j < riders.length; j++) {
+                    if (riders[i].ladderIdx !== riders[j].ladderIdx) continue
+                    if (Math.abs(riders[i].y - riders[j].y) < riders[i].h) clip++
+                }
+            }
+        }
+    }
+    ok(clip === 0 && blind === 0,
+        'no seeded stream ever clips two barrels in one span; every rider knows its span',
+        `clip=${clip} blind=${blind}`)
 }
 
 // #3641 — barrel-voice grammar. The law is pure (pitch/spacing/volume), the

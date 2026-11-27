@@ -320,7 +320,27 @@ function spawnBarrel(gs, ev) {
         onLadder: false,
         falling: false,
         takenBits: 0, // #3622 — one dive roll per barrel per ladder (bit = index)
+        ladderIdx: -1, // #3657 — which span a rider occupies (span body law)
     })
+}
+
+// #3657 — span body law: two barrels may SHARE one ladder span (the arcade's
+// double-board), but riders never pass through each other. A new boarder that
+// arrives ABOVE the span's topmost rider joins it — settling onto that head
+// when bodies would overlap, then riding at equal speed; one arriving
+// at/below the top rider's top is REFUSED — the dice
+// are already spent (same roll, same order — the stream never shifts) and the
+// barrel keeps falling, which at the corner means the gap carries it toward the
+// next ladder down. Returns the y to board at, or false to refuse.
+export function spanBoardY(gs, b, li) {
+    let top = null
+    for (const o of gs.barrels) {
+        if (o === b || !o.onLadder || o.ladderIdx !== li) continue
+        if (top === null || o.y < top.y) top = o
+    }
+    if (!top) return b.y
+    if (b.y >= top.y) return false
+    return Math.min(b.y, top.y - b.h) // rest on the head when bodies would overlap
 }
 
 function updateBarrel(gs, b, ev) {
@@ -387,19 +407,24 @@ function updateBarrel(gs, b, ev) {
 
     // Check if barrel should take a ladder down
     if (landed && !b.falling) {
-        for (const l of gs.ladders) {
+        for (let li = 0; li < gs.ladders.length; li++) {
+            const l = gs.ladders[li]
             if (l.broken) continue
             const cx = b.x + b.w / 2
             // Barrel feet should be near the top of this ladder
             if (Math.abs(cx - l.x) < 6 && Math.abs((b.y + b.h) - (l.yTop - 8)) < 6) {
                 // Random chance to take ladder (like the original)
                 if (rnd(gs) < BARREL_DIVE_CHANCE) {
+                    const restY = spanBoardY(gs, b, li) // #3657 — occupied mouth: rest or refuse
+                    if (restY === false) continue
                     ev.barrelVoices.push(barrelBoardVoice(false)) // #3641 the board tick
                     b.onLadder = true
                     b.x = l.x - b.w / 2
+                    b.y = restY
                     b.vx = 0
                     b.vy = 0
                     b.ladderBot = l.yBot
+                    b.ladderIdx = li
                     break
                 }
             }
@@ -422,13 +447,17 @@ function updateBarrel(gs, b, ev) {
             if (Math.abs(cx - l.x) < 5 && fy >= l.yTop - 8 && fy <= l.yBot) {
                 b.takenBits |= (1 << li)
                 if (rnd(gs) < BARREL_DIVE_CHANCE) {
+                    const restY = spanBoardY(gs, b, li) // #3657 — crowded span: the gap keeps it
+                    if (restY === false) continue
                     ev.barrelVoices.push(barrelBoardVoice(true)) // #3641 the mid-air take rings brighter
                     b.onLadder = true
                     b.falling = false
                     b.x = l.x - b.w / 2
+                    b.y = restY
                     b.vx = 0
                     b.vy = 0
                     b.ladderBot = l.yBot
+                    b.ladderIdx = li
                     break
                 }
             }
@@ -1171,7 +1200,7 @@ export function stateHash(gs) {
     s += `H${gs.hammer}|${gs.swingSeq}|${gs.hammers.map(h => (h.taken ? 1 : 0)).join('')}|`
     s += `R${gs.rivetPhase ? 1 : 0}${gs.rivets.map(r => (r.pulled ? 1 : 0)).join('')}|${gs.pullTimer}|${gs.collapse}|${Math.round(gs.dkFall * 1e4)}|`
     s += `${r4(p.x)},${r4(p.y)},${r4(p.vx)},${r4(p.vy)},${p.grounded ? 1 : 0},${p.climbing ? 1 : 0},${p.dir},${p.jumpedBarrels.size}|`
-    s += gs.barrels.map(b => `${r4(b.x)},${r4(b.y)},${r4(b.vx)},${r4(b.vy)},${b.onLadder ? 1 : 0},${b.falling ? 1 : 0},${b.ladderBot || 0},${b.takenBits || 0}`).join(';')
+    s += gs.barrels.map(b => `${r4(b.x)},${r4(b.y)},${r4(b.vx)},${r4(b.vy)},${b.onLadder ? 1 : 0},${b.falling ? 1 : 0},${b.ladderBot || 0},${b.takenBits || 0},${b.ladderIdx ?? -1}`).join(';')
     let h = 0x811c9dc5
     for (let i = 0; i < s.length; i++) {
         h ^= s.charCodeAt(i)
