@@ -201,6 +201,17 @@ snake's line + blip (mutants: unplugged emit → 2 red; deleted line → 1 red).
   the teleport trap keeps its 1980 joke. Monsters spring nothing (no
   monster-trap interaction), and search never reveals traps — exactly the
   ring-of-warning gap this file always admitted.
+- **CLOSED by #3588:** trap personality. The cabinet names the trap by ear —
+  every kind has its own synthesized voice (darts tick high, teleport shimmers
+  down, sleep glides low and slow, snare ratchets, strength drains, confusion
+  hisses off-pitch, the door snaps), and the trap-door wail sinks deeper with
+  every unpaid fall grudge (`falls` rides the fx event; the view pitches it).
+  The spring moment: the cell the hero was wrong on burns white for exactly
+  one turn and the grid shudders twice (view-layer stamps like the #3514 flee
+  tint — sim hashes untouched). The banner shows the body's shackles —
+  `Slp:n` / `Hld:n` while they bite — so a drugged hero can read why the
+  arrows stopped. Still honest: every kind is dealt with uniform weight; the
+  cart favoured mild gas over doors and snares (per-kind weights remain open).
 - **CLOSED by #3491:** ranged combat. Staves `/` generate with 3–9 charges
   (lightning/fire/cold/striking, the cart's four-shots flavour); arrows are a
   counted quiver on the original's single weapon/missile glyph `)`. `f` picks

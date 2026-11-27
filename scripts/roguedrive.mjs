@@ -229,6 +229,11 @@ if (planT) {
     r.check(`the ${planT.kind} trap's effect lands identically in Chrome`, effectOk, `dlvl ${pt.dlvl}/${planT.dlvl} sleep ${pt.sleeping}/${planT.sleeping} held ${pt.held}/${planT.held} pos ${pt.x},${pt.y}@${pt.hp}hp`)
     const sprungMsg = pt.msgs.some(m => /trap|snare|Darts|fall through/i.test(m))
     r.check('the spring is narrated on the message line', sprungMsg, pt.msgs.join(' | '))
+    // #3588: when the mine shackles the body, the banner must say so live.
+    const shackleTxt = await page.evaluate(() => document.body.innerText)
+    const want = pt.held > 0 ? `Hld:${pt.held}` : pt.sleeping > 0 ? `Slp:${pt.sleeping}` : null
+    if (want) r.check('the shackles notation rides the banner in real Chrome', shackleTxt.includes(want), want)
+    else r.check('nothing shackles the body — and the banner says so', !/Slp:|Hld:/.test(shackleTxt))
 }
 
 // ---- #3592: the Amulet of Yendor in real Chrome — seat, hunt, win card ----

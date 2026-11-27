@@ -7,7 +7,7 @@ import { isWatchKey, isTakeoverKey, playWatchStart, playWatchStop, watchSfxLog }
 import {
   COLORS,
   createInitialState, stepGame, buildGrid, watchStep,
-  getItemName, playerAC, runScore, done, hash, isThrowable, qaSeatLevel,
+  getItemName, playerAC, runScore, done, hash, isThrowable, qaSeatLevel, shackles,
 } from './sim.js'
 
 // ROGUE (1980, Eglit/Upl — the ur-dungeon). The whole game logic lives in
@@ -54,10 +54,32 @@ const fxSound = (e) => {
       case 'descend':   ac.playSweep(420, 110, 0.3, 'triangle', 0.06); break
       case 'door-open': ac.playNoise(0.05, 0.06); ac.playTone(260, 0.07, 'triangle', 0.05); break
       case 'door-found': ac.playTone(660, 0.06, 'triangle', 0.05); ac.playTone(990, 0.09, 'triangle', 0.05, 0.06); break
-      // #3579: the minefield — a spring is a metallic snap; a trap door is
-      // the floor leaving under you.
-      case 'trap': ac.playNoise(0.05, 0.10); ac.playTone(150, 0.09, 'square', 0.07); break
-      case 'trapdoor': ac.playSweep(480, 55, 0.35, 'sawtooth', 0.08); break
+      // #3579 → #3588: the cabinet names the trap by ear — every kind gets
+      // its own voice. The door keeps the metallic snap (the floor cracking),
+      // and the trapdoor wail sinks deeper with every unpaid fall grudge.
+      case 'trap':
+        switch (e.kind) {
+          // darts: three razor ticks, quick and high
+          case 'darts': [1500, 1900, 2300].forEach((f, i) => ac.playTone(f, 0.02, 'square', 0.05, i * 0.035)); break
+          // teleport: a shimmer that folds down under itself
+          case 'teleport': ac.playSweep(980, 190, 0.18, 'sine', 0.05); ac.playSweep(1240, 240, 0.18, 'triangle', 0.035, null, 0.05); break
+          // sleep: a slow low glide, the eyelids of the 1980 joke
+          case 'sleep': ac.playSweep(210, 55, 0.5, 'triangle', 0.05); break
+          // snare: a three-tooth ratchet tightening
+          case 'snare': [300, 350, 410].forEach((f, i) => ac.playTone(f, 0.03, 'square', 0.05, i * 0.05)); break
+          // strength: the wind let out of you
+          case 'str': ac.playSweep(330, 110, 0.28, 'sawtooth', 0.05); break
+          // confusion: a gas hiss wobbling off-pitch
+          case 'confuse': ac.playNoise(0.22, 0.05); ac.playSweep(520, 360, 0.32, 'sine', 0.04); break
+          // door: the snap under your foot
+          default: ac.playNoise(0.05, 0.10); ac.playTone(150, 0.09, 'square', 0.07)
+        }
+        break
+      case 'trapdoor': {
+        const g = Math.min(Math.max(e.falls || 1, 1), 4)
+        ac.playSweep(480 - (g - 1) * 110, Math.max(35, 55 - (g - 1) * 8), 0.35 + (g - 1) * 0.1, 'sawtooth', 0.08)
+        break
+      }
       // #3514: the break — a nervous rising chirp then a drop, unlike any other
       // cue in this kit (kill falls long, door-found rises steady in two notes).
       case 'flee': ac.playSweep(700, 980, 0.09, 'triangle', 0.05); ac.playTone(520, 0.07, 'triangle', 0.04, 0.09); break
@@ -89,6 +111,13 @@ const CRT_CSS = `
 }
 @media (pointer: coarse) { .rogue-crt div, .rogue-crt span, .rogue-crt pre { text-shadow: 0 0 3px currentColor } }
 @media (prefers-reduced-motion: reduce) { .rogue-crt-overlay { animation: none } }
+/* #3588: the spring flinch — the whole grid shudders twice when a mine
+   fires, the cabinet's "you were wrong". Remounted per event via key. */
+.rogue-map-jitter { animation: rogueSpringJitter 0.09s linear 2; }
+@keyframes rogueSpringJitter {
+  0%,100% { transform: translate(0,0) } 25% { transform: translate(-2px,1px) } 50% { transform: translate(2px,-1px) } 75% { transform: translate(-1px,-1px) }
+}
+@media (prefers-reduced-motion: reduce) { .rogue-map-jitter { animation: none } }
 `
 
 // ── Mobile d-pad ──────────────────────────────────────────────────────────────
@@ -173,8 +202,13 @@ function stepWithFlash(state, action) {
   const next = stepGame(state, action)
   const prevLen = state.fx.length
   if (next.fx.length > prevLen) {
-    const broke = next.fx.slice(prevLen).filter(e => e.k === 'flee').map(e => e.id)
+    const fresh = next.fx.slice(prevLen)
+    const broke = fresh.filter(e => e.k === 'flee').map(e => e.id)
+    // #3588: the spring moment — cells where a mine just fired, stamped the
+    // same turn-age way the flee tint is (view-only; the sim hash untouched).
+    const mines = fresh.filter(e => e.k === 'trap' && Number.isFinite(e.x)).map(e => `${e.x},${e.y}`)
     if (broke.length) return { ...next, fleeFlashIds: broke, fleeFlashTurn: next.turn }
+    if (mines.length) return { ...next, trapFlashCells: mines, trapFlashTurn: next.turn }
   }
   return next
 }
@@ -664,7 +698,7 @@ export default function RogueGame() {
   const grid = buildGrid(state)
   const lastMsg = messages[messages.length - 1] || ''
   const hungerStr = player.hunger !== 'full' ? ` [${player.hunger.toUpperCase()}]` : ''
-  const statusStr = `Dlvl:${dungeonLevel}  Gold:${player.gold}  Hp:${player.hp}(${player.maxHp})  Str:${player.str}(${player.maxStr})  Arm:${playerAC(player)}  Exp:${player.level}/${player.exp}${hungerStr}`
+  const statusStr = `Dlvl:${dungeonLevel}  Gold:${player.gold}  Hp:${player.hp}(${player.maxHp})  Str:${player.str}(${player.maxStr})  Arm:${playerAC(player)}  Exp:${player.level}/${player.exp}${hungerStr}${shackles(player)}`
 
   const charW = isMobile ? 9.6 * mapScale : 9.6
   const charH = isMobile ? 19 * mapScale : 19
@@ -677,6 +711,9 @@ export default function RogueGame() {
   if (state.fleeFlashTurn === state.turn) {
     for (const m of state.monsters) if (state.fleeFlashIds?.includes(m.id)) flashCells.add(`${m.x},${m.y}`)
   }
+  // #3588: the spring beat — the cell the hero was wrong on burns white for
+  // exactly one turn; the grid shudder is keyed off the same stamp.
+  const springCells = state.trapFlashTurn === state.turn ? new Set(state.trapFlashCells) : null
 
   return (
     <div ref={containerRef} style={base} tabIndex={0} className="rogue-crt"
@@ -695,7 +732,9 @@ export default function RogueGame() {
 
       {/* Map */}
       <div ref={mapRef} style={{ flex: isMobile ? '0 0 auto' : 1, overflow: 'hidden' }}>
-        <pre style={{
+        <pre key={state.trapFlashTurn || 0}
+             className={springCells ? 'rogue-map-jitter' : undefined}
+             style={{
           margin: 0, padding: 0,
           fontFamily: '"Courier New", Courier, monospace',
           fontSize, lineHeight: `${charH}px`,
@@ -705,7 +744,7 @@ export default function RogueGame() {
           {grid.map((row, y) => (
             <div key={y} style={{ height: charH, display: 'flex' }}>
               {row.map((cell, x) => (
-                <span key={x} style={{ color: flashCells.has(`${x},${y}`) && /[A-Z]/.test(cell.char) ? '#ffd75e' : cell.color, minWidth: charW, display: 'inline-block', textAlign: 'center' }}>
+                <span key={x} style={{ color: springCells?.has(`${x},${y}`) ? '#ffffff' : flashCells.has(`${x},${y}`) && /[A-Z]/.test(cell.char) ? '#ffd75e' : cell.color, minWidth: charW, display: 'inline-block', textAlign: 'center' }}>
                   {cell.char}
                 </span>
               ))}
