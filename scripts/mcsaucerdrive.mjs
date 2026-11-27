@@ -4,6 +4,9 @@
 // pixels at wave 1), then a cheat-hook lift to wave 6 (DebugKit offers the
 // same jump to humans): the ferry enters, its pixels sit where the probe says,
 // and a real mouse aim + Space kill pays 125 on the live board.
+// #3638 adds the polish half: the attract screen shows a painted ferry (the
+// ad), the ferry's cruise launches draw ORANGE trail pixels (distinct from
+// ICBM red), and the kill pops juice (flash/debris) on the live board.
 import { launch, openGame, Report, requireDevServer } from './lib/harness.mjs'
 
 const BASE = `http://localhost:${process.env.DEV_PORT || 5173}/retrogames/missilecommand`
@@ -53,6 +56,76 @@ const hullAt = (gx, gy) => page.evaluate(({ gx, gy }) => {
     return seen
 }, { gx, gy })
 
+// #3638: scan a box at a game point for cruise-trail orange (#ff9d00 —
+// r>200/g~157/b~0). ICBM red has g<80, so this family can only be the
+// cruise trail; the box rides mid-fall, far from the hull's warm tail flicker.
+const orangeAt = (gx, gy) => page.evaluate(({ gx, gy }) => {
+    const canvas = document.querySelector('canvas')
+    const dpr = window.devicePixelRatio || 1
+    const scaleX = canvas.width / dpr / 800
+    const scaleY = canvas.height / dpr / 600
+    const scale = Math.min(scaleX, scaleY) * 0.95
+    const transX = (canvas.width / dpr - 800 * scale) / 2
+    const transY = (canvas.height / dpr - 600 * scale) / 2
+    const px = Math.round((transX + gx * scale) * dpr)
+    const py = Math.round((transY + gy * scale) * dpr)
+    const R = Math.round(9 * scale * dpr)
+    const ctx = canvas.getContext('2d')
+    const img = ctx.getImageData(px - R, py - R, R * 2, R * 2).data
+    let orange = 0
+    for (let i = 0; i < img.length; i += 4) {
+        const r = img[i], g = img[i + 1], b = img[i + 2]
+        // orange family incl. anti-aliased composites over black (coverage can
+        // dip the core to ~0.7 brightness at letterbox scale); ICBM red and
+        // blast white both fail the g/b gates
+        if (r > 170 && g > 95 && g < 215 && b < 90) orange++
+    }
+    return orange
+}, { gx, gy })
+
+// ---- #3638 attract ad: the scripted ferry crosses the attract screen ----
+// ---- #3638 attract ad: the scripted ferry crosses the attract screen ----
+// The attract world draws the ferry UNDER attractFrame's DIM (0.55 black), so
+// the paint signature is the dim-shifted family: hull (216,222,232→~97,100,104)
+// and shade (143,152,168→~64,68,76) are warm-plus-blue greys above the black
+// floor; the dome (57,208,255→~26,94,115) is a cool blue with a mid green.
+// The live full-brightness hullAt cannot see any of it — that is the whole
+// point of a dim, and why this scan is its own helper.
+const attractAt = (gx, gy) => page.evaluate(({ gx, gy }) => {
+    const canvas = document.querySelector('canvas')
+    const dpr = window.devicePixelRatio || 1
+    const scaleX = canvas.width / dpr / 800
+    const scaleY = canvas.height / dpr / 600
+    const scale = Math.min(scaleX, scaleY) * 0.95
+    const transX = (canvas.width / dpr - 800 * scale) / 2
+    const transY = (canvas.height / dpr - 600 * scale) / 2
+    const px = Math.round((transX + gx * scale) * dpr)
+    const py = Math.round((transY + gy * scale) * dpr)
+    const R = Math.round(24 * scale * dpr)
+    const ctx = canvas.getContext('2d')
+    const img = ctx.getImageData(px - R, py - R, R * 2, R * 2).data
+    const seen = { shade: 0, dome: 0 }
+    for (let i = 0; i < img.length; i += 4) {
+        const r = img[i], g = img[i + 1], b = img[i + 2]
+        if (r > 40 && b > r + 4 && b > 45) seen.shade++ // dimmed hull/shade greys
+        if (r < 40 && g > 60 && b > 90) seen.dome++ // dimmed dome cyan
+    }
+    return seen
+}, { gx, gy })
+
+{
+    let ad = null
+    for (let i = 0; i < 140 && !ad; i++) { // ≈21 s — covers two scripted sightings
+        const p = await probe()
+        if (p.saucers > 0 && p.saucerAt[0].x > 40 && p.saucerAt[0].x < 740) {
+            const seen = await attractAt(p.saucerAt[0].x, p.saucerAt[0].y)
+            if (seen.shade >= 12 || seen.dome >= 5) ad = JSON.stringify(seen)
+        }
+        await sleep(150)
+    }
+    rep.check('the attract screen advertises a ferry — painted (dimmed) and on-position (#3638)', !!ad, ad || 'none sighted')
+}
+
 // ---- attract → live ----
 await page.keyboard.press('Space')
 await sleep(400)
@@ -88,8 +161,29 @@ await sleep(120)
         seen.hull >= 10 || seen.dome >= 5, `at (${at.x},${at.y}) → ${JSON.stringify(seen)}`)
 }
 
+// ---- #3638 cruise launches read distinct: orange trail ≠ ICBM red ----
+{
+    let cr = null
+    // wait for a cruise well clear of the hull (its orange tail flicker is the
+    // same colour family; a mid-fall trail midpoint cannot be confused)
+    for (let i = 0; i < 90 && !cr; i++) {
+        const p = await probe()
+        cr = (p.cruiseAt || []).find((c) => c.y - c.sy > 40) || null
+        if (!cr) await sleep(150)
+    }
+    let orange = 0
+    if (cr) {
+        const tx = cr.sx + (cr.x - cr.sx) * 0.6
+        const ty = cr.sy + (cr.y - cr.sy) * 0.6
+        orange = await orangeAt(tx, ty)
+    }
+    rep.check('cruise launches draw an orange trail distinct from ICBM red (pixels, #3638)',
+        orange >= 3, `${cr ? `cruise at (${cr.x},${cr.y})` : 'never launched'} orange=${orange}`)
+}
+
 // ---- real mouse aim + Space kills it for 125 ----
 let killDelta = null
+let juiceSeen = false
 for (let i = 0; i < 12; i++) {
     const before = await probe()
     if (before.saucers === 0) break
@@ -105,6 +199,7 @@ for (let i = 0; i < 12; i++) {
     while (Date.now() - t0 < 1600) {
         await sleep(100)
         const now = await probe()
+        if (now.juice > 0) juiceSeen = true // #3638 flash/debris ticks after the burn
         if (now.saucers === 0) { killDelta = now.score - before.score; break }
         if (now.score - before.score >= 125) { killDelta = now.score - before.score; break }
     }
@@ -112,6 +207,7 @@ for (let i = 0; i < 12; i++) {
 }
 rep.check('a real mouse aim + Space burns the ferry for ≥125 on the live board',
     killDelta !== null && killDelta >= 125, `delta ${killDelta}`)
+rep.check('the burn pops kill juice — flash/debris on the live board (#3638)', juiceSeen)
 
 // the raid survives the ferry wave (browser half only — not the sweep's promise)
 {

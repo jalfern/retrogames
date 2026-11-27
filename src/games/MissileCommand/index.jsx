@@ -81,7 +81,7 @@ const MissileCommandGame = () => {
                 const dy = ferry.y - crosshair.y
                 crosshair.x += dx * 0.12
                 crosshair.y += dy * 0.12
-                if (gs.rand() < 0.08 && Math.abs(dx) < 40 && Math.abs(dy) < 24) {
+                if (gs.rand() < 0.03 && Math.abs(dx) < 40 && Math.abs(dy) < 24) {
                     return { aimX: leadX, aimY: ferry.y }
                 }
                 return null
@@ -313,7 +313,9 @@ const MissileCommandGame = () => {
                 // physics, different eyes. Orange trail + warm tip survives the
                 // 600px phone letterbox where two reds were one story.
                 ctx.strokeStyle = m.cruise ? '#ff9d00' : '#ff0000'
-                ctx.lineWidth = 1
+                ctx.lineWidth = m.cruise ? 2 : 1 // #3638: 2 px + orange — at the
+                // ~0.7 letterbox scale a 1 px AA line reads as a dim blend;
+                // 2 px survives device scale 1 on a 600px phone board
                 ctx.beginPath()
                 ctx.moveTo(m.startX, m.startY)
                 ctx.lineTo(m.x, m.y)
@@ -470,6 +472,7 @@ const MissileCommandGame = () => {
                     warheads: gs.warheads.length, abms: gs.abms.length, saucers: gs.saucers.length,
                     saucerAt: gs.saucers.map((s) => ({ x: Math.round(s.x), y: Math.round(s.y), dir: s.dir, speed: s.speed })),
                     cruise: gs.warheads.filter((m) => m.cruise).length, // #3638 trail probe
+                    cruiseAt: gs.warheads.filter((m) => m.cruise).map((m) => ({ x: Math.round(m.x), y: Math.round(m.y), sx: Math.round(m.startX), sy: Math.round(m.startY) })),
                     juice: gs.debris.length + (gs.flash ? 1 : 0), // #3638 kill-juice probe
                     ammo: gs.silos.reduce((a, s) => a + (s.alive ? s.ammo : 0), 0),
                     watching: gs.watch, seed: gs.seed,
