@@ -55,6 +55,10 @@ const CentipedeGame = () => {
             frame: 0
         }
 
+        // #3633 — render-only bookkeeping: the scorpion's venom trail.
+        // Never read by the sim; cleared on exit/respawn.
+        let scorpionTrail = []
+
         // #1473 run state: seeded field, arcade lives loop, honest terminal.
         let seed = Math.floor(Math.random() * 1000000)
         let rand = seedRng(seed)
@@ -625,6 +629,7 @@ const CentipedeGame = () => {
                 // Venom trail: every full cap under the streak turns red.
                 state.mushrooms.forEach((m) => {
                     if (Math.abs(m.x - s.x) < 10 && Math.abs(m.y - s.y) < 10 && poisonMushroom(m)) {
+                        m.poisonAt = tickN // #3633 — the crawl stamps the moment
                         // #3632 — venom sizzles: a detuned two-note fizz, not a
                         // plain blip (each cap is only sizzled once — no spam).
                         audioController.playTone(820, 0.03, 'sawtooth', 0.045)
@@ -679,11 +684,22 @@ const CentipedeGame = () => {
             const capH = 6
             const stemX = m.x + 6
             const stemY = capY + capH - 1
-            // stem (cream, shaded on the right)
+            // stem (cream, shaded on the right) — the venom never climbs the stem.
             ctx.fillStyle = '#ecdcac'
             ctx.fillRect(stemX, stemY, 4, 4)
             ctx.fillStyle = '#c8b17f'
             ctx.fillRect(stemX + 3, stemY, 1, 4)
+            // #3633 — the venom crawl: poisoned caps fill column-by-column
+            // from the left tip (a drip trails the frontier), then settle in
+            // a red that glints. Render-only — the hit law is untouched.
+            const crawl = m.poison ? (m.poisonAt == null ? 1 : Math.min(1, (tickN - m.poisonAt) / 60)) : 1
+            // shimmer cadence — one clock, shared with the fast segments.
+            const shimmer = Math.floor(tickN / 6) % 2 === 0
+            const venom = m.poison ? {
+                cap: shimmer ? '#ff2d2d' : '#ff6b5e',
+                dark: shimmer ? '#a3111a' : '#d4242a',
+                lite: shimmer ? '#ffb3b3' : '#ffffff',
+            } : c
             // cap underside shade + body + stepped dome
             ctx.fillStyle = c.dark
             ctx.fillRect(capX, capY + capH - 2, capW, 2)
@@ -698,6 +714,47 @@ const CentipedeGame = () => {
                 ctx.fillStyle = '#ffffff'
                 ctx.fillRect(capX + capW - 5, capY + 2, 2, 2)
                 ctx.fillRect(capX + 4, capY + 3, 2, 1)
+            }
+            if (m.poison) {
+                if (crawl >= 1) {
+                    // settled: whole cap in venom, with a bright glint sweeping the cap
+                    ctx.fillStyle = venom.dark
+                    ctx.fillRect(capX, capY + capH - 2, capW, 2)
+                    ctx.fillStyle = venom.cap
+                    ctx.fillRect(capX, capY + 1, capW, capH - 2)
+                    ctx.fillRect(capX + 2, capY, capW - 4, 2)
+                    ctx.fillStyle = venom.lite
+                    ctx.fillRect(capX + 2, capY + 1, 2, 2)
+                    const cols = Math.max(1, Math.ceil(capW / 2))
+                    const glintX = capX + (Math.floor(tickN / 6) % cols) * 2
+                    ctx.fillStyle = shimmer ? '#ffffff' : '#ffd0c2'
+                    ctx.fillRect(Math.min(glintX, capX + capW - 2), capY + 1, 2, 2)
+                } else {
+                    // mid-crawl: reached columns render venom, the boundary
+                    // column fills in, the drip hangs off the cap's edge.
+                    const cols = Math.max(1, Math.ceil(capW / 2))
+                    const frontier = crawl * cols
+                    const fullCols = Math.floor(frontier)
+                    const boundary = Math.min(cols - 1, fullCols)
+                    const through = frontier - fullCols // 0..1 how far into the boundary column
+                    for (let col = 0; col < fullCols; col++) {
+                        const colX = capX + col * 2
+                        ctx.fillStyle = venom.dark
+                        ctx.fillRect(colX, capY + capH - 2, 2, 2)
+                        ctx.fillStyle = venom.cap
+                        ctx.fillRect(colX, capY + 1, 2, capH - 2)
+                        ctx.fillRect(colX + 2, capY, 2, 2) // dome inset keeps the step
+                    }
+                    const bx = capX + boundary * 2
+                    const bodyH = Math.max(1, Math.round((capH - 2) * (0.4 + 0.6 * through)))
+                    ctx.fillStyle = venom.cap
+                    ctx.fillRect(bx, capY + 2, 2, bodyH)
+                    ctx.fillStyle = venom.dark
+                    ctx.fillRect(bx, capY + capH - 2, 2, 2)
+                    // the drip trailing the frontier — venom off the cap's edge
+                    const drip = 1 + Math.round(through * 2)
+                    ctx.fillRect(bx + 1, capY + capH, 1, drip)
+                }
             }
         }
 
@@ -773,15 +830,38 @@ const CentipedeGame = () => {
             // caps are the scorpion's venom (#3604).
             state.mushrooms.forEach(drawMushroom)
 
+            // #3633 — the streak's venom trail: fading red wisps left behind
+            // it, oldest first, so its path reads at a glance. Render-only.
+            scorpionTrail = scorpionTrail.filter((t) => tickN - t.born < 34)
+            if (state.scorpion) {
+                const s = state.scorpion
+                const last = scorpionTrail[scorpionTrail.length - 1]
+                if (!last || Math.abs(last.x - s.x) >= 1 || Math.abs(last.y - s.y) >= 1) {
+                    scorpionTrail.push({ x: s.x, y: s.y, born: tickN })
+                    if (scorpionTrail.length > 30) scorpionTrail.shift()
+                }
+            }
+            scorpionTrail.forEach((t) => {
+                const age = tickN - t.born
+                const alpha = Math.max(0, 0.46 - age * 0.014)
+                if (alpha <= 0.01) return
+                ctx.fillStyle = `rgba(255, 66, 46, ${alpha})`
+                ctx.fillRect(Math.round(t.x + 4), Math.round(t.y + 4), 5, 5)
+            })
+
             // The menagerie (#3604): spider, scorpion, flea — over the garden,
             // under the shots.
             if (state.spider) drawSpider(state.spider)
             if (state.scorpion) drawScorpion(state.scorpion)
             if (state.flea) drawFlea(state.flea)
 
-            // Centipede
+            // Centipede — a venom-racing segment wears the same red as the
+            // caps (#3633), lightly shimmering, so the chain carrying the
+            // venom reads at a glance. Render-only.
+            const segShimmer = Math.floor(tickN / 6) % 2 === 0
             state.centipedes.forEach(c => {
-                ctx.fillStyle = 'white'
+                const segColor = c.fast ? (segShimmer ? '#ff2d2d' : '#ff6b5e') : 'white'
+                ctx.fillStyle = segColor
                 // Circle
                 ctx.beginPath()
                 ctx.arc(c.x + 8, c.y + 8, 7, 0, Math.PI * 2)
@@ -793,7 +873,7 @@ const CentipedeGame = () => {
                     ctx.fillRect(c.x + 10, c.y + 4, 2, 2)
                 }
                 // Legs
-                ctx.strokeStyle = 'white'
+                ctx.strokeStyle = segColor
                 if (Math.floor(Date.now() / 100) % 2 === 0) {
                     ctx.beginPath(); ctx.moveTo(c.x, c.y + 8); ctx.lineTo(c.x - 4, c.y + 12); ctx.stroke();
                     ctx.beginPath(); ctx.moveTo(c.x + 16, c.y + 8); ctx.lineTo(c.x + 20, c.y + 12); ctx.stroke();
