@@ -34,7 +34,7 @@ Dungeons of Doom keep whatever you bring them.
 ## Verify
 
 ```bash
-npm run roguecheck        # 160 checks: boot+purity, determinism (incl.
+npm run roguecheck        # 192 checks: boot+purity, determinism (incl.
                          # interleaved replays), BFS stairs-reachability on 40
                          # seeds, combat/xp/hunger/descend/pickup/wield/eat/
                          # quaff/scroll rules, the door mechanic (closed
@@ -60,7 +60,10 @@ npm run roguecheck        # 160 checks: boot+purity, determinism (incl.
                          # shallow cart goldens byte-honest, the pickup you-win
                          # terminal + sting + cart-law score on six seeds, two
                          # doomed seeds dying honest at the same terminal, and an
-                         # honest QUIT on the bottom floor)
+                         # honest QUIT on the bottom floor), and the #3697 life-dice gates (the cart
+                         # ladder verbatim incl. 40920, Δd10 multi-level jump,
+                         # level-20 top rung, heal d4s/d8s per level, the
+                         # ++max overflow quirk)
 npm run roguedrive       # real Chrome, real keys only (#3491/#3509/#3592): walk onto
                          # a quiver, f → menu → direction, one arrow spent, the
                          # miss lies east to salvage, help teaches f; the mobility
@@ -79,7 +82,9 @@ Mutant proof: flipping the descend guard in `handleDescend` (`!== '%'` →
 Collapsing the search-reveal radius in `handleSearch` kills 3 door checks
 (reveal / drawn `+` / door-found fx). Restore → green. #3491 planted four:
 shot passes through bodies (3 red), charge never spent (2), salvage dropped
-(4), arrows wieldable (1). Restore → green.
+(4), arrows wieldable (1). Restore → green. #3697 planted one: turning the
+multi-level walk into a single-step `if` dies exactly 3 checks (jump, greeting,
+real-dice spread). Restore → green.
 
 ## Walls are solid — the glyph grammar (#1833)
 
@@ -258,8 +263,21 @@ snake's line + blip (mutants: unplugged emit → 2 red; deleted line → 1 red).
     (pure CSS, reduced-motion-aware); and every descent into dlvl ≥ 18
     rings `deep-descend` — a slow low drone — alongside the plain
     `descend` sweep. All pinned in roguecheck.
-- Level-up is xp-table + hp gain only — no class-based gain rolls, no hit dice
-  display, no intelligence/charisma/wisdom spread (str only, per the port).
+- **CLOSED by #3697:** level-up dice — with a ruling. Fetched from the BSD
+  Restoration Project (`github.com/RoguelikeRestorationProject/rogue3.6`),
+  the cart's real law is: `check_level` walks the whole `e_levels` ladder, so
+  one big award can jump several levels and the gain is `roll(Δ, 10)` — Δ REAL
+  d10s; healing rolls `roll(lvl, 4)`, extra healing `roll(lvl, 8)`, and
+  overflow buys exactly +1 max (`hp = ++max_hp`). All three laws now live in
+  sim.js (`checkLevel`, `healCart`) and roguecheck pins them (+10, incl. the
+  original's 40920 misprint and the level-20 top rung). The gap's ask for
+  "class-based gain rolls" and an "int/charisma/wisdom spread" is a dead end,
+  the #3664 shape: `rogue.h struct stats` carries **strength only** — no
+  attributes to spread — and BSD Rogue has **no class system at all** (classes
+  enter the lineage through the derivatives, Hack/NetHack). The parenthesised
+  `Hp: cur(max)` hit-dice read was already faithful. What stays open: the
+  cart's potion of raise (`P_RAISE` — exp to the next rung, "skillful") is a
+  new generation type, deferred, not forgotten.
 - Food is the only light-source clock; no lamp/oil and torch-lit radius.
 
 RETRO bar: pure green-phosphor monospace look, original ASCII symbol set and

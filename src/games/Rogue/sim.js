@@ -638,9 +638,38 @@ export function playerAC(player) {
   return 10 - base
 }
 
+// #3697 — the cart's e_levels ladder verbatim (Rogue 3.6 `fight.c`, fetched
+// from the BSD Restoration Project mirror): powers of two WITH the original's
+// 40920 typo, top rung level 20. Below level 2 the old doubling law and this
+// table agree; the port already spoke it — this only extends the rungs and
+// keeps the authentic misprint.
 export function xpNeeded(level) {
-  const table = [0, 10, 20, 40, 80, 160, 320, 640, 1280, 2560, 5120]
+  const table = [0, 10, 20, 40, 80, 160, 320, 640, 1280, 2560, 5120, 10240,
+    20480, 40920, 81920, 163840, 327680, 655360, 1310720, 2621440]
   return table[Math.min(level - 1, table.length - 1)]
+}
+
+// #3697 — the cart's level-up law (`fight.c check_level`): walk the whole
+// ladder, so one award can jump several levels, and the life gain is
+// roll(Δ, 10) — Δ REAL d10s, one die per level gained — clamped at max.
+// No class rolls: the cart has strength only (`rogue.h struct stats`), and
+// it rises from potions alone. See the README ruling and #3697's design note.
+export function checkLevel(p, msgs) {
+  let jumped = 0
+  while (p.level < 20 && p.exp >= xpNeeded(p.level + 1)) { p.level += 1; jumped += 1 }
+  if (!jumped) return
+  const gain = rollDice(`${jumped}d10`)
+  p.maxHp += gain
+  p.hp = Math.min(p.hp + gain, p.maxHp)
+  msgs.push(`Welcome to level ${p.level}! Hp:${p.hp}`)
+}
+
+// #3697 — the cart's healing dice (`potions.c`): plain healing rolls d4s per
+// level, extra healing d8s per level — dice that GROW with the hero — and
+// both carry the overflow quirk: spillover buys exactly +1 max (`hp = ++max_hp`).
+function healCart(p, dice, sides) {
+  p.hp += rollDice(`${dice}d${sides}`)
+  if (p.hp > p.maxHp) { p.maxHp += 1; p.hp = p.maxHp }
 }
 
 // Honor score (the terminal tally): gold carried + depth bonus.
@@ -761,13 +790,7 @@ export function playerAttack(state, mIdx) {
       msgs.push(`You defeated the ${mon.name}!`)
       newMonsters = newMonsters.filter((_, i) => i !== mIdx)
       newPlayer.exp += mon.xp
-      if (newPlayer.exp >= xpNeeded(newPlayer.level + 1)) {
-        newPlayer.level += 1
-        const gain = rng(3, 10)
-        newPlayer.maxHp += gain
-        newPlayer.hp = Math.min(newPlayer.hp + gain, newPlayer.maxHp)
-        msgs.push(`Welcome to level ${newPlayer.level}! Hp:${newPlayer.hp}`)
-      }
+      checkLevel(newPlayer, msgs)
     } else {
       newMonsters[mIdx] = { ...mon, hp: newHp, chasing: true }
     }
@@ -1104,8 +1127,8 @@ export function handleQuaff(state, invIndex) {
   const newIdent = { ...state.identifiedPotions, [item.subtype]: true }
 
   switch (potion.effect) {
-    case 'heal':    p.hp = Math.min(p.maxHp, p.hp + rng(4, 10)); break
-    case 'heal2':   p.hp = Math.min(p.maxHp, p.hp + rng(10, 20)); break
+    case 'heal':    healCart(p, p.level, 4); break   // #3697 roll(lvl,4) + ++max quirk
+    case 'heal2':   healCart(p, p.level, 8); break   // #3697 roll(lvl,8) + ++max quirk
     case 'poison':  p.str = Math.max(1, p.str - rng(1, 3)); break
     case 'strength': p.str = Math.min(p.maxStr + 3, p.str + 1); break
     case 'restore_str': p.str = p.maxStr; break
@@ -1215,13 +1238,7 @@ export function handleTakeOff(state) {
 // or staff books exactly like a kill by mace.
 function grantExp(s, xp, msgs) {
   const p = { ...s.player, exp: s.player.exp + xp }
-  if (p.exp >= xpNeeded(p.level + 1)) {
-    p.level += 1
-    const gain = rng(3, 10)
-    p.maxHp += gain
-    p.hp = Math.min(p.hp + gain, p.maxHp)
-    msgs.push(`Welcome to level ${p.level}! Hp:${p.hp}`)
-  }
+  checkLevel(p, msgs)
   return { ...s, player: p }
 }
 
