@@ -8,7 +8,7 @@ import { isWatchKey, isTakeoverKey, playWatchStart, playWatchStop, watchSfxLog, 
 import { attractFrame, DIM } from './attract.js'
 import {
     CELL, COLS, W, HOME_ROW, RIVER_TOP, RIVER_BOT, MEDIAN_ROW, ROAD_TOP, ROAD_BOT, START_ROW,
-    TIME_LIMIT, HOP_ANIM, DIE_ANIM, DIVE_CYCLE,
+    TIME_LIMIT, HOP_ANIM, DIE_ANIM, DIVE_CYCLE, ROW_FREEZE,
     makeRun, tickFrogger, hop as simHop, supportAt as simSupportAt, spansOf, surfaced, houseAt, deathStyle, stateHash,
 } from './sim.js'
 import { exposeGame, unexposeGame, exposeFeedbackState, unexposeFeedbackState, seedFromQuery, contractHoldsLoop } from '../../utils/gameContract'
@@ -66,15 +66,29 @@ const FroggerGame = () => {
             if (cause === 'off') {
                 // off the board: a dry descending thud, no water splash (#1508)
                 audioController.playSweep(420, 90, 0.22, 'square', 0.14)
+            } else if (cause === 'wall') {
+                // a head-on bump into a filled home: a flat bonk, no splash
+                audioController.playTone(160, 0.14, 'square', 0.13)
             } else {
                 audioController.playSweep(320, 60, 0.35, 'sawtooth', 0.15)
                 audioController.playNoise(0.25, 0.15)
             }
         }
-        const playHome = fly => {
+        const playHome = (fly, bonus) => {
             audioController.playSweep(330, 660, 0.2, 'square', 0.1)
             if (fly) audioController.playTone(1568, 0.1, 'square', 0.1)
+            // #3676 gap 0 — the arcade pays the unused-time bonus as its own
+            // rising triad, distinct from the plain home chime.
+            if (bonus > 0) {
+                audioController.playTone(880, 0.05, 'square', 0.07)
+                audioController.playTone(1174, 0.05, 'square', 0.07)
+                audioController.playTone(1760, 0.09, 'square', 0.07)
+            }
         }
+        // #3676 gap 0 — row-entry bleep: a short chirp that climbs with the
+        // row, riding the same octave curve as the hop tone but brighter.
+        const playEnter = row => audioController.playTone(520 + (START_ROW - row) * 34, 0.09, 'square', 0.09)
+        const playHandoff = () => audioController.playSweep(660, 220, 0.3, 'triangle', 0.12)
 
         const seat = () => {
             gs.watching = true
@@ -87,11 +101,12 @@ const FroggerGame = () => {
             if (blip) playWatchStop()
         }
 
-        const startGame = () => {
+        const startGame = (players = 1) => {
             // every human start regenerates the seed (?seed=N wins) — the
             // attract demo never spends the run's traffic (#1473)
             seed = seedFromQuery(window.location.search) ?? Math.floor(Math.random() * 1000000)
-            gs = makeRun(seed)
+            gs = makeRun(seed, { players })
+            if (players === 2) gs.banner = 120 // PLAYER 1 opens the duel
             setAttractUi(false)
             gs.watching = false // watch never lingers — a new run starts in your hands
             setWatching(false)
@@ -118,8 +133,10 @@ const FroggerGame = () => {
                 if (gs.watching) release(); else seat()
                 return
             }
-            if (gs.attract) { startGame(); return }
-            if (gs.over) { startGame(); return }
+            // #3676 gap 0 — `2` at attract/game-over opens the alternating
+            // duel (desktop/same-device; the phone keeps the one-pad 1P run).
+            if (gs.attract) { startGame(e.code === 'Digit2' ? 2 : 1); return }
+            if (gs.over) { startGame(e.code === 'Digit2' ? 2 : 1); return }
             if (e.repeat) return
 
             if (gs.watching && isTakeoverKey(e)) release()
@@ -151,13 +168,16 @@ const FroggerGame = () => {
         // ------------------------------------------------------------------
         const applyEvents = ev => {
             if (ev.hopped) playHop(ev.hopped)
+            if (ev.enter) playEnter(ev.enter)
             if (ev.died) playDie(ev.died)
-            if (ev.home) playHome(ev.fly)
+            if (ev.home) playHome(ev.fly, ev.bonus)
+            if (ev.handoff) playHandoff()
             if (ev.beep) audioController.playTone(1000, 0.04, 'square', 0.08)
             if (ev.level) audioController.playSweep(440, 1320, 0.6, 'square', 0.12)
             if (ev.over && !gs.attract) {
-                if (gs.score > hiScore) {
-                    hiScore = gs.score
+                const top = Math.max(gs.scores[gs.player - 1], gs.players === 2 ? Math.max(...gs.scores) : 0)
+                if (top > hiScore) {
+                    hiScore = top
                     localStorage.setItem('frogger.hi', String(hiScore))
                 }
                 if (gs.watching) release(false) // the run ends in your hands (silent)
@@ -169,7 +189,8 @@ const FroggerGame = () => {
                 state: () => ({
                     attract: gs.attract, over: gs.over, score: gs.score, lives: gs.lives, level: gs.level,
                     row: gs.frog.row, x: gs.frog.x, frogState: gs.frog.state, time: gs.timeLeft,
-                    riding: gs.frog.riding, atHouse: houseAt(gs.frog.x) >= 0 && !gs.houses[houseAt(gs.frog.x)].filled
+                    riding: gs.frog.riding, atHouse: houseAt(gs.frog.x) >= 0 && !gs.houses[houseAt(gs.frog.x)].filled,
+                    players: gs.players, player: gs.player, scores: [...gs.scores], winner: gs.winner, freeze: gs.freeze,
                 }),
                 // Read-only "may I step up right now?" — the same predicates the
                 // engine applies on landing. A harness reads; only keys act.
@@ -189,6 +210,7 @@ const FroggerGame = () => {
                     row: gs.frog.row, x: gs.frog.x, frogState: gs.frog.state,
                     homes: gs.houses.filter(h => h.filled).length,
                     attract: gs.attract, over: gs.over,
+                    players: gs.players, player: gs.player, scores: [...gs.scores], winner: gs.winner, freeze: gs.freeze,
                 }),
             }
         }
@@ -261,6 +283,7 @@ const FroggerGame = () => {
                 row: gs.frog.row,
                 x: Math.round(gs.frog.x),
                 homes: gs.houses.filter(h => h.filled).length,
+                players: gs.players, player: gs.player, scores: [...gs.scores], winner: gs.winner,
                 hash: stateHash(gs),
             }),
             canvas: () => canvas,
@@ -427,6 +450,13 @@ const FroggerGame = () => {
             if (frog.state === 'alive' || frog.state === 'home') {
                 if (frog.state === 'home') {
                     drawFrog([1, 4, 6, 8, 11][frog.homeCol] * CELL + CELL / 2, rowMid(HOME_ROW) - 1, 0.8)
+                } else if (gs.freeze > 0) {
+                    // #3676 — the row-entry spin while the field holds still.
+                    ctx.save()
+                    ctx.translate(fx, fy)
+                    ctx.rotate((1 - gs.freeze / ROW_FREEZE) * Math.PI * 2)
+                    drawFrog(0, 0, 1)
+                    ctx.restore()
                 } else {
                     drawFrog(fx, fy, 1)
                 }
@@ -459,16 +489,34 @@ const FroggerGame = () => {
             ctx.fillRect(0, 0, W, HUD_H)
             ctx.font = 'bold 8px monospace'
             ctx.textAlign = 'left'
-            ctx.fillStyle = '#a9a9a9'
-            ctx.fillText('SCORE', 6, 9)
-            ctx.fillText('HI-SCORE', 6, 21)
-            ctx.fillStyle = '#ffffff'
-            ctx.fillText(String(gs.score).padStart(6, '0'), 40, 9)
-            ctx.fillText(String(Math.max(gs.score, hiScore)).padStart(6, '0'), 60, 21)
-            ctx.fillStyle = '#a9a9a9'
-            ctx.fillText('LEVEL', 110, 9)
-            ctx.fillStyle = '#ffffff'
-            ctx.fillText(String(gs.level), 142, 9)
+            if (gs.players === 2) {
+                // #3676 — duel HUD: both scores shown at all times (the
+                // alternating arcade's law); the active seat's line is bright.
+                const pad6 = n => String(Math.max(0, n) % 1000000).padStart(6, '0')
+                ctx.fillStyle = gs.player === 1 ? '#ffffff' : '#6f6f6f'
+                ctx.fillText(`P1 ${pad6(gs.scores[0])}`, 6, 9)
+                ctx.fillStyle = gs.player === 2 ? '#ffffff' : '#6f6f6f'
+                ctx.fillText(`P2 ${pad6(gs.scores[1])}`, 6, 21)
+                ctx.fillStyle = '#a9a9a9'
+                ctx.fillText('HI', 78, 9)
+                ctx.fillStyle = '#ffffff'
+                ctx.fillText(pad6(Math.max(gs.scores[0], gs.scores[1], hiScore)), 92, 9)
+                ctx.fillStyle = '#a9a9a9'
+                ctx.fillText('LV', 78, 21)
+                ctx.fillStyle = '#ffffff'
+                ctx.fillText(String(gs.level), 92, 21)
+            } else {
+                ctx.fillStyle = '#a9a9a9'
+                ctx.fillText('SCORE', 6, 9)
+                ctx.fillText('HI-SCORE', 6, 21)
+                ctx.fillStyle = '#ffffff'
+                ctx.fillText(String(gs.score).padStart(6, '0'), 40, 9)
+                ctx.fillText(String(Math.max(gs.score, hiScore)).padStart(6, '0'), 60, 21)
+                ctx.fillStyle = '#a9a9a9'
+                ctx.fillText('LEVEL', 110, 9)
+                ctx.fillStyle = '#ffffff'
+                ctx.fillText(String(gs.level), 142, 9)
+            }
             ctx.fillStyle = '#a9a9a9'
             ctx.fillText('TIME', 110, 21)
             const tw = 104
@@ -484,6 +532,13 @@ const FroggerGame = () => {
                 ctx.font = 'bold 10px monospace'
                 ctx.textAlign = 'center'
                 ctx.fillText(`LEVEL ${gs.level - 1} COMPLETE  +1000`, W / 2, rowMid(MEDIAN_ROW) + 3)
+            }
+            // #3676 — seat banner at a 2P handoff (and at duel start).
+            if (gs.banner > 0 && !gs.attract && !gs.over && Math.floor(gs.banner / 20) % 2 === 0) {
+                ctx.fillStyle = '#ffe14d'
+                ctx.font = 'bold 14px monospace'
+                ctx.textAlign = 'center'
+                ctx.fillText(`PLAYER ${gs.player}`, W / 2, rowMid(MEDIAN_ROW) + 3)
             }
 
             if (gs.attract) {
@@ -505,10 +560,22 @@ const FroggerGame = () => {
                 ctx.fillText('GAME OVER', W / 2, H / 2 - 14)
                 ctx.fillStyle = '#ffffff'
                 ctx.font = 'bold 9px monospace'
-                ctx.fillText(`SCORE ${gs.score}   LEVEL ${gs.level}`, W / 2, H / 2 + 6)
-                if (Math.floor(Date.now() / 500) % 2 === 0) {
+                if (gs.players === 2) {
+                    // #3676 — the duel's verdict: both scores, highest wins (0 = draw).
+                    const pad6 = n => String(Math.max(0, n) % 1000000).padStart(6, '0')
+                    ctx.fillText(`P1 ${pad6(gs.scores[0])}   P2 ${pad6(gs.scores[1])}   LEVEL ${gs.level}`, W / 2, H / 2 + 6)
                     ctx.fillStyle = '#ffe14d'
-                    ctx.fillText('TAP OR PRESS ANY KEY', W / 2, H / 2 + 28)
+                    ctx.fillText(gs.winner === 0 ? "IT'S A DRAW" : `PLAYER ${gs.winner} WINS`, W / 2, H / 2 + 22)
+                    if (Math.floor(Date.now() / 500) % 2 === 0) {
+                        ctx.fillStyle = '#ffe14d'
+                        ctx.fillText('TAP OR PRESS ANY KEY', W / 2, H / 2 + 40)
+                    }
+                } else {
+                    ctx.fillText(`SCORE ${gs.score}   LEVEL ${gs.level}`, W / 2, H / 2 + 6)
+                    if (Math.floor(Date.now() / 500) % 2 === 0) {
+                        ctx.fillStyle = '#ffe14d'
+                        ctx.fillText('TAP OR PRESS ANY KEY', W / 2, H / 2 + 28)
+                    }
                 }
             }
         }
@@ -525,10 +592,13 @@ const FroggerGame = () => {
                 `frog ${Math.round(gs.frog.x)},${gs.frog.row} state ${gs.frog.state} riding ${gs.frog.riding}`,
                 `houses ${gs.houses.map(h => (h.filled ? 'F' : h.fly ? 'f' : '.')).join('')}  fly bonus live ${gs.houses.some(h => h.fly)}`,
                 `seed ${seed}  tick ${gs.tickN}  watching ${gs.watching}`,
+                `2P ${gs.players === 2}  seat P${gs.player}  scores ${gs.scores.join('/')}  winner ${gs.winner}  freeze ${gs.freeze}`,
             ],
             actions: [
                 { label: 'Hop up', run: () => simHop(gs, 0, -1) },
                 { label: 'Force game over', run: () => { gs.lives = 1; gs.frog.state = 'alive'; simHop(gs, 0, 0); gs.timeLeft = 1; } },
+                { label: 'Start 2P duel', run: () => startGame(2) },
+                { label: 'Kill P1 seat (handoff)', run: () => { if (gs.players === 2 && gs.player === 1) { gs.lives = 1; gs.frog.state = 'alive'; gs.frog.cause = 'wall'; gs.frog.deadT = 2 } } },
             ],
         })
 

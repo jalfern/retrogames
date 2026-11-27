@@ -8,7 +8,8 @@
 import { readFileSync, writeFileSync } from 'node:fs'
 import { spawnSync } from 'node:child_process'
 import { attractFrame, INFO_MSGS, HOLD, PRESS, DIM, HUD, estWidth } from '../src/games/Frogger/attract.js'
-import { makeLane, DIVE_CYCLE, deathStyle, makeRun, tickFrogger, watchStep } from '../src/games/Frogger/sim.js'
+import { makeLane, DIVE_CYCLE, deathStyle, makeRun, tickFrogger, watchStep,
+    ROW_FREEZE, timeBonus, TIME_LIMIT, START_ROW, ROAD_BOT, CELL } from '../src/games/Frogger/sim.js'
 import { seedRng, seedFromQuery } from '../src/utils/gameContract.js'
 import { plant, pull } from './lib/mutateguard.mjs'
 
@@ -218,6 +219,120 @@ console.log('watch driver: crossings proven on the shipped tick (#1637 b25)')
     ok(died === 0 && gs.lives === 3, 'pin: leg is zero-death (no life lottery in the browser leg)', `deaths ${died}`)
 }
 
+// --------------- #3676 gap 0: alternating 2P + row-entry tell + time bonus ----
+// Wikipedia §Gameplay: "two players alternating turns"; §Scoring: "Ten points
+// are awarded per each unused ½ second of time." All three laws are pure sim
+// and provable in Node against the shipped tick — like the rest of this file,
+// no browser needed.
+console.log('duel & tell (#3676): alternating 2P, row-entry pause, time bonus')
+{
+    const kill = gs => { gs.frog.state = 'dying'; gs.frog.cause = 'car'; gs.frog.deadT = 1; return tickFrogger(gs) }
+
+    const g1 = makeRun(4242)
+    ok(g1.players === 1 && g1.player === 1 && g1.winner === 0 && g1.freeze === 0,
+        '1P run: duel fields inert')
+
+    ok(timeBonus({ timeLeft: TIME_LIMIT }) === 600 && timeBonus({ timeLeft: 900 }) === 300 &&
+        timeBonus({ timeLeft: 29 }) === 0,
+        'time bonus = ten points per unused ½ second', `${timeBonus({ timeLeft: 900 })}`)
+
+    // Home pays the bonus from the clock AT ARRIVAL, then resets it. Sit the
+    // frog right above the centre house — deterministic, no traffic involved.
+    const g2 = makeRun(4242)
+    g2.frog.row = 1; g2.frog.x = 6 * CELL + CELL / 2; g2.frog.bestRow = 1
+    g2.timeLeft = 900
+    const flyWas = g2.houses[2].fly
+    const s2 = g2.score
+    const ev2 = tickFrogger(g2, { dx: 0, dy: -1 })
+    ok(ev2.home === 1 && ev2.bonus === 300, 'home pays 300 bonus with 15 s left', `bonus ${ev2.bonus}`)
+    ok(g2.score - s2 === 360 + (flyWas ? 200 : 0),
+        'home totals 10 forward + 50 home + 300 bonus (+200 when the fly was there)', `delta ${g2.score - s2}`)
+    ok(g2.timeLeft === TIME_LIMIT, 'the clock resets after the home entry')
+
+    // Row-entry tell — a surviving hop onto road row 10 stops the field, the
+    // clock holds with it, and the hold lasts ROW_FREEZE ticks. Road rows score
+    // on clearance, so scan the seeded lane for an honest standing spot; the
+    // whole probe stays deterministic (fixed seed, no rand in the scan).
+    const probe = cx => {
+        const t = makeRun(4242)
+        t.frog.row = START_ROW; t.frog.x = cx; t.frog.prevX = cx; t.frog.bestRow = START_ROW
+        const e1 = tickFrogger(t, { dx: 0, dy: -1 })
+        if (e1.enter !== ROAD_BOT || t.freeze <= 0 || t.frog.state !== 'alive') return null
+        const lanesBefore = JSON.stringify(Object.values(t.roadLanes).map(l => l.items.map(i => i.x)))
+        const timeBefore = t.timeLeft
+        const eF = tickFrogger(t)
+        const heldLanes = eF.frozen && JSON.stringify(Object.values(t.roadLanes).map(l => l.items.map(i => i.x))) === lanesBefore
+        const heldClock = t.timeLeft === timeBefore
+        let hold = 1
+        while (t.freeze > 0 && hold < 60) { tickFrogger(t); hold++ }
+        tickFrogger(t, { dx: 0, dy: 1 }) // back down to the start strip
+        const e2 = tickFrogger(t, { dx: 0, dy: -1 }) // re-enter the SAME row
+        return { e1, heldLanes, heldClock, hold, reEnter: !!e2.enter, alive: t.frog.state === 'alive' }
+    }
+    let T = null
+    for (let cx = CELL; cx <= 260 - CELL && !T; cx++) {
+        const p = probe(cx)
+        if (p && p.heldLanes && p.heldClock && p.hold === ROW_FREEZE && !p.reEnter && p.alive) T = p
+    }
+    ok(T !== null, 'row-entry tell: new row pauses field+clock for ROW_FREEZE ticks; re-entry is silent',
+        T ? '' : 'no standing spot held the whole tell')
+    ok(T && T.e1.enter === ROAD_BOT, 'the tell event carries the entered row', `row ${T && T.e1.enter}`)
+
+    // Alternating 2P: P1 until out, P2 takes the SAME board with fresh frogs.
+    const g4 = makeRun(4242, { players: 2 })
+    g4.houses[0].filled = true
+    const handoffs = []
+    for (let i = 0; i < 3; i++) handoffs.push(kill(g4).handoff)
+    ok(handoffs.join() === '0,0,2', 'P1 is out at the third death — the handoff event is only there', handoffs.join())
+    ok(g4.player === 2 && g4.lives === 3 && g4.timeLeft === TIME_LIMIT && g4.banner > 0,
+        'P2 takes the seat: three frogs, full clock, PLAYER 2 banner')
+    ok(g4.houses[0].filled && g4.frog.row === START_ROW && g4.frog.state === 'alive',
+        'the board persists across the handoff — filled homes stay filled')
+    g4.scores[0] = 500
+    let verdict = null
+    for (let i = 0; i < 3 && !verdict; i++) { const e = kill(g4); if (e.over) verdict = e }
+    ok(verdict && verdict.winner === 1, 'when P2 is also out the duel ends — higher score wins', `winner ${verdict && verdict.winner}`)
+
+    const g5 = makeRun(4242, { players: 2 }); g5.scores = [40, 90]; g5.player = 2; g5.lives = 1
+    ok(kill(g5).winner === 2, 'the second seat can win it too')
+    const g6 = makeRun(4242, { players: 2 }); g6.scores = [77, 77]; g6.player = 2; g6.lives = 1
+    ok(kill(g6).winner === 0, 'tied scores draw')
+    const g7 = makeRun(4242)
+    let over7 = false
+    for (let i = 0; i < 3; i++) over7 = kill(g7).over || over7
+    ok(over7 && g7.player === 1, '1P never hands off — the third death is simply GAME OVER')
+
+    // Event honesty: a filled nest is a WALL — it must not fire the home jingle.
+    const g8 = makeRun(4242)
+    g8.houses[2].filled = true
+    g8.frog.row = 1; g8.frog.x = 6 * CELL + CELL / 2; g8.frog.bestRow = 1
+    const ev8 = tickFrogger(g8, { dx: 0, dy: -1 })
+    ok(ev8.died === 'wall' && ev8.home === 0, 'a filled nest reports died, not home', `died ${ev8.died} home ${ev8.home}`)
+
+    // The tell is a human-seat law: the watch planner's dt arithmetic stays
+    // exact (certified pins #2869/#1776 cannot desync), and the attract demo
+    // still shows the pause to whoever walks up.
+    const g9 = makeRun(1776)
+    g9.watching = true
+    let sawFrozen = 0, sawEnter = 0
+    for (let t = 0; t < 1200; t++) { const e = tickFrogger(g9); if (e.frozen) sawFrozen++; if (e.enter) sawEnter++ }
+    ok(sawFrozen === 0 && sawEnter === 0 && g9.tickN === 1200,
+        'the seated watch never pauses mid-crossing (the b25 dt law stays exact)', `frozen ${sawFrozen}`)
+    const g10 = makeRun(1776, { attract: true })
+    let attractTell = false
+    for (let t = 0; t < 3000 && !attractTell; t++) attractTell = tickFrogger(g10).frozen
+    ok(attractTell, 'the attract demo shows the row-entry pause')
+
+    // Shell pins: the entry key, the sounds, the verdict text, QA visibility.
+    const src2 = readFileSync('src/games/Frogger/index.jsx', 'utf8')
+    ok(/startGame\(e\.code === 'Digit2' \? 2 : 1\)/.test(src2), '`2` opens the duel at attract and game over')
+    ok(/ev\.handoff/.test(src2) && /ev\.enter/.test(src2) && /ev\.bonus/.test(src2),
+        'the shell sounds the handoff, the entry bleep and the bonus triad')
+    ok(/PLAYER \$\{gs\.player\}/.test(src2) && /WINS/.test(src2),
+        'the banner names the seat and the verdict names the winner')
+    ok(/players: gs\.players/.test(src2), 'the QA state carries the duel fields')
+}
+
 if (process.argv.includes('--mutate')) {
     console.log('mutants (each MUST die)')
     const F = 'src/games/Frogger/attract.js'
@@ -285,6 +400,31 @@ if (process.argv.includes('--mutate')) {
         ['away-lane descent trigger narrowed back to row 1/columns-left (park-loop stall returns, #2869)',
             `            const houseBehind = ridesAway(gs, row, x) // #2869: was row-1/columns-left only`,
             `            const houseBehind = row === RIVER_TOP && openSide(gs, x) === -1`,
+            'src/games/Frogger/sim.js'],
+        // #3676 — duel + tell mutants, each pinned by the §duel block above.
+        ['the handoff gate is closed (P1 never passes the seat, #3676)',
+            `    if (gs.players === 2 && gs.player === 1) {`,
+            `    if (false) {`,
+            'src/games/Frogger/sim.js'],
+        ['the time bonus counts whole seconds, not halves (#3676)',
+            `export const timeBonus = gs => Math.floor(gs.timeLeft / 30) * 10`,
+            `export const timeBonus = gs => Math.floor(gs.timeLeft / 60) * 10`,
+            'src/games/Frogger/sim.js'],
+        ['the row-entry hold never fires (#3676)',
+            `    if (newBest && !gs.watching) gs.freeze = ROW_FREEZE`,
+            `    if (newBest && !gs.watching) gs.freeze = 0`,
+            'src/games/Frogger/sim.js'],
+        ['the seat exemption is dropped (watch desyncs mid-crossing, #3676)',
+            `    if (newBest && !gs.watching) gs.freeze = ROW_FREEZE`,
+            `    if (newBest) gs.freeze = ROW_FREEZE`,
+            'src/games/Frogger/sim.js'],
+        ['the duel verdict always picks the first seat (#3676)',
+            `gs.winner = gs.scores[0] === gs.scores[1] ? 0 : (gs.scores[0] > gs.scores[1] ? 1 : 2)`,
+            `gs.winner = gs.scores[0] === gs.scores[1] ? 0 : 1`,
+            'src/games/Frogger/sim.js'],
+        ['a filled home is reported as home, jingle over the splat (#3676)',
+            `            if (!res) return { kind: 'died', cause: 'wall', row }`,
+            `            if (!res) return { kind: 'home', row, fly: false, bonus: 0 }`,
             'src/games/Frogger/sim.js'],
     ]
     let died = 0

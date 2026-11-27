@@ -34,6 +34,14 @@ export const HOP_ANIM = 9
 export const DIE_ANIM = 55
 export const HOME_ANIM = 45
 export const DIVE_UP = 3.3 * 60
+// #3676 gap 0 — the arcade holds the whole field for a beat when the frog
+// first enters a new row (rotate + pitched bleep, and the timer pauses with
+// the world, so the tell costs the clock nothing). Rows keep: 18 ticks ≈ 0.3 s.
+export const ROW_FREEZE = 18
+// #3676 gap 0 — arcade scoring (Wikipedia §Scoring): "Ten points are awarded
+// per each unused ½ second of time" when a frog reaches home. timeLeft is in
+// 60 Hz ticks, so one half-second = 30 ticks.
+export const timeBonus = gs => Math.floor(gs.timeLeft / 30) * 10
 
 // The attract demo thinks every 15 ticks (a deliberate hop cadence).
 export const DEMO_EVERY = 15
@@ -144,12 +152,22 @@ export const houseAt = x => {
 // ---------------------------------------------------------------------------
 
 export function makeRun(seed, opts = {}) {
+    const players = opts.players === 2 ? 2 : 1
     const gs = {
         seed,
         rand: seedRng(seed),
         tickN: 0,
         level: 1,
         score: 0,
+        // #3676 gap 0 — alternating two-player mode: scores stays the ACTIVE
+        // player's number (every add-through-addScore also mirrors it into
+        // scores[player-1]), so 1P runs are byte-identical to before.
+        players,
+        player: 1,
+        scores: [0, 0],
+        winner: 0, // 2P only: 1, 2 or 0 (draw) once both are out
+        freeze: 0, // row-entry field pause (ROW_FREEZE law)
+        banner: 0, // PLAYER n banner ticks
         lives: 3,
         timeLeft: TIME_LIMIT,
         over: false,
@@ -181,6 +199,14 @@ export function buildWorld(gs) {
     gs.houses[flyIdx].fly = true
 }
 
+// Every point the game pays goes through here: the active player's line in
+// scores[] plus the mirror on gs.score (the single-player HUD/report field).
+// 1P never leaves scores[0], so the mirror and the total are the same number.
+export function addScore(gs, n) {
+    gs.scores[gs.player - 1] += n
+    gs.score = gs.scores[gs.player - 1]
+}
+
 export function resetFrog(gs) {
     const frog = gs.frog
     frog.x = 6 * CELL + CELL / 2
@@ -205,17 +231,33 @@ export function die(gs, cause) {
     frog.riding = -1
 }
 
+// Returns 'life' (next frog in), 'handoff' (player 1 is out; player 2 takes
+// the same board with fresh frogs) or 'over'. Alternating turns per
+// Wikipedia §Gameplay: "two players alternating turns" — the board and its
+// filled homes persist across the handoff; P2 gets own score, 3 frogs, fresh
+// clock. Highest total when both are out wins (0 = draw).
 export function nextLife(gs) {
     gs.lives--
-    if (gs.lives <= 0) {
-        gs.over = true
-    } else {
+    if (gs.lives > 0) {
         resetFrog(gs)
+        return 'life'
     }
+    if (gs.players === 2 && gs.player === 1) {
+        gs.player = 2
+        gs.lives = 3
+        resetFrog(gs)
+        gs.banner = 150
+        return 'handoff'
+    }
+    gs.over = true
+    if (gs.players === 2) {
+        gs.winner = gs.scores[0] === gs.scores[1] ? 0 : (gs.scores[0] > gs.scores[1] ? 1 : 2)
+    }
+    return 'over'
 }
 
 export function completeLevel(gs) {
-    gs.score += 1000
+    addScore(gs, 1000)
     gs.level++
     gs.levelFlash = 120
     buildWorld(gs)
@@ -224,15 +266,19 @@ export function completeLevel(gs) {
 
 export function enterHome(gs, hi) {
     const h = gs.houses[hi]
-    if (h.filled) { die(gs, 'wall'); return }
+    if (h.filled) { die(gs, 'wall'); return null }
     h.filled = true
-    gs.score += 50
+    addScore(gs, 50)
     let fly = false
     if (h.fly) {
-        gs.score += 200
+        addScore(gs, 200)
         h.fly = false
         fly = true
     }
+    // #3676 gap 0 — unused-time bonus, paid at the moment of entry, before
+    // the clock resets (Wikipedia §Scoring: ten points per unused ½ second).
+    const bonus = timeBonus(gs)
+    addScore(gs, bonus)
     const frog = gs.frog
     frog.state = 'home'
     frog.deadT = HOME_ANIM
@@ -243,7 +289,7 @@ export function enterHome(gs, hi) {
     } else {
         gs.timeLeft = TIME_LIMIT
     }
-    return fly
+    return { fly, bonus }
 }
 
 // ------------------------------------------------------------------
@@ -264,17 +310,22 @@ export function hop(gs, dx, dy) {
     frog.row = row
     frog.animT = HOP_ANIM
 
-    if (dy < 0 && row < frog.bestRow) {
+    const newBest = dy < 0 && row < frog.bestRow
+    if (newBest) {
         frog.bestRow = row
-        gs.score += 10
+        addScore(gs, 10)
     }
     frog.riding = -1
 
     if (row === HOME_ROW) {
         const hi = houseAt(nx)
         if (hi >= 0) {
-            const fly = enterHome(gs, hi)
-            return { kind: 'home', row, fly: !!fly }
+            const res = enterHome(gs, hi)
+            // A filled home is a wall: the frog splats, so the event bag must
+            // say died, not home (the home jingle over a splat broke the
+            // drawn-state-matches-logic law; #3676 caught it on the seat drive).
+            if (!res) return { kind: 'died', cause: 'wall', row }
+            return { kind: 'home', row, fly: res.fly, bonus: res.bonus }
         }
         die(gs, 'water')
         return { kind: 'died', cause: 'water', row }
@@ -283,7 +334,13 @@ export function hop(gs, dx, dy) {
         else { die(gs, 'water'); return { kind: 'died', cause: 'water', row } }
     }
     if (crushAt(gs, row, nx)) { die(gs, 'car'); return { kind: 'died', cause: 'car', row } }
-    return { kind: 'hopped', row }
+    // #3676 gap 0 — surviving a hop into a row never reached this life pauses
+    // the field (rotate + bleep); the tell is paid per NEW row, not repeats.
+    // Human seats only: watchStep's rollout predicts lane spans tick-for-tick
+    // (the b25 dt law), and an un-modelled pause would desync the certified
+    // planner — under the seat the physics stay exact, the tell waits for your hands.
+    if (newBest && !gs.watching) gs.freeze = ROW_FREEZE
+    return { kind: 'hopped', row, enter: newBest && !gs.watching }
 }
 
 // ------------------------------------------------------------------
@@ -612,10 +669,16 @@ export function watchStep(gs) {
 // where a press landed between frames pre-lift.
 // ---------------------------------------------------------------------------
 export function tickFrogger(gs, humanHop = null) {
-    const ev = { hopped: 0, died: null, home: 0, fly: false, level: false, beep: false, over: false }
+    const ev = { hopped: 0, died: null, home: 0, fly: false, level: false, beep: false, over: false,
+        enter: 0, bonus: 0, handoff: 0, winner: 0, frozen: false }
     gs.tickN++
     const frog = gs.frog
     if (frog.animT > 0) frog.animT--
+    if (gs.banner > 0) gs.banner--
+    // #3676 gap 0 — the row-entry tell: the whole field holds still (lanes,
+    // clock and all — the pause costs the player nothing) while the frog
+    // rotates. Inputs during the hold are dropped, as on the arcade board.
+    if (gs.freeze > 0) { gs.freeze--; ev.frozen = true; return ev }
     const m = speedMult(gs.level)
     gs.riverLanes.forEach(lane => {
         lane.t++
@@ -667,7 +730,11 @@ export function tickFrogger(gs, humanHop = null) {
         }
     } else if (frog.state === 'dying') {
         if (gs.over) return ev // frozen splat under the GAME OVER screen
-        if (--frog.deadT <= 0) { nextLife(gs); if (gs.over) ev.over = true }
+        if (--frog.deadT <= 0) {
+            const r = nextLife(gs)
+            if (r === 'handoff') ev.handoff = gs.player
+            if (gs.over) { ev.over = true; ev.winner = gs.winner }
+        }
     } else if (frog.state === 'home') {
         if (--frog.deadT <= 0) {
             if (gs.houses.every(h => h.filled)) { completeLevel(gs); ev.level = true }
@@ -679,7 +746,7 @@ export function tickFrogger(gs, humanHop = null) {
 
 // Fold a hop() result into the event bag (sound contract for index.jsx).
 function stamp(ev, r) {
-    if (r.kind === 'hopped') ev.hopped = r.row
+    if (r.kind === 'hopped') { ev.hopped = r.row; if (r.enter) ev.enter = r.row }
     else if (r.kind === 'died') ev.died = r.cause
-    else if (r.kind === 'home') { ev.home = 1; if (r.fly) ev.fly = true }
+    else if (r.kind === 'home') { ev.home = 1; if (r.fly) ev.fly = true; if (r.bonus) ev.bonus = r.bonus }
 }
