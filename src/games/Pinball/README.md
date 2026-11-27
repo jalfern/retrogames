@@ -447,10 +447,10 @@ npm run dev -- --port 5173 --strictPort      # then /retrogames/pinball
   Chrome's analyser normalization puts these quiet notes at −71…−85 dBFS
   (measured 2026-11-25) — absolute floors there are engine, not mix.
   Real-ears-on-device calibration stays tied to #3054's recorder gap.
-- **OPEN (#3336 item 2):** tilt slump is level-only (0.10→0.05). A filter
-  muffle (music-bus low-pass in AudioController) awaits Jon's #3335; the
-  recorded default is keep level-only, and this lane will not implement
-  against an open decision.
+- **DISCLAIMER** (#3336 item 2 — #3335 DEFAULTED 2026-11-27): tilt slump is
+  level-only (0.10→0.05). The music-bus low-pass muffle stayed unimplemented by
+  Jon's recorded default — keep level-only — a decided state, no longer an open
+  decision.
 - **CLOSED by #3422:** the magnet held one ball and the orbit one loop at a
   time. The coil now stays energised through a hold EPISODE: every ball that
   finds the post face while another is pinned pins too, each on its own `hold`

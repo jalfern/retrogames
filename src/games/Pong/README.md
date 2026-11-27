@@ -240,5 +240,5 @@ because the terminal it reaches is honest, not fatal.
   wall/thud are four distinct voices, rally pitch rides the strike law, and
   the tiers color it (see "The cabinet's voice"). Still no crowd and no music
   over the table: the machine never had either — that restraint is the spec.
-- **DISCLAIMER:** 2P is the desktop keyboard option (W/S); the phone keeps the CPU
+- **DISCLAIMER**: 2P is the desktop keyboard option (W/S); the phone keeps the CPU
   seat per the multiplayer ruling — not a gap, a ruling.

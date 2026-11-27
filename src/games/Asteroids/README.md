@@ -189,5 +189,7 @@ npm run lint:asteroids
   bleed, but the driver flees honestly rather than playing for the
   docked-bounty dance. See "#3706 — the kiting dance" below: the pilot now
   banks the 200/1000 money instead of outrunning it.
-- `snapshot/restore` stay omitted (#391): the seeded stream rides `gs.rngState`
-  and mid-rollout JSON round-trips would fork dice the live world never rolled.
+- **DISCLAIMER** (#391, AGENTS.md): `snapshot/restore` stay omitted — the sim's
+  state holds what JSON can't copy, the blessed omission: the seeded stream rides
+  `gs.rngState` and mid-rollout JSON round-trips would fork dice the live world
+  never rolled.

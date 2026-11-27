@@ -196,6 +196,13 @@ ok(parseGaps('## Honest gaps\n- live gap still open here\n- shipped gap — **CL
     '#961: parseGaps drops a CLOSED-marked bullet')
 ok(parseGaps('## Honest gaps\n- open one\n- shipped **CLOSED by 959** without a hash\n').length === 2,
     '#961: only a "CLOSED by #<n>" marker closes a gap')
+// #3672: strikethrough is the repo's dominant closed-gap notation, but nothing
+// filtered it — 2026-11-26 idle-kick scored CENTIPEDE 5 with three struck
+// bullets (#3620/#3631/#3632) and Pac-Man gap 0 the same shape.
+ok(parseGaps('## Honest gaps\n- live gap stays open here\n- ~~no intermission screen~~ #3661: shipped the ladder instead.\n').length === 1,
+    '#3672: parseGaps drops a struck-through bullet')
+ok(parseGaps('## Honest gaps\n- open gap with a mid-line ~~strike~~ that stays on the ladder\n').length === 1,
+    '#3672: only a leading ~~ closes a gap (mid-bullet strikethroughs stay open)')
 
 // **BLOCKED**: fidelity-declined gaps stay in the prose but off the ladder
 ok(parseGaps('## Honest gaps\n- live gap one here\n- dumb mirror law — **BLOCKED** until BD2 source is in hand.\n').length === 1,

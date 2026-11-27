@@ -71,12 +71,14 @@ byte-equal, every seed banks ≥1 level, 36/40 zero-death, ≥20 homes per seed,
   off-screen splat~~ **CLOSED by #3703**: the off-cause splat draws on the
   shore line, clamped to the bank by `bankEdgeX` in `sim.js` (pinned by the
   harness) instead of off-canvas, so a carry-off stays readable at both banks.
-- Audio: original 1981 arcade-style stings synthesized via
+- ~~Audio: original 1981 arcade-style stings synthesized via
   audioController — an ascending opening verse at the run start (`tunes.js`), a
   fast one-up climb on the bonus frog, and a descending game-over sting, each
   once per run (a shell-local guard keeps the over-frame replays from
   re-firing). Original note tables in `tunes.js`, pinned by the harness —
-  never a copied cabinet tune.
+  never a copied cabinet tune.~~ **CLOSED by #3714** (1a35fa6): the bullet
+  described the fix, not a gap — the cabinet-style tunes shipped with the
+  #3703/#3714 pass and froggercheck pins the note tables.
 - The driver is survival-greedy, not perfect: the 40-seed sweep (120 s per
   seed, `npm run froggercheck -- --mutate`'s sweep) and a dedicated per-seed
   driver-horizon re-measure on 2026-11-27 (40/40 seeds clean, zero deaths

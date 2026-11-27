@@ -76,8 +76,17 @@ export function parseGaps(md) {
             out[out.length - 1] += ' ' + line.trim()
         }
     }
+    // #3672: strikethrough is the repo's dominant closed-gap notation —
+    // `~~gap~~ #NNNN: what shipped instead` in ≥10 READMEs. Evidence
+    // (2026-11-26): idle-kick scored CENTIPEDE 5 with three struck-through
+    // bullets (#3620/#3631/#3632) and Pac-Man gap 0 the same shape; a
+    // free lane had to recompute by hand to dodge it (#3661's note). A
+    // top-level bullet that STARTS with ~~ is shipped work, not a gap;
+    // a mid-bullet ~~ must not close the rest (the strikethroughs stay in
+    // the README as history — the parser declines, the prose remains).
     return out.filter((g) => !/CLOSED by #\d+/i.test(g) && !/\*\*BLOCKED\*\*/.test(g) && !/\*\*DISCLAIMER\*\*/.test(g)
-        && !/Restored (in|by)( the)? #\d+/i.test(g))
+        && !/Restored (in|by)( the)? #\d+/i.test(g)
+        && !/^~~/.test(g.trim()))
 }
 
 // A gap is OWNED when an open QA issue already says it: the issue names its
