@@ -76,15 +76,18 @@ export const MONSTER_DEFS = {
   J: { name: 'jabberwock', hp: [15, 25], dmg: '2d8', ac: 6,  xp: 75,  minLevel: 9, speed: 6 },
 }
 
+// Quaff lines are the cart's verbatim (BSD Rogue 3.6 potions.c, #3702):
+// effect lines, wording and all — even the cart's "It make you feel" grammar.
+// Double spaces inside the originals collapse to one (message UI).
 export const POTION_TYPES = [
-  { name: 'healing',          effect: 'heal',         desc: 'You feel better.' },
-  { name: 'extra healing',    effect: 'heal2',        desc: 'You feel much better!' },
-  { name: 'poison',           effect: 'poison',       desc: 'You feel very sick.' },
-  { name: 'strength',         effect: 'strength',     desc: 'You feel stronger.' },
-  { name: 'restore strength', effect: 'restore_str',  desc: 'You feel your strength return.' },
-  { name: 'blindness',        effect: 'blind',        desc: 'A cloak of darkness falls over your eyes.' },
-  { name: 'confusion',        effect: 'confuse',      desc: 'You feel confused.' },
-  { name: 'haste self',       effect: 'haste',        desc: 'You feel yourself moving faster.' },
+  { name: 'healing',          effect: 'heal',         desc: 'You begin to feel better.' },
+  { name: 'extra healing',    effect: 'heal2',        desc: 'You begin to feel much better.' },
+  { name: 'poison',           effect: 'poison',       desc: 'You feel very sick now.' },
+  { name: 'strength',         effect: 'strength',     desc: 'You feel stronger, now. What bulging muscles!' },
+  { name: 'restore strength', effect: 'restore_str',  desc: 'Hey, this tastes great. It make you feel warm all over.' },
+  { name: 'blindness',        effect: 'blind',        desc: 'A cloak of darkness falls around you.' },
+  { name: 'confusion',        effect: 'confuse',      desc: "Wait, what's going on here. Huh? What? Who?" },
+  { name: 'haste self',       effect: 'haste',        desc: 'You feel yourself moving much faster.' },
 ]
 
 export const SCROLL_TYPES = [
@@ -1129,8 +1132,15 @@ export function handleQuaff(state, invIndex) {
   switch (potion.effect) {
     case 'heal':    healCart(p, p.level, 4); break   // #3697 roll(lvl,4) + ++max quirk
     case 'heal2':   healCart(p, p.level, 8); break   // #3697 roll(lvl,8) + ++max quirk
-    case 'poison':  p.str = Math.max(1, p.str - rng(1, 3)); break
-    case 'strength': p.str = Math.min(p.maxStr + 3, p.str + 1); break
+    // chg_str, misc.c (BSD Rogue 3.6, #3702): one d3 bite, floor 3, and the
+    // negative branch NEVER touches the ceiling. The old maxStr+3 band and the
+    // floor of 1 were inventions. Above 18 the cart converts gains to
+    // percentile strength (st_add), which this port does not model — 18 is the cap.
+    case 'poison':  p.str = Math.max(3, p.str - rng(1, 3)); break
+    case 'strength':
+      if (p.str < 18) p.str += 1
+      if (p.str > p.maxStr) p.maxStr = p.str // chg_str: gains raise the ceiling too
+      break
     case 'restore_str': p.str = p.maxStr; break
     case 'blind':   p.blind = 25; break
     case 'confuse': p.confused = 15; break

@@ -339,6 +339,27 @@ console.log('rules')
     q2 = stepGame(q2, { type: 'QUAFF_ITEM', index: 0 })
     ok('quaffing the healing potion raises hp and identifies it', q2.player.hp > 4 && q2.identifiedPotions[0] === true)
     ok('quaffing emits its fx (#1502 audibility gate)', q2.fx.some(f => f.k === 'quaff'))
+    ok('healing speaks the cart line (potions.c verbatim, #3702)', q2.messages.some(m => /You begin to feel better\./.test(m)))
+
+    // chg_str ceiling law (#3702): a gain raises the ceiling when current exceeds it
+    let g1 = createInitialState(3102)
+    g1 = { ...g1, player: { ...g1.player, str: 16, maxStr: 16, inventory: [{ type: '!', subtype: 3 }] } }
+    g1 = stepGame(g1, { type: 'QUAFF_ITEM', index: 0 })
+    ok('potion of strength lifts str AND the max ceiling (chg_str)', g1.player.str === 17 && g1.player.maxStr === 17)
+    ok('strength potion speaks the cart line', g1.messages.some(m => /What bulging muscles!/.test(m)))
+    // the cart converts past-18 gains to percentile strength (not modelled) — 18 caps
+    let g2 = createInitialState(3103)
+    g2 = { ...g2, player: { ...g2.player, str: 18, maxStr: 18, inventory: [{ type: '!', subtype: 3 }] } }
+    g2 = stepGame(g2, { type: 'QUAFF_ITEM', index: 0 })
+    ok('strength caps at 18 — no runaway past the cart granularity', g2.player.str === 18 && g2.player.maxStr === 18)
+    // poison floor (#3702): chg_str clamps at 3 (str 3 − d3 always leaves ≤2 → 3),
+    // and the negative branch never touches max_stats
+    let p1 = createInitialState(3104)
+    p1 = { ...p1, player: { ...p1.player, str: 3, maxStr: 16, inventory: [{ type: '!', subtype: 2 }] } }
+    p1 = stepGame(p1, { type: 'QUAFF_ITEM', index: 0 })
+    ok('poison never takes strength below the cart floor of 3', p1.player.str === 3)
+    ok('poison leaves the max ceiling alone (chg_str negative branch)', p1.player.maxStr === 16)
+    ok('poison speaks the cart line', p1.messages.some(m => /You feel very sick now\./.test(m)))
 
     // enchant weapon scroll: +1 with a glowing confirmation
     let r2 = createInitialState(15)
