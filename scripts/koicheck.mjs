@@ -31,7 +31,8 @@ const file = resolve(ROOT, opt('--file', 'public/demos/koi.html'))
 const shots = opt('--shots', null)
 const maxMs = +opt('--max-ms', 120)
 if (!existsSync(file)) { console.error(`missing ${file}`); process.exit(1) }
-const url = 'file://' + file
+// ?feedback=1 forces the FEEDBACK tag on without a live relay (the file:// QA path)
+const url = 'file://' + file + '?feedback=1'
 const PORT = opt('--port', '9382')
 const CHROME = '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome'
 
@@ -180,6 +181,37 @@ async function main() {
         return { ow: document.documentElement.scrollWidth > window.innerWidth + 1, hudOk: !!(r && r.top >= 0 && r.bottom <= window.innerHeight) }
       })
       ok('390px portrait: no overflow, HUD on-screen', !portrait.ow && portrait.hudOk, `overflow=${portrait.ow} hud=${portrait.hudOk}`)
+
+      // 390px portrait: the pond fills the frame — a vertical band of painted
+      // water must cover most of the screen, not just the middle third.
+      const shot = decodePng(await page.screenshot())
+      let first = -1, lastRow = -1
+      for (let y = 0; y < shot.h; y++) {
+        let n = 0, w = 0
+        for (let x = 0; x < shot.w; x += 4) {
+          const [r, g, b] = px(shot, x, y)
+          w++
+          if (waterTeal(r, g, b)) n++
+        }
+        if (w > 0 && n / w > 0.30) { if (first < 0) first = y; lastRow = y }
+      }
+      const span = first >= 0 ? lastRow - first : 0
+      ok('390px portrait: pond fills the frame', span > shot.h * 0.4, `water band ${span}/${shot.h}px (${Math.round(span / shot.h * 100)}%)`)
+
+      // 390px portrait: overlay tags never overlap the bottom-right column stack.
+      const stack = await page.evaluate(() => {
+        const rects = ['#credits-tag', '#dfeedback-tag']
+          .map(sel => document.querySelector(sel))
+          .filter(Boolean)
+          .map(el => { const r = el.getBoundingClientRect(); return { left: r.left, right: r.right, top: r.top, bottom: r.bottom } })
+        let overlap = false
+        for (let i = 0; i < rects.length; i++) for (let j = i + 1; j < rects.length; j++) {
+          const a = rects[i], b = rects[j]
+          if (a.right > b.left && a.left < b.right && a.bottom > b.top && a.top < b.bottom) overlap = true
+        }
+        return { count: rects.length, overlap }
+      })
+      ok('390px portrait: overlay buttons do not overlap', stack.count >= 2 && !stack.overlap, `tags=${stack.count} overlap=${stack.overlap}`)
 
       await page.setViewportSize({ width: 1200, height: 1400 })
       await page.waitForTimeout(400)
