@@ -45,6 +45,60 @@ console.log('seeded field: the mushroom garden replays')
     ok(seedFromQuery('?seed=777') === 777, '?seed=N parses for the pin')
 }
 
+// ------------------------------------------------ authored garden (#3620) ----
+console.log('#3620 authored garden: the arcade lays shapes, not confetti')
+{
+    const shapesIn = (field) => {
+        const at = new Set(field.map((m) => `${m.x},${m.y}`))
+        let clovers = 0
+        for (const p of at) {
+            const [x, y] = p.split(',').map(Number)
+            if (at.has(`${x + CELL_SIZE},${y}`) && at.has(`${x},${y + CELL_SIZE}`) && at.has(`${x + CELL_SIZE},${y + CELL_SIZE}`)) clovers++
+        }
+        const rows = new Map()
+        for (const p of at) {
+            const [x, y] = p.split(',').map(Number)
+            if (!rows.has(y)) rows.set(y, new Set())
+            rows.get(y).add(x)
+        }
+        let hedges = 0
+        for (const xs of rows.values()) {
+            const sorted = [...xs].sort((a, b) => a - b)
+            let run = 1
+            for (let i = 1; i < sorted.length; i++) {
+                if (sorted[i] === sorted[i - 1] + CELL_SIZE) { run++; if (run === 5) hedges++ } else run = 1
+            }
+        }
+        return { clovers, hedges }
+    }
+    let bad = 0
+    for (let s = 1; s <= 12; s++) {
+        const { clovers, hedges } = shapesIn(mushroomField(seedRng(s * 7919), 480, 640))
+        if (clovers < 3 || hedges < 2) bad++
+    }
+    ok(bad === 0, 'every seed seats ≥3 clover blocks and ≥2 five-cap hedges (12 seeds)', `${bad}`)
+    ok(mushroomField(seedRng(4242), 480, 640).length === 40, 'formations keep the port baseline of 40 caps')
+}
+
+// --------------------------------------------------- kill-pop juice (#3620) ----
+console.log('#3620 kill-pop juice: debris and digits at the kill site')
+{
+    const src = readFileSync('src/games/Centipede/index.jsx', 'utf8')
+    ok(/fx: \[\],/.test(src) && /state\.fx = \[\] \/\/ #3620/.test(src), 'the juice layer exists and clears with a fresh board')
+    ok(/state\.fx\.forEach\(\(f\) => \{ f\.x \+= f\.vx; f\.y \+= f\.vy; f\.life-- \}\)[\s\S]{0,120}?state\.fx = state\.fx\.filter\(\(f\) => f\.life > 0\)/.test(src),
+        'debris drifts and fades on the tick clock')
+    ok(/burst\(dead\.x, dead\.y, dead\.poison \? '#ff2d2d' : MUSHROOM_SKIN\[1\]\.cap, 6, MUSHROOM_POINTS\)/.test(src),
+        'a destroyed mushroom throws cap-coloured debris (+1)')
+    ok(/burst\(seg\.x, seg\.y, '#ffffff', 8, scoreForSegment\(seg\.head\)\)/.test(src),
+        'a killed segment pops its arcade price')
+    ok(/burst\(s\.x, s\.y, '#c17bff', 8, SPIDER_POINTS\(dist\)\)/.test(src), 'the spider pops purple with its band')
+    ok(/burst\(s\.x, s\.y, '#ff9d2e', 8, SCORPION_POINTS\)/.test(src), 'the scorpion pops amber at 1000')
+    ok(/burst\(f\.x, f\.y, '#5ea8ff', 6, FLEA_POINTS\)/.test(src), 'the flea pops blue at 200')
+    ok(/ctx\.fillText\(f\.text, f\.x, f\.y\)/.test(src), 'score digits render at the kill site')
+    ok(/pops: state\.fx\.length/.test(src), 'QA contract exposes the juice layer for the harness')
+    ok(!/burst\([^)]*Math\.random/.test(src), 'the burst draws no dice — seeded drives stay byte-identical')
+}
+
 // --------------------------------------------------------- arcade scoring ----
 console.log('1981 scoring law')
 {
@@ -227,6 +281,19 @@ if (process.argv.includes('--mutant')) {
                 state.flea = null
                 spiderAt = tickN + SPIDER_EVERY`,
             `                spiderAt = tickN + SPIDER_EVERY`],
+        // #3620 — the garden shapes and the juice are laws too.
+        ['the garden forgets its shapes (pure scatter returns)', S,
+            `for (let i = 0; i < CLOVERS + HEDGES; i++) {`,
+            `for (let i = 0; i < 0; i++) {`],
+        ['debris never fades (the juice layer floods)', I,
+            `state.fx = state.fx.filter((f) => f.life > 0)`,
+            `state.fx = state.fx.filter(() => true)`],
+        ['the mushroom kill never pops', I,
+            `burst(dead.x, dead.y, dead.poison ? '#ff2d2d' : MUSHROOM_SKIN[1].cap, 6, MUSHROOM_POINTS)`,
+            `void dead.x`],
+        ['score digits never draw', I,
+            `ctx.fillText(f.text, f.x, f.y)`,
+            `void f.text`],
     ]
     let died = 0
     for (const [name, file, from, to] of MUTANTS) {

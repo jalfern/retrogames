@@ -48,6 +48,9 @@ const CentipedeGame = () => {
             spider: null,   // {x,y,vx,vy,health,seekAt} the bouncing eater
             scorpion: null, // {x,y,vx,vy,wobble} the quicksilver streak
             flea: null,     // {x,y,vx,vy,health,life} the summoned reward
+            // #3620 kill-pop juice: debris {x,y,vx,vy,life,color} and score
+            // digits {x,y,vy,life,text}. Render-only — no hitboxes in here.
+            fx: [],
             score: 0,
             frame: 0
         }
@@ -123,6 +126,18 @@ const CentipedeGame = () => {
             }
         }
 
+        // #3620 kill-pop: a fixed radial burst of debris plus a score digit
+        // at the kill site. No dice — the angles are fixed, so the seeded
+        // stream and the drive replays stay byte-identical (juice that eats
+        // rand would desync every cadence behind it).
+        const burst = (x, y, color, n, points) => {
+            for (let i = 0; i < n; i++) {
+                const a = (Math.PI * 2 * i) / n
+                state.fx.push({ x: x + 8, y: y + 8, vx: Math.cos(a) * 1.6, vy: Math.sin(a) * 1.6, life: 16, max: 16, color })
+            }
+            if (points > 0) state.fx.push({ x: x + 8, y: y + 4, vx: 0, vy: -0.5, life: 26, max: 26, text: String(points) })
+        }
+
         const spawnCentipede = () => {
             state.centipedes = []
             // Head
@@ -152,6 +167,7 @@ const CentipedeGame = () => {
             state.flea = null
             state.bullets = [] // fresh board, fresh gun — a stale volley riding
             // across a reset diverges two identical seeded drives (#3604 drive)
+            state.fx = [] // #3620 — a fresh board shows no last-life debris
             state.player.x = state.width / 2
             state.player.y = state.height - 30
             state.mushrooms = mushroomField(rand, state.width, state.height)
@@ -249,6 +265,10 @@ const CentipedeGame = () => {
         const update = () => {
             state.frame++
             tickN++
+            // #3620 juice decays on its own clock — debris and digits fade
+            // even under the terminal, nothing in here can outlive its life.
+            state.fx.forEach((f) => { f.x += f.vx; f.y += f.vy; f.life-- })
+            state.fx = state.fx.filter((f) => f.life > 0)
             if (over) return
 
             // Respawn: back to the bottom pad, centipede restarts on top,
@@ -332,8 +352,9 @@ const CentipedeGame = () => {
                 if (hitMushroom !== -1) {
                     state.mushrooms[hitMushroom].health--
                     if (state.mushrooms[hitMushroom].health <= 0) {
-                        state.mushrooms.splice(hitMushroom, 1)
+                        const dead = state.mushrooms.splice(hitMushroom, 1)[0]
                         state.score += MUSHROOM_POINTS // arcade: 1 pt per mushroom
+                        burst(dead.x, dead.y, dead.poison ? '#ff2d2d' : MUSHROOM_SKIN[1].cap, 6, MUSHROOM_POINTS)
                         audioController.playNoise(0.1, 0.1)
                     } else {
                         audioController.playTone(200, 0.05, 'triangle')
@@ -362,6 +383,7 @@ const CentipedeGame = () => {
                     state.centipedes.splice(hitSeg, 1)
                     if (state.centipedes[hitSeg]) state.centipedes[hitSeg].head = true
 
+                    burst(seg.x, seg.y, '#ffffff', 8, scoreForSegment(seg.head))
                     audioController.playNoise(0.2, 0.3)
                     state.bullets.splice(i, 1)
                     return
@@ -378,6 +400,7 @@ const CentipedeGame = () => {
                         if (s.health <= 0) {
                             const dist = Math.abs(s.x - state.player.x) + Math.abs(s.y - state.player.y)
                             state.score += SPIDER_POINTS(dist)
+                            burst(s.x, s.y, '#c17bff', 8, SPIDER_POINTS(dist))
                             state.spider = null
                             spiderAt = tickN + SPIDER_EVERY
                             audioController.playSweep(300, 90, 0.3, 'square')
@@ -391,6 +414,7 @@ const CentipedeGame = () => {
                     const s = state.scorpion
                     if (Math.abs(b.x - (s.x + 8)) < 12 && Math.abs(b.y - (s.y + 8)) < 10) {
                         state.score += SCORPION_POINTS
+                        burst(s.x, s.y, '#ff9d2e', 8, SCORPION_POINTS)
                         state.scorpion = null
                         scorpionAt = tickN + SCORPION_EVERY
                         audioController.playSweep(200, 900, 0.4, 'square')
@@ -406,6 +430,7 @@ const CentipedeGame = () => {
                         state.bullets.splice(i, 1)
                         if (f.health <= 0) {
                             state.score += FLEA_POINTS
+                            burst(f.x, f.y, '#5ea8ff', 6, FLEA_POINTS)
                             state.flea = null
                             audioController.playSweep(500, 180, 0.2, 'triangle')
                         } else {
@@ -711,6 +736,25 @@ const CentipedeGame = () => {
                 ctx.fill()
             }
 
+            // #3620 kill-pop juice — debris shards and score digits riding
+            // above the garden, below the HUD. Digits fade with their life.
+            state.fx.forEach((f) => {
+                if (f.text) {
+                    ctx.globalAlpha = f.life > 10 ? 1 : f.life / 10
+                    ctx.fillStyle = '#ffffff'
+                    ctx.font = '10px monospace'
+                    ctx.textAlign = 'center'
+                    ctx.fillText(f.text, f.x, f.y)
+                    ctx.globalAlpha = 1
+                } else {
+                    ctx.globalAlpha = f.life > 8 ? 1 : f.life / 8
+                    ctx.fillStyle = f.color
+                    const sz = f.life > 8 ? 3 : 2
+                    ctx.fillRect(Math.round(f.x - sz / 2), Math.round(f.y - sz / 2), sz, sz)
+                    ctx.globalAlpha = 1
+                }
+            })
+
             // UI — title + score right, spare lives bottom-left (arcade layout)
             ctx.fillStyle = 'white'
             ctx.font = '14px monospace'
@@ -805,6 +849,7 @@ const CentipedeGame = () => {
                 scorpion: state.scorpion ? 1 : 0,
                 flea: state.flea ? 1 : 0,
                 poisoned: state.mushrooms.filter(m => m.poison).length,
+                pops: state.fx.length, // #3620 — QA can catch a kill-pop mid-flight
                 playerX: Math.round(state.player.x),
                 playerY: Math.round(state.player.y),
             }),

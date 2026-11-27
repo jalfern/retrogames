@@ -43,17 +43,51 @@ export const poisonMushroom = (m) => {
 // out of the field has crossed everything the garden can offer.
 export const bulletEscapes = (y) => y < 0
 
-// The opening mushroom field: the port's baseline of 40, scattered on the
-// run's stream, kept off the top band where the centipede spawns AND off the
-// bottom strip the zapper owns — the arcade never plants the field in the
-// player zone, and a walled-in start is no start at all.
+// The opening mushroom field: the port's baseline of 40, kept off the top
+// band where the centipede spawns AND off the bottom strip the zapper owns —
+// the arcade never plants the field in the player zone, and a walled-in
+// start is no start at all.
+//
+// #3620: the arcade lays its garden in shapes, not confetti — the classic
+// clover (a 2x2 block) and the hedge (a level run of five) anchor the wave,
+// and the remainder scatters on the run's stream. Formations draw from the
+// same seeded rand, so ?seed=N still replays the whole field; a shape the
+// band can't seat (tiny test canvases, crowded waves) falls through to the
+// scatter, which keeps the count honest at exactly 40.
+const FIELD_TOTAL = 40
+const CLOVERS = 3                       // 2x2 blocks — the arcade's clover
+const HEDGES = 2                        // level runs — the arcade's hedge
+const HEDGE_LEN = 5
+
 export function mushroomField(rand, width, height) {
     const cols = Math.floor(width / CELL_SIZE)
     const top = Math.ceil(50 / CELL_SIZE)                    // clear the spawn band
     const bottom = Math.floor((height - 150) / CELL_SIZE)    // clear the zapper strip
     const span = Math.max(1, bottom - top)
     const field = []
-    for (let i = 0; i < 40; i++) {
+    const taken = new Set()
+    const seats = (cells) => cells.every(([cx, cy]) =>
+        cx >= 0 && cx < cols && cy >= top && cy < bottom && !taken.has(cx + ',' + cy))
+    const shape = (kind, cx, cy) => kind === 'clover'
+        ? [[cx, cy], [cx + 1, cy], [cx, cy + 1], [cx + 1, cy + 1]]
+        : Array.from({ length: HEDGE_LEN }, (_, k) => [cx + k, cy])
+    for (let i = 0; i < CLOVERS + HEDGES; i++) {
+        const kind = i < CLOVERS ? 'clover' : 'hedge'
+        let seated = false
+        for (let tries = 0; tries < 60 && !seated; tries++) {
+            const cx = Math.floor(rand() * cols)
+            const cy = top + Math.floor(rand() * span)
+            const cells = shape(kind, cx, cy)
+            if (!seats(cells)) continue
+            for (const [cx2, cy2] of cells) {
+                taken.add(cx2 + ',' + cy2)
+                field.push({ x: cx2 * CELL_SIZE, y: cy2 * CELL_SIZE, health: 3 })
+            }
+            seated = true
+        }
+        // An unseated shape leaves its caps to the scatter below.
+    }
+    for (let i = field.length; i < FIELD_TOTAL; i++) {
         field.push({
             x: Math.floor(rand() * cols) * CELL_SIZE,
             y: (top + Math.floor(rand() * span)) * CELL_SIZE,
