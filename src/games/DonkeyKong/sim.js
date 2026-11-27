@@ -26,6 +26,26 @@ export const BARREL_SPEED = 1.2
 export const START_LIVES = 3
 export const WIN_SCORE = 1000
 export const BARREL_DIVE_CHANCE = 0.35 // the original's random ladder take
+
+// #3641 — the barrel-voice law. The arcade voiced every barrel↔ladder event;
+// these are pure descriptors (no audio here, no gameplay): a tick when a
+// barrel boards a span (brighter mid-air), click ticks while it rides that
+// climb toward the foot, and a lighter clatter when a dangling foot lets go
+// into the gap. The sim stamps them on ev.barrelVoices; the shell plays them.
+// Nothing here touches gs or the dice stream — seeded floors stay byte-identical.
+export const BARREL_CLICK_EVERY = 4 // click every N ticks while riding a ladder
+export const BARREL_CLICK_RANGE = 60 // px from the foot where the click starts climbing
+export function barrelBoardVoice(midAir) {
+    return { kind: 'board', freq: midAir ? 740 : 560, dur: 0.035, wave: 'square', vol: 0.16 }
+}
+export function barrelDangleVoice() {
+    return { kind: 'dangle', freq: 300, to: 110, dur: 0.12, wave: 'sawtooth', noise: 0.10, vol: 0.13 }
+}
+export function barrelRollClick(gs, b) {
+    if (!b.onLadder || gs.tickN % BARREL_CLICK_EVERY !== 0) return null
+    const near = Math.max(0, BARREL_CLICK_RANGE - Math.max(0, (b.ladderBot || 0) - b.y))
+    return { kind: 'roll', freq: 220 + Math.round(near * 2), dur: 0.02, wave: 'square', vol: 0.09 }
+}
 export const HAMMER_SWINGS = 5    // hits per mallet before it shatters (arcade lore)
 export const HAMMER_SWING_TICKS = 12 // one swing animation (the hit window)
 
@@ -281,11 +301,14 @@ function spawnBarrel(gs, ev) {
     })
 }
 
-function updateBarrel(gs, b) {
+function updateBarrel(gs, b, ev) {
     if (b.onLadder) {
         // Rolling down a ladder
         b.y += 1.5
         b.rot += 0.1
+        // #3641 — the arcade's climbing click trail; the descent is never silent.
+        const rc = barrelRollClick(gs, b)
+        if (rc) ev.barrelVoices.push(rc)
 
         // Check if reached bottom of ladder
         if (b.y + b.h >= (b.ladderBot || 999)) {
@@ -304,6 +327,8 @@ function updateBarrel(gs, b) {
                 // #3622 — rolled off a DANGLING foot (the girder-end ladder's
                 // foot hangs over the gap below): the barrel is airborne again,
                 // and `falling` must say so or the mid-air take never arms.
+                // #3641 — and the arcade clatters when that foot lets go.
+                ev.barrelVoices.push(barrelDangleVoice())
                 b.vy = 0
                 b.vx = BARREL_SPEED
                 b.falling = true
@@ -347,6 +372,7 @@ function updateBarrel(gs, b) {
             if (Math.abs(cx - l.x) < 6 && Math.abs((b.y + b.h) - (l.yTop - 8)) < 6) {
                 // Random chance to take ladder (like the original)
                 if (rnd(gs) < BARREL_DIVE_CHANCE) {
+                    ev.barrelVoices.push(barrelBoardVoice(false)) // #3641 the board tick
                     b.onLadder = true
                     b.x = l.x - b.w / 2
                     b.vx = 0
@@ -374,6 +400,7 @@ function updateBarrel(gs, b) {
             if (Math.abs(cx - l.x) < 5 && fy >= l.yTop - 8 && fy <= l.yBot) {
                 b.takenBits |= (1 << li)
                 if (rnd(gs) < BARREL_DIVE_CHANCE) {
+                    ev.barrelVoices.push(barrelBoardVoice(true)) // #3641 the mid-air take rings brighter
                     b.onLadder = true
                     b.falling = false
                     b.x = l.x - b.w / 2
@@ -458,7 +485,7 @@ function attractPlan(gs) {
 // human input, watchStep drives instead.
 // ---------------------------------------------------------------------------
 export function tickDonkeyKong(gs, input = null) {
-    const ev = { jump: false, jumpedBarrel: 0, died: false, respawn: false, won: false, over: false, barrel: false, hammerUp: false, swing: false, hammered: 0, hammerDown: false, climbed: false, hang: false, noClimb: false, reached: false, pull: false, rivet: false, collapse: false }
+    const ev = { jump: false, jumpedBarrel: 0, died: false, respawn: false, won: false, over: false, barrel: false, hammerUp: false, swing: false, hammered: 0, hammerDown: false, climbed: false, hang: false, noClimb: false, reached: false, pull: false, rivet: false, collapse: false, barrelVoices: [] }
     const p = gs.player
     gs.tickN++
     if (gs.swing > 0) gs.swing--
@@ -765,7 +792,7 @@ export function tickDonkeyKong(gs, input = null) {
 
     for (let i = gs.barrels.length - 1; i >= 0; i--) {
         const b = gs.barrels[i]
-        updateBarrel(gs, b)
+        updateBarrel(gs, b, ev)
 
         // Remove if off screen
         if (b.y > GH + 20) {

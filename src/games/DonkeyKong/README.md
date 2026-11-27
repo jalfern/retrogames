@@ -88,6 +88,22 @@ the route never clings to what it cannot prove. `kongcheck` §half-rungs pins
 all of it (geometry, hang, descend, seat refusal, seat step-off, per-ladder
 break lines); the drive exercises it with real arrows.
 
+## Barrel voices (#3641 — every barrel↔ladder event has a sound)
+Pure-law sound grammar in `sim.js` (like centipede's `munchCue`): the sim
+stamps descriptors on `ev.barrelVoices`, the shell plays them through
+`audioController` — nothing else. `barrelBoardVoice(midAir)` ticks a board
+(560 Hz rolled-on, 740 Hz caught mid-air at the corner); `barrelRollClick`
+clicks every `BARREL_CLICK_EVERY` ticks while a barrel rides a span and
+climbs inside `BARREL_CLICK_RANGE` px of the foot (the descent is never
+silent); `barrelDangleVoice` is a lighter sweep + noise clatter for the
+dangling-foot exit onto the gap. The stamps write nothing into `gs` — dice
+and physics untouched, so every seeded floor is byte-identical. `kongcheck`
+§barrel-voices gates the law (pitch order, phase grid, proximity climb) and
+mirrors the stamps against real physics on the corner-pair seeds: every stamp
+lands on the tick of its transition (boards on span entries, bright ticks only
+mid-air, clatter on dangling exits), the corner floors' 3 dangling exits and
+2 mid-air catches onto R2 ring, and every ride carries a click trail.
+
 ## Corner pair (#3622 — the arcade's end-of-girder ladders)
 Two girder-end rungs stand at the RIGHT fall-gap corner, x=222 — where a
 Node trace showed barrels leaving girder 3's end at cx≈210.5 land, after the

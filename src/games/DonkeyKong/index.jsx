@@ -151,6 +151,13 @@ const DonkeyKongGame = () => {
             if (ev.jumpedBarrel) audioController.playTone(600, 0.08, 'square')
             // #2018: the event set was missing DK's throw and the rungs.
             if (ev.barrel) audioController.playTone(160, 0.06, 'triangle')
+            // #3641 — barrel-voice grammar: board tick, descent clicks and the
+            // dangling-foot clatter, law and stamps in sim.js (never silent).
+            for (const v of ev.barrelVoices || []) {
+                if (v.noise) audioController.playNoise(v.dur, v.noise)
+                if (v.to) audioController.playSweep(v.freq, v.to, v.dur, v.wave, v.vol)
+                else audioController.playTone(v.freq, v.dur, v.wave, v.vol)
+            }
             if (ev.climbed) audioController.playTone(300, 0.05, 'square')
             if (ev.hang) audioController.playTone(170, 0.06, 'square') // #3618 the last rung catches the hand
             // #3147: the climb refused — a soft ``no'' tick + a chevron,
