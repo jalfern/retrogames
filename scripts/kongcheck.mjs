@@ -168,7 +168,7 @@ console.log('half-rungs: broken ladders climb part-way (#3618)')
         'the rivet-screen phantom stays retired (CLOSED marker reaches parseGaps)')
     ok(!gaps.some(g => /double-board drop onto a span|sharing one span.*simplified/i.test(g)),
         'the double-board gap is closed with the span body law (CLOSED marker reaches parseGaps)')
-    ok(gaps.length === 2, 'two honest gaps remain (oil drum flame, left-column corner pair)', `gaps=${gaps.length}`)
+    ok(gaps.length === 1, 'one honest gap remains (oil drum flame)', `gaps=${gaps.length}`)
 }
 
 // ------------------------------------------------------------- core physics ----
@@ -852,6 +852,53 @@ console.log('corner polish #3651: bolted brace, alive descents')
         'riding barrels draw grip + sway from the live tick; rolling barrels keep their spin')
     ok(/rides: gs\.barrels\.filter\(b => b\.onLadder\)/.test(IDX),
         'the DEV probe reports riding barrels so a drive can wait for a descent')
+}
+
+// ------------------------------------------------------------- left corner ----
+// #3657 item 2 — left-column parity. The arcade's corner fallers land on the
+// girder below (its end overlaps the join). Measured column (scripts/
+// trace-left-corner.mjs): fallers leaving the left ends of girders 2/4 drift
+// −1.2/tick and meet the catch girder's line at cx≈−3.2 / −1.6 — before the
+// fix a 3.2px miss that dropped barrels clean out of the world. The catch
+// girders (y=192, y=128) extend 4px past screen-left; pins: the measured
+// crossings sit inside the tip margin but left of screen (a mutation shrinking
+// the extension below drift dies), the natural stream catches every left
+// faller, and none ever leaves through screen-left.
+console.log('left corner #3657-2: tip catches the left fall column')
+{
+    const lvl = buildLevel()
+    const catchers = lvl.platforms.filter(p => p.x === -4)
+    ok(catchers.length === 2 && catchers.every(p => p.slope > 0),
+        'both catch girders (192, 128) carry the 4px screen-left tip', `tips=${catchers.map(p => p.y).join('/')}`)
+    const cross = (top, bot) => { // analytic drift of a faller off the girder's left end
+        let vy = 0, y = getPlatformY(top, top.x) + 8, cx = top.x, n = 0
+        while (y < getPlatformY(bot, Math.max(cx, bot.x)) + 8 && n < 60) { vy += 0.25; y += vy; cx -= BARREL_SPEED; n++ }
+        return cx
+    }
+    const g2 = lvl.platforms.find(p => p.y === 160), c1 = catchers.find(p => p.y === 192)
+    const g4 = lvl.platforms.find(p => p.y === 96), c3 = catchers.find(p => p.y === 128)
+    const x1 = cross(g2, c1), x3 = cross(g4, c3)
+    ok(x1 >= -4 && x1 < -1, `girder-2 column crosses the catch line at cx≈${x1.toFixed(1)} — off-screen, inside the tip`, `cross=${x1.toFixed(2)}`)
+    ok(x3 >= -4 && x3 < 0, `girder-4 column crosses at cx≈${x3.toFixed(1)} — inside the tip`, `cross=${x3.toFixed(2)}`)
+    let caught = 0, voidLeft = 0
+    for (let seed = 1; seed <= 12; seed++) {
+        const gs = makeRun(seed, { human: true })
+        const prev = new Map()
+        for (let t = 0; t < 9000; t++) {
+            tickDonkeyKong(gs, {})
+            const cur = new Set(gs.barrels)
+            for (const b of gs.barrels) {
+                const cx = b.x + b.w / 2
+                const p = prev.get(b)
+                if (p && !p.f && !p.L && b.falling && !b.onLadder && cx < 30) b._lc = cx
+                if (p && p.f && !b.falling && !b.onLadder && b._lc !== undefined) { caught++; b._lc = undefined }
+                prev.set(b, { f: b.falling, L: b.onLadder })
+            }
+            for (const [b] of prev) if (!cur.has(b)) { if (b._lc !== undefined) voidLeft++; b._lc = undefined }
+        }
+    }
+    ok(caught === 19, 'the natural stream lands all 19 left-corner fallers on the tips (seeds 1-12, 9000 ticks)', `caught=${caught}`)
+    ok(voidLeft === 0, 'no barrel ever leaves the world through screen-left', `voidLeft=${voidLeft}`)
 }
 
 // ---------------------------------------------------------- shell wiring pin ----
