@@ -23,8 +23,9 @@ Title `DEMO — <NAME>`, labels `demo` + `lane:qa`. Body, in this order:
 - Stages, each **committed** with a screenshot in the PR: composition → main subject →
   behaviour → interaction → art pass. After each: screenshot the same view at 1280×720 and at
   a portrait phone size, compare with the brief, fix the biggest gap, then move on.
-- The art pass is a real stage, not a frame and a vignette: check every line of the brief's
-  Look section against the screenshot.
+- The art pass is a real stage, not a frame and a vignette. **Prove it:** in the PR, put each
+  line of the brief's Look section next to a before/after crop at portrait phone size showing it
+  met. A line you can't show is not done. (The first six demos all stopped short here.)
 - Before the PR: no blank paper in portrait; overlays (title, hint, "built by", feedback) never
   overlap; no hard straight seams between scene layers; runs smoothly on a phone with touch.
 - Ship like any demo (README "Adding a demo", `creditscheck`, the build, rule-5 merge). Jon
