@@ -13,6 +13,7 @@ import {
   buildGrid, monsterAttack, rng, setSeed, generateDungeon, isWall, blocksMove,
   isThrowable, shootRay, watchStep, advanceMonsters, MONSTER_DEFS, MONSTER_ENERGY, qaSeatLevel,
   getItemName, shackles, trapWeights, xpNeeded, checkLevel, handleQuaff,
+  POTION_TYPES,
 } from '../src/games/Rogue/sim.js'
 
 let pass = 0, fail = 0
@@ -232,19 +233,25 @@ console.log('rules')
             81920, 163840, 327680, 655360, 1310720, 2621440, 2621440]
             .every((v, i) => xpNeeded(i + 1) === v))
     setSeed(7)
-    let jumpOk = true, msgOnce = true, jLo = 99, jHi = 0
+    let jumpOk = true, msgOnce = true, jLo = 99, jHi = 0, retOk = true, diceOk = true
     for (let i = 0; i < 200; i++) {
         const p = { level: 1, exp: 100, hp: 5, maxHp: 5 }   // 100xp crosses rungs 2..5
         const msgs = []
-        checkLevel(p, msgs)
+        const rungs = checkLevel(p, msgs)
         if (p.level !== 5) jumpOk = false
         if (msgs.length !== 1 || !/^Welcome to level 5!/.test(msgs[0])) msgOnce = false
+        // #3709 — the jump returns its rung count (the fx payload) and the
+        // Welcome line names the dice it just paid.
+        if (rungs !== 4) retOk = false
+        if (!/\+\d+ hp$/.test(msgs[0] || '') || p.maxHp - 5 !== Number((msgs[0].match(/\+(\d+) hp$/) || [])[1])) diceOk = false
         const g = p.maxHp - 5
         if (g < jLo) jLo = g
         if (g > jHi) jHi = g
     }
     ok('one big award jumps the whole ladder (100xp at lvl 1 lands lvl 5)', jumpOk)
     ok('the jump greets once, naming the rung it lands on', msgOnce)
+    ok('#3709 — checkLevel returns the rungs climbed (the fx carries Δ)', retOk)
+    ok('#3709 — the Welcome line names the dice (+N hp = the maxHp paid)', diceOk)
     ok('multi-level gain is 4 REAL d10s (spreads past one die, stays 4..40)', jumpOk && jLo >= 4 && jHi > 10)
     ok('the gain actually rolls (never flat)', jLo < jHi)
     {
@@ -252,6 +259,50 @@ console.log('rules')
         const msgs = []
         checkLevel(p, msgs)
         ok('no rung 21 — the cart table tops out at level 20', p.level === 20 && msgs.length === 0)
+    }
+
+    // #3709 — the potion of raise. Cart chain: potions.c P_RAISE prints its
+    // line then calls raise_level() (fight.c): `s_exp = e_levels[s_lvl-1] + 1;
+    // check_level();` — unconditional, and self-guarding: the parked exp sits
+    // one below the rung after next, so exactly one rung climbs.
+    {
+        const RAISE = POTION_TYPES.findIndex(t => t.effect === 'raise')
+        ok('the cipher roster widened to nine with raise last', POTION_TYPES.length === 9 && RAISE === 8)
+        ok('raise speaks the cart line verbatim (potions.c leaves it unpunctuated)',
+            POTION_TYPES[RAISE].desc === 'You suddenly feel much more skillful')
+        const seen = new Set()
+        for (let s = 1; s <= 300; s++) for (const it of createInitialState(s).items) if (it.type === '!') seen.add(it.subtype)
+        ok('! generation covers all nine subtypes across 300 seeds', seen.size === 9)
+        let riseOk = true, gainOk = true, fxOk = true, greetOk = true
+        setSeed(23)
+        for (let i = 0; i < 200; i++) {
+            let w = createInitialState(1 + i)
+            w = { ...w, player: { ...w.player, level: 3, exp: 0, hp: 10, maxHp: 10, inventory: [{ type: '!', subtype: RAISE }] } }
+            const t = handleQuaff(w, 0)
+            const pl = t.player
+            // cart value: e_levels[lvl-1]+1 === xpNeeded(lvl+1)+1; lands on 4, never 5
+            if (pl.exp !== xpNeeded(4) + 1 || pl.level !== 4) riseOk = false
+            const g = pl.maxHp - 10
+            if (g < 1 || g > 10) gainOk = false          // exactly one d10 for one rung
+            const lu = t.fx.filter(f => f.k === 'levelup')
+            if (lu.length !== 1 || lu[0].n !== 1) fxOk = false
+            const greet = t.messages.filter(x => x.startsWith('Welcome to level'))
+            const sip = t.messages.findIndex(x => x.startsWith('You drink'))
+            if (greet.length !== 1 || !/^Welcome to level 4! \+\d+ hp$/.test(greet[0])
+                || t.messages.indexOf(greet[0]) <= sip) greetOk = false
+        }
+        ok('raise parks exp at the cart value and climbs exactly one rung (never two)', riseOk)
+        ok('the raise rung pays exactly one d10 of life', gainOk)
+        ok('quaffing raise writes quaff AND levelup(n=1) to the fx log', fxOk)
+        ok('the Welcome follows the sip and names the dice (+N hp)', greetOk)
+        let capOk = true
+        for (let i = 0; i < 40; i++) {
+            let w = createInitialState(700 + i)
+            w = { ...w, player: { ...w.player, level: 20, exp: 3000000, hp: 50, maxHp: 50, inventory: [{ type: '!', subtype: RAISE }] } }
+            const t = handleQuaff(w, 0)
+            if (t.player.level !== 20 || t.fx.some(f => f.k === 'levelup')) capOk = false
+        }
+        ok('at the port cap (20, #3697) raise drinks as a no-op — no rung, no fanfare', capOk)
     }
     setSeed(11)
     let xLo = 99, xHi = 0, scaledBeyond20 = false
@@ -1282,17 +1333,27 @@ console.log('\namulet (#3592)')
 
     // Byte-honest shallow replay (#3579 law): the amulet dice roll ONLY at
     // dlvl 20, so the dungeon structure and stream position below it are the
-    // pre-#3592 cart's, exactly. Goldens were captured from origin/main's
-    // sim.js (djb2 over the map/items/monsters/rooms/doors, randState —
-    // kinds are the weighted #3605 draw and never touch the structure).
-    const GOLDEN = [{"s":1,"d":1527443371,"rs":1872778111},{"s":2,"d":437591937,"rs":-782446962},{"s":3,"d":1429227948,"rs":-1045788049},{"s":7,"d":1075585698,"rs":545165580},{"s":42,"d":1815430235,"rs":1368824876},{"s":123,"d":1395950551,"rs":-1004575632},{"s":90210,"d":3116411587,"rs":-1982086897},{"s":3579,"d":1577758018,"rs":-1677620143}]
+    // pre-#3592 cart's, exactly. Kinds are the weighted #3605 draw and never
+    // touch the structure. #3709 re-captured the GOLDENs: widening the potion
+    // cipher to ten shifts potion SUBTYPE values (rng consumes one step for
+    // any range, so randState survives), which is an item-content change —
+    // the map/monsters/rooms/doors bytes and the stream position must NOT
+    // move, so STRUCT (captured from origin/main before #3709) is pinned
+    // alongside, and it is what the re-capture is honest against.
+    const GOLDEN = [{"s":1,"d":2340384036,"rs":1872778111},{"s":2,"d":3926563746,"rs":-782446962},{"s":3,"d":2869179020,"rs":-1045788049},{"s":7,"d":1075585698,"rs":545165580},{"s":42,"d":1815430235,"rs":1368824876},{"s":123,"d":419023640,"rs":-1004575632},{"s":90210,"d":3116411587,"rs":-1982086897},{"s":3579,"d":1303989324,"rs":-1677620143}]
+    const STRUCT = [{"s":1,"h":779035881},{"s":2,"h":3717885415},{"s":3,"h":399348114},{"s":7,"h":1246328651},{"s":42,"h":1245065075},{"s":123,"h":3083977333},{"s":90210,"h":449214001},{"s":3579,"h":3712766020}]
     const djb2 = (x) => { let h = 5381; for (let i = 0; i < x.length; i++) h = ((h * 33) ^ x.charCodeAt(i)) >>> 0; return h }
     const shallow = GOLDEN.every((g) => {
         const st = createInitialState(g.s)
         const d = djb2(JSON.stringify([st.map, st.items, st.monsters, st.rooms, st.doors]))
         return d === g.d && st.randState === g.rs
     })
+    const structOk = STRUCT.every((g) => {
+        const st = createInitialState(g.s)
+        return djb2(JSON.stringify([st.map, st.monsters, st.rooms, st.doors])) === g.h
+    })
     ok('dlvl 1 dungeons + stream replay byte-identical to the pre-#3592 cart (structure goldens)', shallow)
+    ok('#3709 — the cipher widening moved no map/monster/room/door byte (struct goldens)', structOk)
 
     let spawnOk = true, reachOk = true, noneShallow = true
     for (const s of SEEDS) {

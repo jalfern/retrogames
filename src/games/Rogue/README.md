@@ -277,7 +277,7 @@ snake's line + blip (mutants: unplugged emit → 2 red; deleted line → 1 red).
   enter the lineage through the derivatives, Hack/NetHack). The parenthesised
   `Hp: cur(max)` hit-dice read was already faithful. What stays open: the
   cart's potion of raise (`P_RAISE` — exp to the next rung, "skillful") is a
-  new generation type, deferred, not forgotten.
+  new generation type, deferred, not forgotten. **CLOSED by #3709 below.**
  - Potion law, `chg_str` (#3702, fetched `misc.c`/`potions.c`): a potion of
    gain lifts strength by 1 and **raises the ceiling with it** — `chg_str`
    updates `max_stats` whenever current exceeds it; poison is ONE d3 bite with
@@ -293,6 +293,28 @@ snake's line + blip (mutants: unplugged emit → 2 red; deleted line → 1 red).
    the bite's `R_SUSTSTR` ring guard needs a rings system the port doesn't
    have yet. roguecheck +7 pins (ceiling lift, 18 cap, floor 3, ceiling
    untouched by poison, cart lines).
+ - Potion of raise + Δ fanfare (#3709, fetched `potions.c`/`fight.c`): the
+   cart's `P_RAISE` prints "You suddenly feel much more skillful" — **no
+   period**, verbatim means verbatim — then calls `raise_level()` (`fight.c`),
+   which sets `s_exp = e_levels[s_lvl-1] + 1` **unconditionally** and lets
+   `check_level()` climb. The math self-guards: the parked exp sits one point
+   below the rung after next, so exactly one rung climbs; at level 20 the
+   port's cap (#3697) makes it a plain no-op. The cart's other P_RAISE work
+   (`p_know` marking) is the knowledge cipher the port already runs. Roster
+   widens to nine subtypes, so `!` generation colours a new mystery potion;
+   the shallow-replay GOLDENs were **re-captured** for the shift, and the
+   honesty of that re-capture is pinned: rng consumes one stream step for any
+   range, so randState and every map/monster/room/door byte verified unmoved
+   (new STRUCT goldens; only potion subtype values differ). Level-up juice
+   scales with Δ per #3702's flag: `checkLevel` returns the rungs, the
+   `levelup` fx carries `{n: Δ}`, and the view stretches its fanfare one
+   ladder-step per extra rung — the Welcome line now names the dice
+   ("Welcome to level 5! +18 hp"), port voice like the #3514 recoil line,
+   flagged as such. Ring dependency stays a note, not a stage (#3702 item 3):
+   the cart guards the poison bite with `ISWEARING(R_SUSTSTR)`; when rings
+   arrive, SUST_STR and the hunger/searching family are the natural first
+   members. roguecheck +11 pins (cart value, one-rung-only, one d10, fx Δ,
+   greet order, no-op at cap, nine-subtype coverage, struct goldens).
 - Food is the only light-source clock; no lamp/oil and torch-lit radius.
 
 RETRO bar: pure green-phosphor monospace look, original ASCII symbol set and

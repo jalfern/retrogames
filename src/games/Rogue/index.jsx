@@ -44,7 +44,18 @@ const fxSound = (e) => {
         if (e.killer === 'D') { ac.playSweep(150, 35, 0.6, 'sawtooth', 0.13); ac.playNoise(0.45, 0.09) }
         else ac.playSweep(300, 50, 0.5, 'sawtooth', 0.1)
         break
-      case 'levelup':   [440, 550, 660, 880].forEach((f, i) => ac.playTone(f, 0.09, 'square', 0.05, i * 0.08)); break
+      // #3709 — the fanfare stretches with Δ: four notes for one rung, one
+      // extra step of the same rising ladder per rung gained (a 4-rung jump
+      // from #3697's dice now SOUNDS bigger); past five rungs the tempo
+      // tightens so the whole run still fits one breath.
+      case 'levelup': {
+        const rungs = Math.max(1, e.n || 1)
+        const ladder = [440, 550, 660, 880, 990, 1100, 1320, 1480, 1760]
+        const notes = ladder.slice(0, Math.min(3 + rungs, ladder.length))
+        const gap = rungs > 4 ? 0.055 : 0.08
+        notes.forEach((f, i) => ac.playTone(f, 0.09, 'square', 0.05, i * gap))
+        break
+      }
       case 'win':       [660, 880, 1320].forEach((f, i) => ac.playTone(f, 0.12, 'square', 0.06, i * 0.09)); ac.playSweep(880, 1760, 0.3, 'sine', 0.04, 0.28); break
       case 'quaff':     ac.playSweep(320, 720, 0.18, 'sine', 0.06); break
       case 'shoot':     ac.playSweep(900, 220, 0.09, 'square', 0.05); break
