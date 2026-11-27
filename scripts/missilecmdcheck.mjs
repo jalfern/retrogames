@@ -630,7 +630,8 @@ console.log('2P alternating (#3630 slice 2): flip, ledgers, shared board')
     emptySky(g2)
     ok(g2.score === 2100 && g2.score2 === 0,
         'the wave-1 bonus pays P1: 600 cities + 1500 spare shells', `${g2.score}/${g2.score2}`)
-    while (g2.state === 'waveEnd') tickMc(g2, null)
+    let guard2 = 0 // bounded: the wave-break mutant must leave this loop, not hang it
+    while (g2.state === 'waveEnd' && guard2++ < WAVE_BREAK_TICKS + 10) tickMc(g2, null)
     g2.cities[0].alive = false // P2 inherits the hole P1's wave left standing over
     emptySky(g2)
     ok(g2.score === 2100 && g2.score2 === 2000,
