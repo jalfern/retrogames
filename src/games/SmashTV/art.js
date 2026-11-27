@@ -257,25 +257,58 @@ export function buildFloor(roomIdx, seed, w = 256) {
     let v = (seed * 7919 + roomIdx * 104729) | 0
     const rnd = () => { v = (v * 1103515245 + 12345) & 0x7fffffff; return v / 0x7fffffff }
     const tint = ['#15151f', '#161218', '#121519', '#171316'][roomIdx % 4]
-    px(g, 0, 0, w, 224, tint)
+    // lit-stage gradient: a soft pool edge up top, darker cab stand down here
+    const grad = g.createLinearGradient(0, 0, 0, 224)
+    grad.addColorStop(0, '#252a3b')
+    grad.addColorStop(0.35, tint)
+    grad.addColorStop(1, '#0b0c13')
+    g.fillStyle = grad
+    g.fillRect(0, 0, w, 224)
+    // warm spotlight pool centered on the board, brighter toward the middle
+    const pool = g.createRadialGradient(w / 2, 116, 8, w / 2, 116, Math.max(w, 224) * 0.62)
+    pool.addColorStop(0, 'rgba(255,236,190,0.20)')
+    pool.addColorStop(0.45, 'rgba(255,236,190,0.07)')
+    pool.addColorStop(1, 'rgba(255,236,190,0)')
+    g.fillStyle = pool
+    g.fillRect(0, 0, w, 224)
+    // seeded grain (same count/layout as before)
     for (let i = 0; i < Math.round(900 * w / 256); i++) {
         const x = Math.floor(rnd() * w), y = Math.floor(rnd() * 224)
         const b = rnd()
         px(g, x, y, 1, 1, b < 0.5 ? '#1d1d29' : b < 0.8 ? '#101018' : '#22222f')
     }
-    g.strokeStyle = 'rgba(93,200,255,0.05)'
-    for (let x = 0; x <= w; x += 32) { g.beginPath(); g.moveTo(x + 0.5, 0); g.lineTo(x + 0.5, 224); g.stroke() }
-    for (let y = 0; y <= 224; y += 32) { g.beginPath(); g.moveTo(0, y + 0.5); g.lineTo(w, y + 0.5); g.stroke() }
-    // studio center logo: a cracked SMASH diamond, centred on the board
-    g.strokeStyle = 'rgba(255,93,93,0.10)'
-    g.lineWidth = 2
+    // grid: faint minor cells, stronger major lines every 64px
+    g.lineWidth = 1
+    for (let x = 0; x <= w; x += 32) {
+        const major = x % 64 === 0
+        g.strokeStyle = major ? 'rgba(150,216,255,0.20)' : 'rgba(150,216,255,0.10)'
+        g.beginPath(); g.moveTo(x + 0.5, 0); g.lineTo(x + 0.5, 224); g.stroke()
+    }
+    for (let y = 0; y <= 224; y += 32) {
+        const major = y % 64 === 0
+        g.strokeStyle = major ? 'rgba(150,216,255,0.20)' : 'rgba(150,216,255,0.10)'
+        g.beginPath(); g.moveTo(0, y + 0.5); g.lineTo(w, y + 0.5); g.stroke()
+    }
+    // studio center logo: a cracked SMASH diamond — soft fill, glowing edge
     const mx = Math.round(w / 2)
+    g.fillStyle = 'rgba(255,93,93,0.06)'
+    g.strokeStyle = 'rgba(255,93,93,0.12)'
+    g.lineWidth = 6
+    g.beginPath(); g.moveTo(mx, 70); g.lineTo(mx + 42, 112); g.lineTo(mx, 154); g.lineTo(mx - 42, 112); g.closePath(); g.fill(); g.stroke()
+    g.strokeStyle = 'rgba(255,120,110,0.42)'
+    g.lineWidth = 2
     g.beginPath(); g.moveTo(mx, 70); g.lineTo(mx + 42, 112); g.lineTo(mx, 154); g.lineTo(mx - 42, 112); g.closePath(); g.stroke()
     g.lineWidth = 1
-    // crowd band at the very top edge of the arena
+    // crowd band at the very top edge: varied bodies, a few lit shirts/heads
+    const shirts = ['#e8b04f', '#d43a3a', '#3a7dd4', '#5dcc6d', '#cfd8ff', '#8fff9f']
     for (let x = 0; x < w; x += 4) {
-        const h = 3 + Math.floor(rnd() * 4)
-        px(g, x, 0, 3, h, ['#2b2f3d', '#333a4d', '#242836'][x % 3])
+        const h = 5 + Math.floor(rnd() * 7)
+        const shade = ['#2e3346', '#343b52', '#252b3d', '#2a3040'][Math.floor(rnd() * 4)]
+        px(g, x, 0, 3, h, shade)
+        if (rnd() < 0.45) { // a lit shirt accent on the body
+            px(g, x + 1, 2, 1, Math.max(1, h - 2), shirts[Math.floor(rnd() * shirts.length)])
+        }
+        if (rnd() < 0.30) px(g, x + 1, 0, 1, 2, '#e8eef8') // head catches the light
     }
     return c
 }
