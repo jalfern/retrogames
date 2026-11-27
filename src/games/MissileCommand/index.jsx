@@ -6,7 +6,7 @@ import WatchButton, { WatchToast, AttractWatchButton } from '../../components/Wa
 import { isWatchKey, isTakeoverKey, playWatchStart, playWatchStop, watchSfxLog, WATCH_ATTRACT_HINT } from '../../utils/watch'
 import { GAMES } from '../../config/games'
 import { attractFrame, DIM } from './attract.js'
-import { makeRun, tickMc, gunnerStep, fireAt, citiesAlive, SCREEN_WIDTH, SCREEN_HEIGHT, GROUND_Y } from './sim.js'
+import { makeRun, tickMc, gunnerStep, fireAt, startWave, citiesAlive, SCREEN_WIDTH, SCREEN_HEIGHT, GROUND_Y } from './sim.js'
 import { exposeFeedbackState, unexposeFeedbackState, seedFromQuery } from '../../utils/gameContract'
 import { mountDbg, unmountDbg } from '../../utils/DebugKit'
 
@@ -190,6 +190,14 @@ const MissileCommandGame = () => {
             for (const ev of gs.events) {
                 if (ev === 'pew') audioController.playTone(600, 0.05, 'triangle')
                 else if (ev === 'boom') audioController.playTone(100, 0.2, 'noise', 0.5)
+                // #3629 cruise saucers — a warble announces the ferry, its
+                // launches growl under the ICBM whistle, the kill crunches big.
+                else if (ev === 'saucer') audioController.playSweep(300, 900, 0.25, 'sine', 0.07)
+                else if (ev === 'cruisefire') audioController.playTone(220, 0.07, 'sawtooth', 0.12)
+                else if (ev === 'saucerkill') {
+                    audioController.playNoise(0.25, 0.5)
+                    audioController.playTone(920, 0.15, 'square', 0.08)
+                }
             }
             if (gs.over && !wasOver) release(false) // the raid ends in your hands (silent)
         }
@@ -286,6 +294,28 @@ const MissileCommandGame = () => {
                 ctx.fillRect(m.x - 1, m.y - 1, 2, 2)
             })
 
+            // #3629 cruise saucers — the satellite-shaped ferry (Atari 1981
+            // manual §2: "look like satellites"). 4-frame hover bob, chasing
+            // rim lights, flickering tail; the look is ours, the shape's era.
+            gs.saucers.forEach((s) => {
+                const bob = [0, -1, -2, -1][s.frame]
+                const sy = s.y + bob
+                ctx.fillStyle = '#8f98a8' // lower hull shade
+                ctx.beginPath(); ctx.ellipse(s.x, sy + 2, 18, 6, 0, 0, Math.PI * 2); ctx.fill()
+                ctx.fillStyle = '#d8dee8' // upper hull
+                ctx.beginPath(); ctx.ellipse(s.x, sy, 18, 7, 0, Math.PI, 0); ctx.fill()
+                ctx.fillStyle = '#39d0ff' // dome
+                ctx.beginPath(); ctx.arc(s.x, sy - 5, 6, Math.PI, 0); ctx.fill()
+                ctx.fillStyle = '#083044' // dome slit
+                ctx.fillRect(s.x - 1, sy - 9, 2, 3)
+                for (let i = 0; i < 4; i++) { // running lights chase the rim
+                    ctx.fillStyle = (i + s.frame) % 2 === 0 ? '#ffe14d' : '#ff4d4d'
+                    ctx.fillRect(s.x - 13 + i * 8, sy + 2, 3, 2)
+                }
+                ctx.fillStyle = s.frame % 2 === 0 ? '#ff9a3d' : '#ffd23d' // tail flicker
+                ctx.fillRect(s.x + (s.dir === 1 ? -21 : 19), sy + 1, 2, 2)
+            })
+
             gs.blasts.forEach((e) => {
                 ctx.fillStyle = e.color
                 ctx.beginPath()
@@ -368,11 +398,12 @@ const MissileCommandGame = () => {
             title: 'MISSILE COMMAND',
             getState: () => [
                 `score ${gs.score}  wave ${gs.wave}  state ${gs.state}`,
-                `cities ${citiesAlive(gs)}/6  ammo ${gs.silos.map((s) => (s.alive ? s.ammo : 'x')).join(',')}  warheads ${gs.warheads.length}`,
+                `cities ${citiesAlive(gs)}/6  ammo ${gs.silos.map((s) => (s.alive ? s.ammo : 'x')).join(',')}  warheads ${gs.warheads.length}  saucers ${gs.saucers.length}`,
                 `seed ${gs.seed}  tick ${gs.tick}  watch ${gs.watch}`,
             ],
             actions: [
                 { label: 'Fire at crosshair', run: () => fireAt(gs, gs.crosshair.x, gs.crosshair.y) },
+                { label: 'Skip to wave 6 (saucers)', run: () => { gs.wave = 6; startWave(gs) } },
                 { label: 'Force game over', run: () => { gs.cities.forEach((c) => { c.alive = false }); gs.over = true; gs.state = 'gameOver' } },
             ],
         })
@@ -386,7 +417,7 @@ const MissileCommandGame = () => {
                 probe: () => ({
                     tick: gs.tick, score: gs.score, wave: gs.wave, done: gs.over,
                     cities: citiesAlive(gs), silos: gs.silos.filter((s) => s.alive).length,
-                    warheads: gs.warheads.length, abms: gs.abms.length,
+                    warheads: gs.warheads.length, abms: gs.abms.length, saucers: gs.saucers.length,
                     ammo: gs.silos.reduce((a, s) => a + (s.alive ? s.ammo : 0), 0),
                     watching: gs.watch, seed: gs.seed,
                 }),

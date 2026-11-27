@@ -16,6 +16,22 @@ waves pays 100 per living city and 50 per spare missile, then reloads.
   regenerates the seed at every human start. Production report:
   `{tick,score,done,seed,wave}`. DebugKit (F1) shows cities/ammo/wave/watch
   and can fire or force a game over through the real destruction path.
+- **CRUISE SAUCERS (#3629) — the wave-6 ferry.** The original introduces new
+  weapons in later waves: satellite-shaped craft that cross the screen
+  launching missiles of their own (Wikipedia, arcade article; Atari 1981
+  manual §2: "Cruise missiles look like satellites, but they are just as
+  deadly"). Rules, manual-pinned where possible: they enter from wave 6
+  (§6 "After the 6th wave … the enemy may attack with cruise missiles"), one
+  guaranteed per wave plus a second every three waves, seeded side/altitude
+  (y 120–200)/interval; crossing speed scales with the wave. Launches ride
+  the exact warhead physics, so `gunnerStep` covers them with no seat change.
+  Any fireball touching the hull burns it: **125 points** (manual Table 1,
+  enemy cruise missile) plus a wreck fireball. A wave cannot clear while a
+  saucer is owed or crossing. The RNG is never consulted below wave 6, so
+  every wave 1..5 proof replays byte-identical (missilecmdcheck §gate pins
+  it). The gunner takes the bonus shot only when every warhead is covered
+  and the craft is a quarter-crossing in — the arcade-expert habit, not an
+  edge-pop machine.
 - **Restart was missing entirely before the batch-15 port** — the GAME OVER
   screen was dead. `startRun()` now rebuilds cities, silos, ammo, score, wave
   and spawn state from any key, click, or canvas tap (phones included).
@@ -46,10 +62,11 @@ npm run attractcheck              # attract screen rule 6
 ```
 
 ## Honest gaps
-- No smart/missile-silo split, no two-player alternating game, no flying
-  saucers dropping in mid-wave.
+- No smart/missile-silo split, no two-player alternating game (#3630).
 - Cities revive only between games (original revives every 10k points).
 - The gunner is proven to wave 5 (the sweep's bar); past the ammo horizon
-  (~wave 11) losing cities is arithmetic, not style.
+  (~wave 11, closer once ferries load) losing cities is arithmetic, not style.
+  The watch takes saucer bonus shots only when the warhead sky is fully
+  covered; it never prioritizes the 125-point ferry over a city.
 - Outer batteries fire by nearest-silo |dx| like the human click law — the
   original's field-of-fire arcs per battery are not modelled.

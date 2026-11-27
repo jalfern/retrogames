@@ -12,12 +12,16 @@
 //
 //   npm run missilecmdcheck
 //   npm run missilecmdcheck -- --mutant
+//
+// #3629 added the cruise saucers section: the wave-6 gate proven byte-exact
+// against the pre-saucer sim (pinned traces), plus entry/launch/kill/hold.
 
 import { readFileSync } from 'node:fs'
 import { spawnSync } from 'node:child_process'
 import {
-    chooseEnemySpawn, makeRun, tickMc, gunnerStep, citiesAlive, fireAt,
+    chooseEnemySpawn, makeRun, tickMc, gunnerStep, citiesAlive, fireAt, startWave,
     SCREEN_WIDTH, SAFE_Y, WAVE_BREAK_TICKS, PROVEN_WAVES,
+    SAUCER_FIRST_WAVE, SAUCER_SCORE,
 } from '../src/games/MissileCommand/sim.js'
 import { seedRng, seedFromQuery } from '../src/utils/gameContract.js'
 import { plant, pull } from './lib/mutateguard.mjs'
@@ -177,6 +181,125 @@ console.log('doctrine pins: intercept HIGH, urgent first, cover-then-retry')
     ok(g4.state === 'playing' && g4.wave === 2, `break holds exactly ${WAVE_BREAK_TICKS} ticks then wave 2 fires`)
 }
 
+// ------------------------------------------------------- cruise saucers --------
+// #3629 — the wave-6 ferry. Two jobs: prove the gate (waves 1..5 stay
+// byte-identical to the pre-saucer sim — constants recorded from the OLD
+// code, see git history of this PR) and prove the mechanic (entry, launches,
+// the 125-point kill, and the wave-clear hold).
+console.log('saucers (#3629): the wave gate holds byte-exact')
+{
+    const t5 = (seed) => {
+        const gs = makeRun(seed)
+        let h = 2166136261
+        const mix = (n) => { h ^= Math.round(n * 1000) + 0x7fffffff; h = Math.imul(h, 16777619) }
+        let guard = 0
+        while (gs.wave <= PROVEN_WAVES && !gs.over && guard++ < 40000) {
+            const cmd = gunnerStep(gs)
+            tickMc(gs, cmd)
+            mix(gs.tick); mix(gs.score); mix(gs.wave)
+            mix(gs.warheads.length); mix(gs.abms.length); mix(gs.blasts.length)
+            mix(gs.silos.reduce((a, s) => a + (s.alive ? s.ammo : 0), 0))
+            mix(citiesAlive(gs))
+            for (const m of gs.warheads) { mix(m.x); mix(m.y) }
+            for (const b of gs.blasts) { mix(b.x); mix(b.y); mix(b.radius) }
+        }
+        return h >>> 0
+    }
+    const PINNED = { 7922: 1284933163, 15841: 2147471376, 31660: 1756787345 }
+    let drift = 0
+    for (const [seed, want] of Object.entries(PINNED)) {
+        const got = t5(Number(seed))
+        if (got !== want) { drift++; console.log(`  drift seed ${seed}: ${got} != ${want}`) }
+    }
+    ok(drift === 0, 'waves 1..5 traces pin byte-identical to the pre-saucer sim (3 seeds)', `${drift} drifted`)
+    ok(SAUCER_FIRST_WAVE === 6, 'the ferry gate sits at wave 6 (Atari 1981 manual §6)', `${SAUCER_FIRST_WAVE}`)
+    // structural: nothing saucer-shaped exists below the gate, on every wave
+    let early = 0
+    for (let s = 1; s <= 8; s++) {
+        const gs = makeRun(s * 7919 + 3)
+        let guard = 0
+        while (gs.wave < SAUCER_FIRST_WAVE && !gs.over && guard++ < 40000) {
+            tickMc(gs, gunnerStep(gs))
+            if (gs.saucers.length > 0 || gs.saucersLeftInWave > 0) early++
+        }
+    }
+    ok(early === 0, 'no saucer lives or is owed below the gate (8 seeds)', `${early}`)
+}
+
+console.log('saucers (#3629): entry, launches, the 125 kill, the wave hold')
+{
+    ok(SAUCER_SCORE === 125, 'an enemy cruise missile scores 125 (manual Table 1)', `${SAUCER_SCORE}`)
+    // guaranteed entry at the gate, and it launches real warheads
+    let entered = 0, launched = 0
+    for (let s = 1; s <= 12; s++) {
+        const gs = makeRun(s * 7919 + 3)
+        let guard = 0, sawEntry = 0, sawFire = 0
+        while (gs.wave <= SAUCER_FIRST_WAVE && !gs.over && guard++ < 40000) {
+            tickMc(gs, gunnerStep(gs))
+            if (gs.events.includes('saucer')) sawEntry++
+            if (gs.events.includes('cruisefire')) sawFire++
+        }
+        if (sawEntry > 0) entered++
+        launched += sawFire
+    }
+    ok(entered === 12, 'every seed sees its wave-6 ferry cross (12/12)', `${entered}/12`)
+    ok(launched >= 12, `ferries fight back: ${launched} cruise launches across 12 raids (not a free target)`)
+    // deterministic replay at the gate
+    const t6 = (seed) => {
+        const gs = makeRun(seed)
+        let h = 2166136261
+        const mix = (n) => { h ^= Math.round(n * 1000) + 0x7fffffff; h = Math.imul(h, 16777619) }
+        let guard = 0
+        while (gs.wave <= SAUCER_FIRST_WAVE && !gs.over && guard++ < 40000) {
+            tickMc(gs, gunnerStep(gs))
+            mix(gs.tick); mix(gs.score); mix(gs.warheads.length); mix(gs.saucers.length)
+            for (const m of gs.warheads) { mix(m.x); mix(m.y) }
+            for (const m of gs.saucers) { mix(m.x); mix(m.y) }
+        }
+        return h >>> 0
+    }
+    ok(t6(4242) === t6(4242), 'wave-6 raid replays byte-equal from the seed')
+    ok(t6(4242) !== t6(4243), 'different seed → different ferry run')
+    // kill: blast meets hull envelope → gone, +125, wreck fireball next life
+    const gs = makeRun(77)
+    gs.wave = SAUCER_FIRST_WAVE
+    gs.saucers = [{ id: 1, x: 400, y: 160, dir: 1, speed: 2, fireTimer: 9999, frame: 0 }]
+    gs.blasts = [{ x: 400, y: 160, radius: 5, growing: true, color: '#fff' }]
+    const s0 = gs.score
+    tickMc(gs, null)
+    ok(gs.saucers.length === 0 && gs.score - s0 === SAUCER_SCORE, 'a fireball that touches the hull burns it for 125')
+    ok(gs.blasts.some((b) => b.x === 400 && b.y === 160), 'the kill leaves its own wreck fireball')
+    // the wave cannot clear while a ferry is owed, and does once it has crossed
+    const g2 = makeRun(78)
+    g2.wave = SAUCER_FIRST_WAVE
+    startWave(g2)
+    g2.spawning = false
+    g2.missilesLeftInWave = 0
+    g2.warheads = []; g2.blasts = []
+    let clearTooEarly = 0, guard = 0
+    while (g2.state === 'playing' && guard++ < 3000) {
+        tickMc(g2, null)
+        if (g2.state === 'playing' && g2.saucersLeftInWave > 0) clearTooEarly++ // still owed, still holding
+    }
+    ok(g2.state === 'waveEnd' && g2.wave === SAUCER_FIRST_WAVE + 1, 'the wave holds until the owed ferry enters and exits', `${g2.state}/w${g2.wave}`)
+    ok(clearTooEarly > 0, 'a wave with a ferry still owed never reads clear', `${clearTooEarly}`)
+    // gunner doctrine: never gambles on the ferry while a warhead is uncovered
+    const g3 = makeRun(79)
+    g3.wave = SAUCER_FIRST_WAVE
+    startWave(g3)
+    g3.saucers = [{ id: 1, x: SCREEN_WIDTH / 2, y: 160, dir: 1, speed: 2, fireTimer: 9999, frame: 0 }]
+    g3.warheads = [{ id: 9, x: 100, y: 80, startX: 100, startY: 0, targetX: 120, targetY: 550, speed: 1.1, color: '#f00', coverUntil: 0 }]
+    const shot = gunnerStep(g3)
+    ok(shot && shot.wid === 9, 'cities before bonus: the uncovered warhead owns the shot, not the ferry', `wid ${shot && shot.wid}`)
+    g3.warheads = []
+    g3.saucers = [{ id: 2, x: 20, y: 160, dir: 1, speed: 2, fireTimer: 9999, frame: 0 }]
+    ok(gunnerStep(g3) === null, 'no edge-pop: the gunner ignores a ferry still at the rim')
+    g3.saucers = [{ id: 3, x: SCREEN_WIDTH / 2, y: 160, dir: 1, speed: 2, fireTimer: 9999, frame: 0 }]
+    const bonus = gunnerStep(g3)
+    ok(bonus && bonus.wid === 3, 'with the sky clean, the gunner takes the mid-board bonus shot', `wid ${bonus && bonus.wid}`)
+    ok(bonus && bonus.boom > g3.tick && bonus.aimY === 160, 'the bonus shot leads the ferry with its own detonation tick')
+}
+
 // -------------------------------------------------------------------- the law ----
 console.log('component wiring: pin, report, restart, seat')
 {
@@ -242,6 +365,15 @@ if (process.argv.includes('--mutant')) {
         ['the registry line is stripped (pill chrome lies about the seat)', G,
             `WATCH_HELP + ' — the sweep-proven gunner meets every warhead high and never lets the fire touch the ground'`,
             `'no watch line here'`],
+        ['the saucer gate opens at wave 1 (the byte-exact floor shatters)', S,
+            `if (gs.wave >= SAUCER_FIRST_WAVE) {`,
+            `if (gs.wave >= 1) {`],
+        ['a burned ferry pays warhead points (125 becomes 25)', S,
+            `gs.score += SAUCER_SCORE`,
+            `gs.score += 25`],
+        ['the wave clears regardless of owed ferries (spawned-after-clear ghost)', S,
+            `gs.saucers.length === 0 && gs.saucersLeftInWave === 0`,
+            `true`],
     ]
     let died = 0
     for (const [name, file, from, to] of MUTANTS) {
