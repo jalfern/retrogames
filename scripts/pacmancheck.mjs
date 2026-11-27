@@ -476,7 +476,8 @@ console.log('progression: score stages, tunnel crawl, round-keyed fruit, energiz
     const src = readFileSync('src/games/Pacman/index.jsx', 'utf8')
     ok(/stepFruit\(fruitTr,[\s\S]{0,400}, round\)/.test(src), 'the live fruit step carries the round')
     ok(/stepGhost\(g, gs, rand/.test(src), 'ghosts step on the live gs (score stage reaches them)')
-    ok(/round\+\+/.test(src) && /round = 1/.test(src), 'the round advances on a cleared maze and resets at human start')
+    ok(/if \(!dotsLeft\) \{\s*\n\s*round\+\+/.test(src) && /round = 1/.test(src),
+        'the round advances on a cleared maze (inside resetGame) and resets at human start')
     ok(/round: round/.test(src), 'the production report carries the round')
     ok(/speedStage\(gs\.score\)/.test(src), 'the report/debug read the live score stage')
 }
