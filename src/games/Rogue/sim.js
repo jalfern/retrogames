@@ -145,6 +145,35 @@ export const TRAP_TYPES = [
   { kind: 'darts', msg: 'Darts spring from the wall!' },
 ]
 
+// #3605 — per-kind trap weights. The 1980 cart dealt every mine with one
+// weight, but its mild kinds (confusion gas, sleep, strength drift) were the
+// bread and butter while the level-stealing trap door and the turn-eating
+// snare were the rare nasties. Now: str/sleep/confuse are common (3),
+// teleport/darts are common (2), door/snare are rare (1 at levels 1–7), and the
+// nasties climb one step per 7 levels — 2 at 8–14, 3 at 15–20 — so the
+// dungeon tightens as you descend. The README carries the exact curve; the
+// harness pins both ends of it.
+export function trapWeights(dungeonLevel) {
+  const th = 1 + Math.floor((dungeonLevel - 1) / 7)
+  return { str: 3, sleep: 3, confuse: 3, teleport: 2, darts: 2, door: th, snare: th }
+}
+
+// Weighted pick over trapWeights. One rng roll per placed trap — the same
+// stream position as the pre-#3605 7-wide uniform roll — on the borrowed,
+// rewound slice, so layouts and downstream dungeons stay byte-identical.
+function pickTrapKind(dungeonLevel) {
+  const w = trapWeights(dungeonLevel)
+  const kinds = Object.keys(w)
+  let total = 0
+  for (const k of kinds) total += w[k]
+  let roll = rng(0, total - 1)
+  for (const k of kinds) {
+    roll -= w[k]
+    if (roll < 0) return k
+  }
+  return kinds[kinds.length - 1] // unreachable; guard
+}
+
 // #3588: compact HUD shorthand for the body's shackles. A hero drugged for
 // eight turns cannot see WHY arrows stopped coming — the banner must say.
 // Pure so the harness can pin the notation against the counters themselves.
@@ -415,7 +444,7 @@ export function generateDungeon(dungeonLevel) {
       const tx = rng(1, MAP_W - 2)
       const ty = rng(1, MAP_H - 2)
       if (!freeForTrap(tx, ty)) continue
-      traps.push({ x: tx, y: ty, kind: TRAP_TYPES[rng(0, TRAP_TYPES.length - 1)].kind, armed: true, seen: false })
+      traps.push({ x: tx, y: ty, kind: pickTrapKind(dungeonLevel), armed: true, seen: false })
       break
     }
   }

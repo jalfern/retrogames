@@ -12,7 +12,7 @@ import {
   MAP_W, MAP_H, createInitialState, stepGame, hash, done, runScore,
   buildGrid, monsterAttack, rng, setSeed, generateDungeon, isWall, blocksMove,
   isThrowable, shootRay, watchStep, advanceMonsters, MONSTER_DEFS, MONSTER_ENERGY, qaSeatLevel,
-  getItemName, shackles,
+  getItemName, shackles, trapWeights,
 } from '../src/games/Rogue/sim.js'
 
 let pass = 0, fail = 0
@@ -931,10 +931,57 @@ console.log('traps: generation, spring law, fall grudge, honesty (#3579)')
     ok('same seed, same mines (deterministic placement)',
         JSON.stringify(A.traps) === JSON.stringify(B.traps), JSON.stringify(A.traps))
     ok('golden seed 777 keeps its stream anchor (trap rolls never shift downstream)',
-        JSON.stringify(A.traps) === JSON.stringify([{ x: 51, y: 5, kind: 'str', armed: true, seen: false }, { x: 52, y: 5, kind: 'sleep', armed: true, seen: false }, { x: 69, y: 12, kind: 'sleep', armed: true, seen: false }]) && A.potionColorMap[0] === 'red' && A.scrollTitleMap[0] === 'NATRIX AN',
+        JSON.stringify(A.traps) === JSON.stringify([{ x: 51, y: 5, kind: 'confuse', armed: true, seen: false }, { x: 52, y: 5, kind: 'confuse', armed: true, seen: false }, { x: 69, y: 12, kind: 'sleep', armed: true, seen: false }]) && A.potionColorMap[0] === 'red' && A.scrollTitleMap[0] === 'NATRIX AN',
         JSON.stringify(A.traps) + ' ' + A.potionColorMap[0] + '/' + A.scrollTitleMap[0])
     ok('hidden traps are invisible: backtick never drawn for an un-sprung trap',
         !buildGrid(A).flat().some(c => c.char === '`'))
+
+    // #3605 — per-kind weights: mild common, the nasties rare, nastier with depth.
+    // The README carries the curve; the gate reads it and pins both ends of it.
+    {
+        const readmeFlat = readFileSync(fileURLToPath(new URL('../src/games/Rogue/README.md', import.meta.url)), 'utf8').replace(/\s+/g, ' ')
+        const curveLine = readmeFlat.match(/Per-kind weights \(#3605\)[^.]*\./)
+        const curveOk = !!curveLine
+            && curveLine[0].includes('str/sleep/confuse 3')
+            && curveLine[0].includes('teleport/darts 2')
+            && curveLine[0].includes('door/snare 1 (levels 1–7)')
+            && curveLine[0].includes('2 (levels 8–14)')
+            && curveLine[0].includes('3 (levels 15–20)')
+        const tiers = [[1, 1], [7, 1], [8, 2], [14, 2], [15, 3], [20, 3]]
+        const simOk = tiers.every(([lvl, rare]) => {
+            const w = trapWeights(lvl)
+            return w.str === 3 && w.sleep === 3 && w.confuse === 3
+                && w.teleport === 2 && w.darts === 2
+                && w.door === rare && w.snare === rare
+        })
+        ok('README states the per-kind weight curve (#3605)', curveOk, curveLine ? curveLine[0].slice(0, 110) : 'no curve line in README')
+        ok('sim trapWeights matches the stated curve at levels 1/7/8/14/15/20', simOk)
+    }
+
+    // empirical distribution: over seeds × levels, door+snare share sits well
+    // below the common kinds' share, stays modest, and leans heavier with depth.
+    {
+        const share = (lvl) => {
+            let rare = 0, mild = 0, total = 0
+            for (let i = 0; i < 250; i++) {
+                setSeed(20000 + i * 733)
+                for (const t of generateDungeon(lvl).traps) {
+                    total++
+                    if (t.kind === 'door' || t.kind === 'snare') rare++
+                    else mild++
+                }
+            }
+            return { rare: rare / total, mild: mild / total, total }
+        }
+        const s1 = share(1), s10 = share(10), s20 = share(20)
+        const off = 'l1=' + s1.rare.toFixed(3) + ' l10=' + s10.rare.toFixed(3) + ' l20=' + s20.rare.toFixed(3)
+        ok('door+snare share sits well below the common kinds (levels 1/10/20)',
+            [s1, s10, s20].every(s => s.rare < 0.5 * s.mild) && s1.total > 100, off)
+        ok('common kinds stay the majority (levels 1/10/20)',
+            [s1, s10, s20].every(s => s.mild > 0.5), off)
+        ok('the nasties lean heavier as depth grows (level 20 > level 1)',
+            s20.rare > s1.rare, off)
+    }
 }
 
 // spring law per kind — forged mines on scanned walkable ground, real moves
@@ -1159,15 +1206,16 @@ console.log('\namulet (#3592)')
     // Byte-honest shallow replay (#3579 law): the amulet dice roll ONLY at
     // dlvl 20, so the dungeon structure and stream position below it are the
     // pre-#3592 cart's, exactly. Goldens were captured from origin/main's
-    // sim.js (djb2 over map+items+monsters+traps+rooms+doors, randState).
-    const GOLDEN = [{"s":1,"d":3141928902,"rs":1872778111},{"s":2,"d":264926641,"rs":-782446962},{"s":3,"d":2961130871,"rs":-1045788049},{"s":7,"d":1764222880,"rs":545165580},{"s":42,"d":1465172412,"rs":1368824876},{"s":123,"d":3733699308,"rs":-1004575632},{"s":90210,"d":3602691012,"rs":-1982086897},{"s":3579,"d":1800104612,"rs":-1677620143}]
+    // sim.js (djb2 over the map/items/monsters/rooms/doors, randState —
+    // kinds are the weighted #3605 draw and never touch the structure).
+    const GOLDEN = [{"s":1,"d":1527443371,"rs":1872778111},{"s":2,"d":437591937,"rs":-782446962},{"s":3,"d":1429227948,"rs":-1045788049},{"s":7,"d":1075585698,"rs":545165580},{"s":42,"d":1815430235,"rs":1368824876},{"s":123,"d":1395950551,"rs":-1004575632},{"s":90210,"d":3116411587,"rs":-1982086897},{"s":3579,"d":1577758018,"rs":-1677620143}]
     const djb2 = (x) => { let h = 5381; for (let i = 0; i < x.length; i++) h = ((h * 33) ^ x.charCodeAt(i)) >>> 0; return h }
     const shallow = GOLDEN.every((g) => {
         const st = createInitialState(g.s)
-        const d = djb2(JSON.stringify([st.map, st.items, st.monsters, st.traps, st.rooms, st.doors]))
+        const d = djb2(JSON.stringify([st.map, st.items, st.monsters, st.rooms, st.doors]))
         return d === g.d && st.randState === g.rs
     })
-    ok('dlvl 1 dungeons + stream replay byte-identical to the pre-#3592 cart (goldens)', shallow)
+    ok('dlvl 1 dungeons + stream replay byte-identical to the pre-#3592 cart (structure goldens)', shallow)
 
     let spawnOk = true, reachOk = true, noneShallow = true
     for (const s of SEEDS) {
@@ -1230,11 +1278,13 @@ console.log('\namulet (#3592)')
     // The you-win terminal through the real reducer: ride the guide's route
     // (it hunts the amulet and answers neighbours), then press ',' on the
     // spot — PICKUP is the harness's own keypress, not the guide's.
-    // dlvl 20 is the cart's depth and it does kill: the two seeds the guide
+    // dlvl 20 is the cart's depth and it does kill: the seeds the guide
     // cannot cross must die HONEST at the same terminal (won === false) —
     // honest losses are the win condition's other half, pinned per seed.
+    // (#3605 re-derived this list from the weighted stream: seed 3 became
+    // a gnome-and-sleep loss, so it moved here from the win loop.)
     let winOk = true, fxOk = true, scoreOk = true
-    for (const s of [1, 2, 3, 7, 42, 123]) {
+    for (const s of [1, 2, 7, 42, 123]) {
         let st = qaSeatLevel(createInitialState(s), 20)
         for (let n = 0; n < 800 && !st.won && st.phase === 'playing'; n++) {
             const a2 = st.items.find(i => i.amulet)
@@ -1251,7 +1301,7 @@ console.log('\namulet (#3592)')
     ok('the win rings its own fx (the view turns it into the sting)', fxOk)
     ok('the win tallies by the cart law: gold + dlvl*50 (dlvl 20)', scoreOk)
     let loseOk = true
-    for (const s of [90210, 3579]) {
+    for (const s of [3, 90210, 3579]) {
         let st = qaSeatLevel(createInitialState(s), 20)
         for (let n = 0; n < 800 && !st.won && st.phase === 'playing'; n++) st = stepGame(st, watchStep(st) || { type: 'WAIT' })
         if (!(st.phase === 'gameover' && st.won === false && !!st.killer)) loseOk = false

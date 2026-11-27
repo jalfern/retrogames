@@ -210,8 +210,17 @@ snake's line + blip (mutants: unplugged emit → 2 red; deleted line → 1 red).
   one turn and the grid shudders twice (view-layer stamps like the #3514 flee
   tint — sim hashes untouched). The banner shows the body's shackles —
   `Slp:n` / `Hld:n` while they bite — so a drugged hero can read why the
-  arrows stopped. Still honest: every kind is dealt with uniform weight; the
-  cart favoured mild gas over doors and snares (per-kind weights remain open).
+  arrows stopped.
+- **CLOSED by #3605:** per-kind weights. The 1980 cart did NOT deal trap doors
+  and snares as often as confusion gas and sleep — the mild kinds were the
+  common bread, the level-stealing door and the turn-eating snare the rare
+  nasties. Per-kind weights (#3605): str/sleep/confuse 3 · teleport/darts 2 ·
+  door/snare 1 (levels 1–7) · 2 (levels 8–14) · 3 (levels 15–20) — mild common,
+  the nasties rare and trending nastier with depth. One weighted roll per
+  placed mine, on the same borrowed, rewound slice — the map, the items, the
+  monsters and every downstream level replay byte-identical. roguecheck pins
+  the curve, the empirical distribution at levels 1/10/20, and the seed-777
+  anchor re-captured from the weighted stream.
 - **CLOSED by #3491:** ranged combat. Staves `/` generate with 3–9 charges
   (lightning/fire/cold/striking, the cart's four-shots flavour); arrows are a
   counted quiver on the original's single weapon/missile glyph `)`. `f` picks
