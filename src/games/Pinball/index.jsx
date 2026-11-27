@@ -108,6 +108,15 @@ const NAME_B = ['RIDER', 'STAR', 'RUSH', 'COMET', 'KNIGHT', 'DRIFT', 'FANG', 'TI
 // the blade smears. A fast ramp feed blurs; a limp outlane trickle does not.
 function spinPersist(ev) { return Math.min(14, 4 + Math.round((ev.v || 0) / 60)) }
 
+// #3789 item 1: graduated ball read — the SAME v-law the spinner blade rides
+// (#3446), now on the ball itself: speed (px/s) sets how many motion ghosts a
+// ball drags and how bright they burn. A rail-bound ball at kicker feed
+// (|vy| ≈ 880) smears a long comet; a ball trickling over a lamp does not —
+// and a still ball (magnet hold, plunger park) drags nothing. Display state
+// only: the history lives in the renderer, physics/scoring/stateHash untouched.
+function ballGhosts(v) { return Math.min(12, Math.round(v / 80)) }
+function ballGhostA(v) { return Math.min(0.5, 0.14 + v / 1800) }
+
 function toolCandidate(d, cx, cy, tool) {
     const t = TOOLS[tool]
     if (t === 'BUMPER') {
@@ -328,7 +337,9 @@ const PinballGame = () => {
     // sim.js owns gs.multiball. The mb bed trigger ORs this in so the live
     // hand-off is driveable without faking pack state (drains stay honest).
     const devMbRef = useRef(false)
-    const trailRef = useRef([])
+    // #3789 item 1: per-ball motion-ghost history, keyed by the puck object
+    // (WeakMap: dead balls' trails die with them — multiball never shares a tail).
+    const trailRef = useRef(new WeakMap())
     const ringsRef = useRef([])  // rung 3: expanding event rings (presentation only)
     const fieldsRef = useRef({}) // painted playfield canvas per cabinet id
     // #3237 attract show-off: the self-playing demo sim + its own fx kit.
@@ -437,7 +448,7 @@ const PinballGame = () => {
             ? { text: 'NO SUCH KIT', t: 110, T: 110 }
             : { text: `KIT ${skinAt(tb.id, skinRef.current[cabRef.current]).label}`, t: 110, T: 110 }
         partsRef.current = []
-        trailRef.current = []
+        trailRef.current = new WeakMap()
         screenRef.current = 'play'; setScreen('play')
         sfxFor({ type: 'start' })
     }, [openEditor])
@@ -596,7 +607,7 @@ const PinballGame = () => {
             // every run opens with an ad line on the strip; a ?style naming a
             // kit this cabinet doesn't ship answers instead of silence.
             gs.msg = { text: sid && !ghost && styleWarn(gs.table.id, sid) ? 'NO SUCH KIT' : attractLine(ghost ? 'ghost' : gs.table.id), t: 200, T: 200 }
-            demoRef.current = { gs, fl: mkFlash(gs.table), trail: [], parts: [], rings: [], shk: { current: 0 }, mbSeen: false, sinceMb: 0, acc: 0, sid }
+            demoRef.current = { gs, fl: mkFlash(gs.table), trail: new WeakMap(), parts: [], rings: [], shk: { current: 0 }, mbSeen: false, sinceMb: 0, acc: 0, sid }
         }
         demoRebuild()
         const DLIVE = {
@@ -1198,16 +1209,26 @@ const PinballGame = () => {
             }
 
             // trails + every live ball (MULTIBALL draws the whole pack)
-            const tr = L.getTrail()
-            if (gs.pucks.length) {
-                tr.push({ x: gs.pucks[0].bx, y: gs.pucks[0].by })
-                if (tr.length > 7) tr.shift()
-                tr.forEach((p, i) => {
-                    const a = (i / tr.length) * 0.28
+            // #3789 item 1: speed-graded ghosts on EVERY ball — count and burn
+            // come from the ball's own speed (ballGhosts/ballGhostA), so a
+            // rail-bound run smears like the spinner blade does, and a still
+            // or trickling ball stays clean.
+            const tm = L.getTrail()
+            for (const b of gs.pucks) {
+                let h = tm.get(b)
+                if (!h) { h = []; tm.set(b, h) }
+                h.push({ x: b.bx, y: b.by })
+                if (h.length > 12) h.shift()
+                const v = Math.hypot(b.vx || 0, b.vy || 0)
+                const n = Math.min(h.length - 1, ballGhosts(v))
+                const aM = ballGhostA(v)
+                for (let i = 0; i < n; i++) {
+                    const s = h[i]
+                    const a = ((i + 1) / (n + 1)) * aM
                     ctx.fillStyle = `rgba(${pal.trailRgb},${a.toFixed(3)})`
-                    ctx.beginPath(); ctx.arc(p.x, p.y, BALL_R * (0.5 + 0.5 * i / tr.length), 0, 7); ctx.fill()
-                })
-            } else tr.length = 0
+                    ctx.beginPath(); ctx.arc(s.x, s.y, BALL_R * (0.45 + 0.45 * i / n), 0, 7); ctx.fill()
+                }
+            }
             for (const p of gs.pucks) {
                 const bg = ctx.createRadialGradient(p.bx - 3, p.by - 4, 1, p.bx, p.by, BALL_R)
                 bg.addColorStop(0, '#ffffff'); bg.addColorStop(0.55, '#aab8cf'); bg.addColorStop(1, '#39435a')
@@ -1549,7 +1570,7 @@ const PinballGame = () => {
             gsRef.current.balls = 1
             gsRef.current.msg = { text: `TEST ${r.tb.label}`, t: 110, T: 110 }
             flashRef.current = mkFlash(r.tb)
-            partsRef.current = []; trailRef.current = []; ringsRef.current = []
+            partsRef.current = []; trailRef.current = new WeakMap(); ringsRef.current = []
             screenRef.current = 'play'; setScreen('play')
             sfxFor({ type: 'start' })
         }
