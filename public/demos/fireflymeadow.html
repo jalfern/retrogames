@@ -77,7 +77,7 @@
   const SKY = [
     { top: [46, 34, 92],   mid: [120, 62, 108], horizon: [240, 130, 66] },
     { top: [10, 8, 34],    mid: [52, 30, 74],   horizon: [148, 60, 66] },
-    { top: [3, 4, 18],     mid: [18, 14, 44],   horizon: [58, 30, 58] }
+    { top: [3, 4, 18],     mid: [18, 14, 44],   horizon: [32, 18, 42] }
   ];
   function skyColors(dusk) {
     const seg = dusk < 0.5 ? 0 : 1;
@@ -92,21 +92,29 @@
     stars.push({ x: Math.random(), y: Math.random() * 0.62, r: 0.4 + Math.random() * 1.3, phase: Math.random() * Math.PI * 2, speed: 0.5 + Math.random() * 1.5 });
   }
 
-  // --- Forest silhouette along the back ---
-  const forestNear = []; // {x, h, w}
-  const forestFar = [];
+  // --- Forest: a real tree line, three depth layers ---
+  const forestFar = [];   // back ridge: small silhouettes, hazed by mist
+  const forestMid = [];   // mid rank: varied crowns, visible trunks
+  const forestNear = [];  // near rank: big dark trees, trunks, rim light
   (function buildForest() {
     const rng = mulberry(1234);
-    let x = -0.05;
-    while (x < 1.08) {
-      const h = 0.05 + rng() * 0.075;
-      forestFar.push({ x, h: 0.06 + rng() * 0.05, w: 0.07 + rng() * 0.08 });
-      x += 0.05 + rng() * 0.05;
+    let x = -0.06;
+    while (x < 1.14) {
+      forestFar.push({ x, base: 0.340, h: 0.055 + rng() * 0.055, w: 0.055 + rng() * 0.065,
+        kind: rng() < 0.55 ? 'conifer' : (rng() < 0.7 ? 'round' : 'broad'), lean: (rng() - 0.5) * 0.05 });
+      x += 0.045 + rng() * 0.05;
     }
     x = -0.05;
-    while (x < 1.08) {
-      forestNear.push({ x, h: 0.08 + rng() * 0.07, w: 0.09 + rng() * 0.10 });
-      x += 0.06 + rng() * 0.07;
+    while (x < 1.12) {
+      forestMid.push({ x, base: 0.358, h: 0.09 + rng() * 0.085, w: 0.08 + rng() * 0.08,
+        kind: ['round', 'broad', 'conifer'][Math.floor(rng() * 3)], lean: (rng() - 0.5) * 0.075 });
+      x += 0.075 + rng() * 0.075;
+    }
+    x = -0.03;
+    while (x < 1.10) {
+      forestNear.push({ x, base: 0.372, h: 0.13 + rng() * 0.085, w: 0.11 + rng() * 0.085,
+        kind: ['round', 'broad', 'conifer', 'broad'][Math.floor(rng() * 4)], lean: (rng() - 0.5) * 0.09 });
+      x += 0.145 + rng() * 0.135;
     }
   })();
   function mulberry(seed) {
@@ -125,6 +133,10 @@
   const flowers = [];
   (function buildMeadow() {
     const rng = mulberry(777);
+    // back row: blades tucked at the tree line — tips stay below the crowns
+    for (let i = 0; i < 130; i++) {
+      grass.push({ x: rng(), base: 0.345 + rng() * 0.03, h: 0.055 + rng() * 0.035, lean: (rng() - 0.5) * 0.02, phase: rng() * Math.PI * 2, layer: 0 });
+    }
     // far meadow texture band
     for (let i = 0; i < 220; i++) {
       grass.push({ x: rng(), base: 0.40 + rng() * 0.20, h: 0.03 + rng() * 0.05, lean: (rng() - 0.5) * 0.012, phase: rng() * Math.PI * 2, layer: 0 });
@@ -134,12 +146,12 @@
       grass.push({ x: rng(), base: 0.55 + rng() * 0.22, h: 0.05 + rng() * 0.07, lean: (rng() - 0.5) * 0.02, phase: rng() * Math.PI * 2, layer: 1 });
     }
     // foreground silhouette grass: big blades at the bottom
-    for (let i = 0; i < 46; i++) {
-      grass.push({ x: rng(), base: 0.86 + rng() * 0.16, h: 0.10 + rng() * 0.16, lean: (rng() - 0.5) * 0.05, phase: rng() * Math.PI * 2, layer: 2 });
+    for (let i = 0; i < 64; i++) {
+      grass.push({ x: rng(), base: 0.84 + rng() * 0.18, h: 0.13 + rng() * 0.20, lean: (rng() - 0.5) * 0.05, phase: rng() * Math.PI * 2, layer: 2 });
     }
     // wildflowers in mid layer
-    for (let i = 0; i < 42; i++) {
-      flowers.push({ x: rng(), base: 0.46 + rng() * 0.30, h: 0.05 + rng() * 0.07, phase: rng() * Math.PI * 2, size: 3 + rng() * 4 });
+    for (let i = 0; i < 46; i++) {
+      flowers.push({ x: rng(), base: 0.46 + rng() * 0.30, h: 0.05 + rng() * 0.07, phase: rng() * Math.PI * 2, size: 4.5 + rng() * 4 });
     }
   })();
 
@@ -149,15 +161,15 @@
   (function buildFlies() {
     const rng = mulberry(4242);
     for (let i = 0; i < FIREFLY_COUNT; i++) {
-      const nearTrees = rng() < 0.35;
+      const nearTrees = rng() < 0.14;
       flies.push({
         x: rng(),
-        y: nearTrees ? 0.33 + rng() * 0.10 : 0.40 + rng() * 0.42,
+        y: nearTrees ? 0.36 + rng() * 0.07 : 0.42 + rng() * 0.38,
         vx: (rng() - 0.5) * 0.006,
         vy: (rng() - 0.5) * 0.004,
         phase: rng() * Math.PI * 2,
         blinkSpeed: 0.7 + rng() * 0.9,
-        size: 1.2 + rng() * 1.8,
+        size: 1.5 + rng() * 2.1,
         wander: rng() * Math.PI * 2,
         glow: 0.6 + rng() * 0.8
       });
@@ -168,9 +180,9 @@
     const t = now * 0.001;
     const hy = horizonY();
     // sync drifts from 0 -> 1 over ~50s, then hovers
-    const sync = Math.min(1, (state.t / 50)) * (0.85 + 0.15 * Math.sin(t * 0.13));
+    const sync = Math.min(1, (state.t / 50)) * (0.92 + 0.08 * Math.sin(t * 0.13));
     const wavePhase = t * 1.35;
-    const brightness = 0.35 + dusk * 0.9;
+    const brightness = 0.45 + dusk * 0.95;
 
     ctx.save();
     ctx.globalCompositeOperation = 'lighter';
@@ -186,7 +198,7 @@
         const d = Math.hypot(dx, dy) || 1;
         const R = Math.min(W, H) * 0.42;
         if (d < R) {
-          const strength = (1 - d / R) * 0.0045;
+          const strength = (1 - d / R) * 0.012;
           ax += (dx / d) * strength;
           ay += (dy / d) * strength;
           f._attract = Math.min(1, (f._attract || 0) + 0.06);
@@ -204,11 +216,12 @@
       // shared wave phase + individual phase, mixed by sync
       const individ = Math.sin(t * f.blinkSpeed + f.phase);
       const wave = Math.sin(wavePhase + (f.x - 0.5) * 2.6 + (f.y - 0.55) * 1.4);
-      const raw = lerp(individ, wave, sync);
-      // blink shape: sharp flash with decay tail
+      const raw = lerp(individ, wave, Math.min(1, sync * 0.62));
+      // blink shape: broad glow with a soft tail
       let flash = Math.max(0, raw);
-      flash = flash * flash * flash;
-      flash = Math.max(flash, (f._attract || 0) * (0.5 + raw * 0.25));
+      flash = Math.pow(flash, 1.9) * 0.8 + flash * 0.2;
+      flash = Math.max(flash, Math.max(0, individ) * 0.4);
+      flash = Math.max(flash, (f._attract || 0) * (0.80 + raw * 0.30));
       if (_forceFlash !== null) flash = Math.max(flash, _forceFlash);
 
       // tap pulses: ring expanding from tap point
@@ -226,11 +239,11 @@
       const px = f.x * W, py = f.y * H;
       const r = f.size * (1 + flash * 0.6);
       // glow bleed
-      const glowR = r * (7 + flash * 9);
+      const glowR = r * (10 + flash * 14);
       const g = ctx.createRadialGradient(px, py, 0, px, py, glowR);
       const body = lerpColor([188, 246, 140], [168, 240, 130], dusk);
-      g.addColorStop(0, `rgba(${body[0]|0},${body[1]|0},${body[2]|0},${(0.55 * flash * brightness).toFixed(3)})`);
-      g.addColorStop(0.35, `rgba(${body[0]|0},${body[1]|0},${body[2]|0},${(0.18 * flash * brightness).toFixed(3)})`);
+      g.addColorStop(0, `rgba(${body[0]|0},${body[1]|0},${body[2]|0},${(0.65 * flash * brightness).toFixed(3)})`);
+      g.addColorStop(0.35, `rgba(${body[0]|0},${body[1]|0},${body[2]|0},${(0.22 * flash * brightness).toFixed(3)})`);
       g.addColorStop(1, 'rgba(0,0,0,0)');
       ctx.fillStyle = g;
       ctx.beginPath();
@@ -279,69 +292,221 @@
       }
     }
 
+    // moon rising into the sky as night falls
+    if (dusk > 0.42) {
+      const ma = Math.min(1, (dusk - 0.42) / 0.58);
+      const mx = W * 0.74, my = H * 0.115;
+      const mr = Math.min(W, H) * 0.052;
+      const glow = ctx.createRadialGradient(mx, my, mr * 0.4, mx, my, mr * 3.1);
+      glow.addColorStop(0, css([214, 228, 255], 0.30 * ma));
+      glow.addColorStop(1, css([150, 170, 220], 0));
+      ctx.fillStyle = glow;
+      ctx.beginPath(); ctx.arc(mx, my, mr * 4.4, 0, Math.PI * 2); ctx.fill();
+      const disc = ctx.createRadialGradient(mx - mr * 0.28, my - mr * 0.28, mr * 0.2, mx, my, mr);
+      disc.addColorStop(0, `rgba(255,252,240,${0.98 * ma})`);
+      disc.addColorStop(1, `rgba(196,208,232,${0.9 * ma})`);
+      ctx.fillStyle = disc;
+      ctx.beginPath(); ctx.arc(mx, my, mr, 0, Math.PI * 2); ctx.fill();
+      ctx.fillStyle = css([148, 160, 192], 0.20 * ma);
+      for (const [cx, cy, cr] of [[-0.30, -0.15, 0.16], [0.26, 0.22, 0.12], [0.02, -0.32, 0.095]]) {
+        ctx.beginPath(); ctx.arc(mx + cx * mr, my + cy * mr, cr * mr, 0, Math.PI * 2); ctx.fill();
+      }
+    }
+
+    // sun-sunk glow behind the tree line — warm pool spreading upward
+    const poolColor = lerpColor([255, 196, 118], [140, 64, 58], dusk);
+    const pool = ctx.createRadialGradient(W * 0.46, hy - H * 0.015, 0, W * 0.46, hy - H * 0.015, Math.max(W, H) * 0.30);
+    pool.addColorStop(0, css(poolColor, 0.20 * (1 - dusk * 0.85)));
+    pool.addColorStop(0.5, css(poolColor, 0.06 * (1 - dusk * 0.85)));
+    pool.addColorStop(1, css(poolColor, 0));
+    ctx.fillStyle = pool;
+    ctx.fillRect(0, 0, W, hy + 4);
     // warm horizon glow
     const glowColor = lerpColor([255, 190, 110], [150, 70, 60], dusk);
-    const glow = ctx.createLinearGradient(0, hy - 110, 0, hy);
+    const glow = ctx.createLinearGradient(0, hy - 70, 0, hy);
     glow.addColorStop(0, css(glowColor, 0));
-    glow.addColorStop(1, css(glowColor, 0.4 * (1 - dusk * 0.6)));
+    glow.addColorStop(1, css(glowColor, 0.78 * (1 - dusk * 0.6)));
     ctx.fillStyle = glow;
-    ctx.fillRect(0, hy - 110, W, 110);
+    ctx.fillRect(0, hy - 70, W, 70);
+  }
+
+  // one tree: tapered trunk + crown silhouette; the sun-side (left) rim is
+  // a thin crescent: crown drawn in light color first, then a dark copy offset
+  // down-right leaves a clean crescent along the upper-left edge.
+  function paintTree(t, alpha, color, rim, rimScale) {
+    const rimA = rimScale == null ? 1 : rimScale;
+    const x = t.x * W, baseY = t.base * H;
+    const h = t.h * H, w = t.w * W;
+    const sway = t.lean * h;
+    const topX = x + sway;
+
+    // trunk
+    const trunkW = Math.max(2.5, w * 0.10);
+    ctx.fillStyle = css(color, alpha);
+    ctx.beginPath();
+    ctx.moveTo(x - trunkW, baseY);
+    ctx.quadraticCurveTo(x - trunkW * 0.55, baseY - h * 0.45, topX - trunkW * 0.35, baseY - h * 0.55);
+    ctx.lineTo(topX + trunkW * 0.35, baseY - h * 0.55);
+    ctx.quadraticCurveTo(x + trunkW * 0.55, baseY - h * 0.45, x + trunkW, baseY);
+    ctx.closePath();
+    ctx.fill();
+    if (rim) {
+      ctx.strokeStyle = css(rim, alpha * rimA * 0.45);
+      ctx.lineWidth = Math.max(1.1, w * 0.028);
+      ctx.lineCap = 'round';
+      ctx.beginPath();
+      ctx.moveTo(x - trunkW * 0.80, baseY);
+      ctx.quadraticCurveTo(x - trunkW * 0.48, baseY - h * 0.45, topX - trunkW * 0.27, baseY - h * 0.50);
+      ctx.stroke();
+    }
+
+    const lobes = crownLobes(t, topX, baseY, h, w);
+    if (rim) {
+      ctx.fillStyle = css(rim, alpha * rimA * 0.88);
+      paintLobes(lobes, -1.7, 1.7);
+    }
+    ctx.fillStyle = css(color, alpha);
+    paintLobes(lobes, 0, 0);
+  }
+
+  function crownLobes(t, topX, baseY, h, w) {
+    if (t.kind === 'conifer') {
+      return [
+        { kind: 'wing', x: topX, y: baseY - h * 0.33, rx: w * 0.50, ry: h * 0.20 },
+        { kind: 'wing', x: topX, y: baseY - h * 0.49, rx: w * 0.38, ry: h * 0.17 },
+        { kind: 'wing', x: topX, y: baseY - h * 0.64, rx: w * 0.26, ry: h * 0.14 },
+      ];
+    }
+    if (t.kind === 'broad') {
+      return [
+        { kind: 'ellipse', x: topX, y: baseY - h * 0.60, rx: w * 0.56, ry: h * 0.28 },
+        { kind: 'ellipse', x: topX - w * 0.32, y: baseY - h * 0.45, rx: w * 0.34, ry: h * 0.20 },
+        { kind: 'ellipse', x: topX + w * 0.32, y: baseY - h * 0.46, rx: w * 0.33, ry: h * 0.19 },
+      ];
+    }
+    return [
+      { kind: 'ellipse', x: topX, y: baseY - h * 0.62, rx: w * 0.37, ry: h * 0.38 },
+      { kind: 'ellipse', x: topX - w * 0.26, y: baseY - h * 0.47, rx: w * 0.27, ry: h * 0.26 },
+      { kind: 'ellipse', x: topX + w * 0.25, y: baseY - h * 0.49, rx: w * 0.24, ry: h * 0.23 },
+    ];
+  }
+
+  // draw lobes; when off >= 0 the light crescent is drawn shifted up-left
+  function paintLobes(lobes, dx, off) {
+    for (const L of lobes) {
+      const lx = L.x + dx, ly = L.y - off;
+      if (L.kind === 'wing') {
+        ctx.beginPath();
+        ctx.moveTo(lx - L.rx, ly);
+        ctx.quadraticCurveTo(lx - L.rx * 0.42, ly - L.ry * 1.0, lx, ly - L.ry * 2.05);
+        ctx.quadraticCurveTo(lx + L.rx * 0.42, ly - L.ry * 1.0, lx + L.rx, ly);
+        ctx.quadraticCurveTo(lx, ly - L.ry * 0.5, lx - L.rx, ly);
+        ctx.closePath();
+        ctx.fill();
+      } else {
+        ctx.beginPath();
+        ctx.ellipse(lx, ly, L.rx, L.ry, 0, 0, Math.PI * 2);
+        ctx.fill();
+      }
+    }
   }
 
   function drawForest(dusk) {
     const hy = horizonY();
-    const fade = 1 - dusk * 0.55;
-    // far layer: soft ridge of tree clumps
-    ctx.fillStyle = css(lerpColor([34, 22, 50], [10, 8, 24], dusk), 0.9 * fade);
-    for (const t of forestFar) {
-      const cx = t.x * W, base = hy + 6, hgt = t.h * H * 1.15;
-      ctx.beginPath();
-      ctx.arc(cx, base - hgt * 0.45, hgt * 0.55, Math.PI, 0);
-      ctx.quadraticCurveTo(cx + hgt * 0.6, base, cx + hgt * 0.55, base);
-      ctx.lineTo(cx - hgt * 0.55, base);
-      ctx.quadraticCurveTo(cx - hgt * 0.6, base, cx - hgt * 0.5, base - hgt * 0.3);
-      ctx.closePath();
-      ctx.fill();
-      // canopy bumps
-      ctx.beginPath();
-      ctx.arc(cx - hgt * 0.35, base - hgt * 0.55, hgt * 0.32, 0, Math.PI * 2);
-      ctx.arc(cx + hgt * 0.30, base - hgt * 0.50, hgt * 0.30, 0, Math.PI * 2);
-      ctx.fill();
-    }
-    // near layer: darker, lower, closer band of trees
-    ctx.fillStyle = css(lerpColor([12, 8, 24], [3, 2, 10], dusk), 0.97 * fade);
-    for (const t of forestNear) {
-      const cx = t.x * W, base = hy + 12, hgt = t.h * H * 1.05;
-      ctx.beginPath();
-      ctx.moveTo(cx - t.w * W * 0.7, base);
-      ctx.quadraticCurveTo(cx - t.w * W * 0.5, base - hgt * 0.9, cx - t.w * W * 0.15, base - hgt * 0.95);
-      ctx.quadraticCurveTo(cx, base - hgt * 1.08, cx + t.w * W * 0.18, base - hgt * 0.95);
-      ctx.quadraticCurveTo(cx + t.w * W * 0.55, base - hgt * 0.9, cx + t.w * W * 0.7, base);
-      ctx.closePath();
-      ctx.fill();
-      // trunk
-      ctx.fillRect(cx - 2, base - hgt * 0.30, 4, hgt * 0.34);
-    }
+    const fade = 1 - dusk * 0.4;
+    const hazeColor = lerpColor([118, 70, 92], [30, 26, 54], dusk);
+    // far layer: small dark silhouettes, barely lifted, hazed by mist
+    const farColor = lerpColor([46, 31, 56], [14, 11, 28], dusk);
+    for (const t of forestFar) paintTree(t, 0.55 * fade, farColor, null);
+    // milky haze band between far and mid — depth of the tree line
+    const haze = ctx.createLinearGradient(0, hy - H * 0.085, 0, hy + H * 0.035);
+    haze.addColorStop(0, css(hazeColor, 0));
+    haze.addColorStop(0.62, css(hazeColor, 0.13 * fade));
+    haze.addColorStop(1, css(hazeColor, 0));
+    ctx.fillStyle = haze;
+    ctx.fillRect(0, hy - H * 0.085, W, H * 0.12);
+    // mid layer: varied crowns, visible trunks, rim light
+    const midColor = lerpColor([22, 14, 34], [7, 6, 18], dusk);
+    const rimFar = lerpColor([255, 178, 106], [128, 88, 104], dusk);
+    for (const t of forestMid) paintTree(t, 0.88 * fade, midColor, rimFar, Math.max(0, 1 - dusk * 1.0));
+    // thin horizon haze over mid trunks
+    const haze2 = ctx.createLinearGradient(0, hy - H * 0.028, 0, hy + H * 0.05);
+    haze2.addColorStop(0, css([0, 0, 0], 0));
+    haze2.addColorStop(0.7, css(lerpColor([100, 58, 84], [28, 19, 42], dusk), 0.16 * fade));
+    haze2.addColorStop(1, css([0, 0, 0], 0));
+    ctx.fillStyle = haze2;
+    ctx.fillRect(0, hy - H * 0.028, W, H * 0.078);
+    // near layer: big near silhouettes with sun-side rim
+    const nearColor = lerpColor([12, 8, 22], [4, 3, 12], dusk);
+    const rimNear = lerpColor([255, 192, 128], [146, 102, 112], dusk);
+    for (const t of forestNear) paintTree(t, 0.96 * fade, nearColor, rimNear, Math.max(0, 1 - dusk * 1.15));
   }
 
   function drawMeadow(dusk, now) {
     const hy = horizonY();
-    // meadow body: three depth bands
-    const g2 = ctx.createLinearGradient(0, hy, 0, H);
-    g2.addColorStop(0, css(lerpColor([38, 30, 52], [8, 7, 18], dusk)));
-    g2.addColorStop(0.45, css(lerpColor([26, 21, 38], [5, 5, 14], dusk)));
-    g2.addColorStop(1, css(lerpColor([12, 9, 22], [2, 2, 6], dusk)));
+    const t = now * 0.001;
+
+    // soft depth haze hugging the tree line — melts the seam where
+    // meadow meets forest instead of a ruler edge
+    const seam = ctx.createLinearGradient(0, hy - H * 0.05, 0, hy + H * 0.085);
+    seam.addColorStop(0, css(lerpColor([150, 82, 76], [34, 24, 52], dusk), 0));
+    seam.addColorStop(0.45, css(lerpColor([150, 82, 76], [34, 24, 52], dusk), 0.34 * (1 - dusk * 0.35)));
+    seam.addColorStop(1, css([0, 0, 0], 0));
+    ctx.fillStyle = seam;
+    ctx.fillRect(0, hy - H * 0.05, W, H * 0.135);
+
+    // meadow body: warm olive wash down to deep dusk indigo
+    const g2 = ctx.createLinearGradient(0, hy - 10, 0, H);
+    g2.addColorStop(0, css(lerpColor([46, 36, 56], [12, 10, 26], dusk), 0));
+    g2.addColorStop(0.06, css(lerpColor([46, 36, 56], [12, 10, 26], dusk), 0.88));
+    g2.addColorStop(0.45, css(lerpColor([30, 24, 42], [7, 6, 17], dusk)));
+    g2.addColorStop(1, css(lerpColor([16, 12, 27], [6, 6, 14], dusk)));
     ctx.fillStyle = g2;
-    ctx.fillRect(0, hy, W, H - hy);
-    // subtle horizon light falling on grass
-    const fall = ctx.createLinearGradient(0, hy, 0, hy + H * 0.22);
-    fall.addColorStop(0, css(lerpColor([120, 70, 66], [40, 24, 44], dusk), 0.35 * (1 - dusk * 0.5)));
+    // gentle hill line instead of a ruler edge: meadow body starts along a
+    // wavy contour so the tree line melts into soft grass, not a band
+    const hill = (x) => hy + Math.sin(x * 0.013 + 2.1) * 4.2 + Math.sin(x * 0.041 + 0.7) * 2.6;
+    ctx.beginPath();
+    ctx.moveTo(-4, hill(0));
+    for (let x = 0; x <= W + 4; x += 16) ctx.lineTo(x, hill(x));
+    ctx.lineTo(W + 4, H + 10);
+    ctx.lineTo(-4, H + 10);
+    ctx.closePath();
+    ctx.fill();
+
+    // seam haze: warm wash spilling down over tree bases
+    const lip = ctx.createLinearGradient(0, hy - 44, 0, hy + H * 0.17);
+    lip.addColorStop(0, css(lerpColor([132, 78, 70], [44, 26, 48], dusk), 0));
+    lip.addColorStop(0.55, css(lerpColor([132, 78, 70], [44, 26, 48], dusk), 0.24 + 0.06 * (1 - dusk)));
+    lip.addColorStop(1, css([0, 0, 0], 0));
+    ctx.fillStyle = lip;
+    ctx.fillRect(0, hy - 44, W, H * 0.17 + 44);
+
+    // horizon light falling on the meadow
+    const fall = ctx.createLinearGradient(0, hy, 0, hy + H * 0.26);
+    fall.addColorStop(0, css(lerpColor([128, 78, 64], [38, 26, 44], dusk), 0.40 * (1 - dusk * 0.45)));
     fall.addColorStop(1, css([0, 0, 0], 0));
     ctx.fillStyle = fall;
-    ctx.fillRect(0, hy, W, H * 0.22);
+    ctx.fillRect(0, hy, W, H * 0.26);
 
-    // grass blades
-    const t = now * 0.001;
+    // center glow pool — the warm spot the fireflies gather over
+    const pool = ctx.createRadialGradient(W * 0.5, H * 0.55, 0, W * 0.5, H * 0.55, W * 0.52);
+    pool.addColorStop(0, css(lerpColor([110, 82, 72], [40, 42, 88], dusk), 0.16 * (1 - dusk * 0.55) + 0.06));
+    pool.addColorStop(1, css([0, 0, 0], 0));
+    ctx.fillStyle = pool;
+    ctx.fillRect(0, hy, W, H - hy);
+
+    // moonlight wash: cool glimmer over the grass at night
+    const moonlight = Math.max(0, (dusk - 0.42) / 0.58);
+    if (moonlight > 0.02) {
+      const nl = ctx.createLinearGradient(0, hy, 0, H);
+      nl.addColorStop(0, css([132, 158, 212], 0.30 * moonlight));
+      nl.addColorStop(0.5, css([82, 102, 152], 0.16 * moonlight));
+      nl.addColorStop(1, css([42, 56, 104], 0.09 * moonlight));
+      ctx.fillStyle = nl;
+      ctx.fillRect(0, hy, W, H - hy);
+    }
+
+    // grass blades — three depth rows
     for (const b of grass) {
       const sway = Math.sin(t * 1.1 + b.phase + b.x * 3.0) * (0.014 + b.layer * 0.008);
       const x = b.x * W;
@@ -349,12 +514,13 @@
       const h = b.h * H;
       const tipX = x + (b.lean * H + sway * H * (b.layer + 1) * 0.6);
       const tipY = baseY - h;
-      if (b.layer === 0) ctx.fillStyle = css(lerpColor([58, 44, 66], [12, 10, 24], dusk));
-      else if (b.layer === 1) ctx.fillStyle = css(lerpColor([30, 22, 40], [7, 6, 18], dusk));
-      else ctx.fillStyle = css(lerpColor([16, 11, 26], [2, 2, 6], dusk));
+      const shade = lerpColor([64, 48, 70], [18, 15, 30], dusk);      // back
+      const mid    = lerpColor([40, 30, 52], [10, 9, 22], dusk);     // mid
+      const front  = lerpColor([26, 18, 38], [6, 6, 14], dusk);      // front
+      ctx.fillStyle = css(b.layer === 0 ? shade : b.layer === 1 ? mid : front, b.layer === 0 ? 0.62 : b.layer === 1 ? 0.78 : 0.9);
       if (b.layer === 2) {
         // filled tapered blade
-        const w = 2.5 + (b.x % 1) * 2;
+        const w = 3 + (b.x % 1) * 2.4;
         const midX = x + (tipX - x) * 0.35, midY = baseY - h * 0.6;
         ctx.beginPath();
         ctx.moveTo(x - w, baseY);
@@ -364,7 +530,7 @@
         ctx.fill();
       } else {
         ctx.strokeStyle = ctx.fillStyle;
-        ctx.lineWidth = b.layer === 1 ? 1.6 : 1.1;
+        ctx.lineWidth = b.layer === 1 ? 1.7 : 1.2;
         ctx.beginPath();
         ctx.moveTo(x, baseY);
         ctx.quadraticCurveTo(x + (tipX - x) * 0.3, baseY - h * 0.6, tipX, tipY);
@@ -372,35 +538,35 @@
       }
     }
 
-    // wildflowers (dark silhouette stems with a soft rim-lit bud)
+    // wildflowers: rim-lit bud with a small gold heart
     for (const f of flowers) {
       const sway = Math.sin(t * 1.2 + f.phase + f.x * 4.0) * 0.012;
       const x = f.x * W, baseY = f.base * H, h = f.h * H;
       const tipX = x + sway * H * 3;
       const tipY = baseY - h;
-      ctx.strokeStyle = css(lerpColor([26, 20, 34], [6, 5, 14], dusk));
-      ctx.lineWidth = 1.6;
+      ctx.strokeStyle = css(lerpColor([42, 32, 54], [12, 12, 22], dusk), 0.85);
+      ctx.lineWidth = 1.7;
       ctx.beginPath();
       ctx.moveTo(x, baseY);
       ctx.quadraticCurveTo(x + (tipX - x) * 0.4, baseY - h * 0.6, tipX, tipY);
       ctx.stroke();
-      // petals: five small lobes around a dark heart
       const budR = f.size * 0.85;
-      ctx.fillStyle = css(lerpColor([74, 52, 82], [16, 14, 30], dusk));
+      ctx.fillStyle = css(lerpColor([88, 64, 94], [72, 66, 104], dusk), 0.92);
       for (let k = 0; k < 5; k++) {
         const a = (k / 5) * Math.PI * 2 + f.phase;
         ctx.beginPath();
         ctx.arc(tipX + Math.cos(a) * budR * 0.55, tipY + Math.sin(a) * budR * 0.55, budR * 0.52, 0, Math.PI * 2);
         ctx.fill();
       }
-      ctx.fillStyle = css(lerpColor([46, 30, 52], [10, 9, 22], dusk));
+      ctx.fillStyle = css(lerpColor([52, 34, 58], [24, 22, 42], dusk), 0.95);
       ctx.beginPath();
       ctx.arc(tipX, tipY, budR * 0.42, 0, Math.PI * 2);
       ctx.fill();
-      // rim light on the upper-left petal
-      ctx.fillStyle = css(lerpColor([235, 180, 140], [120, 70, 80], dusk), 0.5 * (1 - dusk * 0.35));
+      // rim light — warm at dusk, pale moonlight at night
+      const rimCol = lerpColor([238, 186, 146], [172, 194, 236], dusk);
+      ctx.fillStyle = css(rimCol, 0.72 * (1 - dusk * 0.22));
       ctx.beginPath();
-      ctx.arc(tipX - budR * 0.35, tipY - budR * 0.35, budR * 0.30, 0, Math.PI * 2);
+      ctx.arc(tipX - budR * 0.33, tipY - budR * 0.33, budR * 0.32, 0, Math.PI * 2);
       ctx.fill();
     }
   }
@@ -420,6 +586,27 @@
     drawMeadow(dusk, now);
     drawFireflies(now, dusk, taps, hold);
 
+    // watercolour washes — large translucent brush banks
+    const hy0 = horizonY();
+    const brushWash = (cx, cy, rx, ry, color, alpha) => {
+      const R = Math.max(rx, ry);
+      const g = ctx.createRadialGradient(cx, cy, 0, cx, cy, R);
+      g.addColorStop(0, css(color, alpha));
+      g.addColorStop(1, css(color, 0));
+      ctx.save();
+      ctx.translate(cx, cy);
+      ctx.scale(rx / R, ry / R);
+      ctx.translate(-cx, -cy);
+      ctx.fillStyle = g;
+      ctx.beginPath();
+      ctx.arc(cx, cy, R, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.restore();
+    };
+    brushWash(W * 0.46, H * 0.15, W * 0.86, H * 0.13, lerpColor([176, 108, 148], [58, 50, 104], dusk), 0.085 + 0.03 * (1 - dusk));
+    brushWash(W * 0.52, hy0 - H * 0.02, W * 0.92, H * 0.075, lerpColor([255, 168, 96], [94, 44, 66], dusk), 0.16 * (1 - dusk * 0.72));
+    brushWash(W * 0.5, H * 0.74, W * 0.9, H * 0.19, lerpColor([44, 36, 66], [40, 56, 96], dusk), 0.10 + 0.05 * dusk);
+
     // vignette
     const vg = ctx.createRadialGradient(W / 2, H * 0.45, Math.min(W, H) * 0.35, W / 2, H * 0.5, Math.max(W, H) * 0.75);
     vg.addColorStop(0, 'rgba(0,0,0,0)');
@@ -431,7 +618,7 @@
     if (brushTex) {
       ctx.save();
       ctx.globalCompositeOperation = 'overlay';
-      ctx.globalAlpha = 0.28;
+      ctx.globalAlpha = 0.34;
       ctx.drawImage(brushTex, 0, 0, W, H);
       ctx.restore();
     }
