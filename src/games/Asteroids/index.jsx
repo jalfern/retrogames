@@ -8,7 +8,7 @@ import { mountDbg, unmountDbg } from '../../utils/DebugKit'
 import { GAMES } from '../../config/games'
 import { exposeGame, unexposeGame, exposeFeedbackState, unexposeFeedbackState, seedFromQuery, contractHoldsLoop } from '../../utils/gameContract'
 import { fitStage } from '../../utils/fitCanvas'
-import { SHIP_HULL, START_LIVES, makeRun, tickAsteroids, rebuildBoard, stateHash, saucerTell, SAUCER_TELL_PITCH } from './sim.js'
+import { SHIP_HULL, START_LIVES, makeRun, tickAsteroids, rebuildBoard, stateHash, saucerTell, SAUCER_TELL_PITCH, SAUCER_SCORE } from './sim.js'
 
 // ASTEROIDS (#1473 batch 16) — the Feb port had no score, no lives and no
 // terminal: the ship could not die and the field never refilled. Restored to
@@ -174,9 +174,14 @@ const AsteroidsGame = () => {
         // (radius scales with what died); the shell decays them on sim ticks so a
         // paused or contract-held board never melts its own juice.
         const flashes = []
+        // #3730 bounty digit popups — the digits the cabinet paid, drifting
+        // up like the blooms and fading, sized by the bounty (big = 13, small = 17).
+        const bounties = []
         const applyEvents = (ev) => {
             for (const f of flashes) f.life -= 0.055
             flashes.splice(0, flashes.length, ...flashes.filter(f => f.life > 0))
+            for (const b of bounties) { b.life -= 0.05; b.y -= 0.55 }
+            bounties.splice(0, bounties.length, ...bounties.filter(b => b.life > 0))
             for (const f of ev.flash) flashes.push({ x: f.x, y: f.y, r: f.r, life: 1 })
             if (ev.shot) audioController.playSweep(900 - ev.pitch * 250, 260, 0.09, 'sawtooth', 0.1)
             if (ev.smashed) audioController.playNoise(0.1, 0.1)
@@ -192,6 +197,12 @@ const AsteroidsGame = () => {
                 kiteLog.push(ev.saucerKilled) // #3706 DEV witness: the seat's banked bounties, for asteroidsdrive
                 audioController.playNoise(0.3, 0.3)
                 audioController.playSweep(ev.saucerKilled === 'small' ? 700 : 400, 120, 0.25, 'square', 0.12)
+                // #3730 — the bounty pays visibly: the digits at the kill point,
+                // and a ping layered on the boom at the saucer's own warble pitch.
+                const bounty = SAUCER_SCORE[ev.saucerKilled]
+                const bloom = ev.flash.find(f => f.kind === 'saucer') || { x: gs.ship.x, y: gs.ship.y }
+                bounties.push({ x: bloom.x, y: bloom.y - 6, text: `+${bounty}`, life: 1, size: bounty >= 1000 ? 17 : 13 })
+                audioController.playTone(ev.saucerKilled === 'small' ? 560 : 470, ev.saucerKilled === 'small' ? 0.15 : 0.09, 'square', ev.saucerKilled === 'small' ? 0.16 : 0.1) // the two-tone hover warble, layered on the sweep
             }
             if (!gs.attract && !gs.over) {
                 heartTick++
@@ -337,6 +348,18 @@ const AsteroidsGame = () => {
                 ctx.globalAlpha = 1.0
             }
 
+            // Bounty digits (#3730) — the money the kill banked, drifting up
+            // like the blooms and fading. Sized by the bounty: 200 at 13px,
+            // 1000 at 17px.
+            for (const b of bounties) {
+                ctx.globalAlpha = Math.min(1, b.life * 1.6)
+                ctx.fillStyle = '#ffcf5e'
+                ctx.font = `bold ${b.size}px monospace`
+                ctx.textAlign = 'center'
+                ctx.fillText(b.text, b.x, b.y)
+            }
+            ctx.globalAlpha = 1
+
             // HUD — score left, wave center, spare ships right (the arcade's
             // row of bow-ships, drawn as small triangles).
             if (!gs.attract) {
@@ -355,6 +378,33 @@ const AsteroidsGame = () => {
                     ctx.closePath()
                     ctx.stroke()
                 }
+            }
+
+            // Who is flying (#3730) — a small ON AUTO / MANUAL tell in the
+            // bottom-left corner. Own look; Y seats the pilot, any input takes
+            // the wheel back. The dot blinks while the machine flies.
+            if (!gs.attract && !gs.over) {
+                const auto = gs.watching
+                const label = auto ? 'ON AUTO' : 'MANUAL'
+                ctx.font = 'bold 10px monospace'
+                const textW = ctx.measureText(label).width
+                const pillW = textW + 32
+                const py = gs.height - 32
+                ctx.fillStyle = 'rgba(10,10,20,0.72)'
+                ctx.fillRect(10, py, pillW, 24)
+                ctx.strokeStyle = '#3a4157'
+                ctx.lineWidth = 1
+                ctx.strokeRect(10.5, py + 0.5, pillW - 1, 24 - 1)
+                const blinkOn = Math.floor(gs.tickN / 25) % 2 === 0
+                if (!auto || blinkOn) {
+                    ctx.fillStyle = auto ? '#4ade80' : '#9aa4b2'
+                    ctx.beginPath()
+                    ctx.arc(21, py + 12, 3.5, 0, Math.PI * 2)
+                    ctx.fill()
+                }
+                ctx.fillStyle = auto ? '#d6ffe0' : '#c9cfd8'
+                ctx.textAlign = 'left'
+                ctx.fillText(label, 31, py + 15.5)
             }
 
             // UI
@@ -410,6 +460,7 @@ const AsteroidsGame = () => {
                     { label: 'Drop a rock on the ship', run: () => { gs.invulnUntil = 0; gs.respawnAt = -1; gs.asteroids.push({ x: gs.ship.x, y: gs.ship.y, vx: 0, vy: 0, size: 40, vertices: gs.asteroids[0] ? gs.asteroids[0].vertices : [] }) } },
                     { label: 'Clear field', run: () => { gs.asteroids = [] } },
                     { label: 'Fly a saucer', run: () => { gs.saucers.push({ big: true, x: -22, y: gs.height / 3, vx: 2.0, vy: 1.4, phase: 0, amp: 0, cooldown: 60, life: 900 }) } },
+                    { label: 'Bank a saucer', run: () => { gs.saucers.push({ big: true, x: gs.ship.x, y: Math.max(60, gs.ship.y - 90), vx: 0, vy: 0, phase: 0, amp: 0, cooldown: 999, life: 900 }) } },
                 ],
             })
         }

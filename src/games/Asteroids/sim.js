@@ -455,7 +455,7 @@ export function tickAsteroids(gs, input = null) {
                 s.dead = true
                 addScore(gs, SAUCER_SCORE[s.big ? 'big' : 'small'])
                 spawnParticles(gs, s.x, s.y, 12)
-                ev.flash.push({ x: s.x, y: s.y, r: SAUCER_RADIUS[s.big ? 'big' : 'small'] * 1.8 })
+                ev.flash.push({ x: s.x, y: s.y, r: SAUCER_RADIUS[s.big ? 'big' : 'small'] * 1.8, kind: 'saucer' })
                 ev.saucerKilled = s.big ? 'big' : 'small'
                 break
             }
