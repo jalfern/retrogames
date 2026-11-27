@@ -763,6 +763,7 @@ const DonkeyKongGame = () => {
                     attract: gs.attract, over: gs.over,
                     hammer: gs.hammer, swingSeq: gs.swingSeq,
                     passed: gs.player.passedBarrels.size, // #3754 walk-past witness
+                    popups: gs.popups.length, // #3761 bonus-popup witness (FX count)
                     // #3618 half-rung state for the drive harness
                     hang: gs.player.hanging,
                     brk: gs.player.climbLadder && gs.player.climbLadder.broken
@@ -809,6 +810,20 @@ const DonkeyKongGame = () => {
                     let paid = 0
                     for (let i = 0; i < 80; i++) paid += (tickDonkeyKong(gs, { left: false, right: false, up: false, down: false, jump: false }).passedBarrel || 0)
                     return { paid, delta: gs.score - s0, witnesses: gs.player.passedBarrels.size - n0 }
+                },
+                // #3761 — the same walk-past rig, but stopping AT the paying
+                // tick so a harness or screenshot catches the +50 popup while
+                // it is alive (walkpast() fast-forwards past its expiry).
+                walkpastfx: () => {
+                    const s0 = gs.score
+                    gs.player.x = 150
+                    gs.player.y = 176
+                    gs.player.vx = 0; gs.player.vy = 0
+                    for (let i = 0; i < 10; i++) tickDonkeyKong(gs, { left: false, right: false, up: false, down: false, jump: false })
+                    gs.barrels.push({ x: 120, y: 222, w: 10, h: 10, vx: BARREL_SPEED, vy: 0, rot: 0, onLadder: false, falling: false })
+                    let paid = 0
+                    for (let i = 0; i < 80 && !paid; i++) paid += (tickDonkeyKong(gs, { left: false, right: false, up: false, down: false, jump: false }).passedBarrel || 0)
+                    return { paid, delta: gs.score - s0, popups: gs.popups.map(q => ({ text: q.text, age: q.age })) }
                 },
             }
             mountDbg({
