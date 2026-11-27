@@ -7,7 +7,7 @@ import { isWatchKey, isTakeoverKey, playWatchStart, playWatchStop, watchSfxLog, 
 import { mountDbg, unmountDbg } from '../../utils/DebugKit'
 import { GAMES } from '../../config/games'
 import { exposeGame, unexposeGame, exposeFeedbackState, unexposeFeedbackState, seedFromQuery, contractHoldsLoop } from '../../utils/gameContract'
-import { GW, GH, makeRun, tickDonkeyKong, stateHash } from './sim.js'
+import { GW, GH, TOP_PLAT, makeRun, tickDonkeyKong, stateHash } from './sim.js'
 import { attractFrame, DIM } from './attract.js'
 
 // DONKEY KONG — shell only since #1637 b27: canvas, sound, chrome, seat.
@@ -169,6 +169,18 @@ const DonkeyKongGame = () => {
                 audioController.playSweep(400, 80, 0.4, 'sawtooth')
             }
             if (ev.won) audioController.playSweep(400, 1000, 0.8, 'square')
+            // #3598 — the finale's voices: arrival sting, the rivet creak and
+            // snap, and the crash of the whole tower.
+            if (ev.reached) {
+                audioController.playTone(880, 0.07, 'square')
+                audioController.playTone(1175, 0.09, 'square')
+            }
+            if (ev.pull) audioController.playSweep(700, 320, 0.28, 'triangle')
+            if (ev.rivet) audioController.playTone(1050, 0.06, 'square')
+            if (ev.collapse) {
+                audioController.playNoise(0.5, 0.35)
+                audioController.playSweep(180, 45, 0.9, 'sawtooth')
+            }
             if (ev.over && !gs.attract && gs.watching) release(false) // the run ends in your hands (silent)
         }
 
@@ -187,7 +199,14 @@ const DonkeyKongGame = () => {
         const COL_LADDER = '#00ffff'    // cyan ladders
         const COL_BG = '#000000'
 
-        const drawGirder = (p) => {
+        const drawGirder = (p, dy = 0, tilt = 0) => {
+            const cx = p.x + p.w / 2
+            ctx.save()
+            if (dy || tilt) {
+                ctx.translate(cx, p.y + dy)
+                if (tilt) ctx.rotate(tilt)
+                ctx.translate(-cx, -p.y)
+            }
             ctx.fillStyle = COL_GIRDER
             // Draw platform as a series of small girder bricks
             const brickW = 8
@@ -203,6 +222,32 @@ const DonkeyKongGame = () => {
                 ctx.fillRect(bx, by + brickH - 0.5, bw, 1)
                 ctx.fillStyle = COL_GIRDER
             }
+            ctx.restore()
+        }
+
+        // #3598 — the rivets ride her girder: bright cross-studs until the
+        // yank takes them; the pulled hole stays dark in the steel.
+        const drawRivets = () => {
+            if (gs.collapse > 0) return // all out already — the steel is on its way down
+            for (const r of gs.rivets) {
+                if (r.pulled) {
+                    ctx.fillStyle = '#401010'
+                    ctx.fillRect(r.x - 2, 49, 4, 3)
+                } else {
+                    ctx.fillStyle = '#ffd800'
+                    ctx.fillRect(r.x - 2, 48, 4, 4)
+                    ctx.fillStyle = '#fff8b0'
+                    ctx.fillRect(r.x - 1, 49, 2, 2)
+                }
+            }
+        }
+
+        // #3598 — the two top girders lose their grip when the last rivet
+        // goes: they tilt away from each other and drop out of the picture.
+        const girderCrash = (i) => {
+            if (gs.collapse <= 0 || (i !== 5 && i !== 6)) return [0, 0]
+            const k = gs.collapse
+            return [k * k * 0.012, (i === 6 ? 1 : -1) * Math.min(0.32, k * 0.004)]
         }
 
         const drawLadder = (l) => {
@@ -261,7 +306,9 @@ const DonkeyKongGame = () => {
             // DK position: on 6th platform (index 5), left side
             const dkPlat = gs.platforms[5]
             const dkX = 16
-            const dkY = (dkPlat ? dkPlat.y + dkPlat.slope * (dkX + 14 - dkPlat.x) : 72) - 28
+            // #3598 — when the girders go, the ape goes with them: he drops
+            // off the tower onto the barrel pile below (dkFall, sim-owned).
+            const dkY = (dkPlat ? dkPlat.y + dkPlat.slope * (dkX + 14 - dkPlat.x) : 72) - 28 + gs.dkFall
             const dkAnimFrame = Math.floor(gs.tickN / 16) % 2 // chest-beat cadence
             const s = 1 // pixel scale
 
@@ -310,7 +357,14 @@ const DonkeyKongGame = () => {
         const drawPauline = () => {
             const topPlat = gs.platforms[6]
             const px = topPlat ? topPlat.x + topPlat.w / 2 - 4 : 108
-            const py = topPlat ? topPlat.y + topPlat.slope * (px + 4 - topPlat.x) - 20 : 28
+            const base = topPlat ? topPlat.y + topPlat.slope * (px + 4 - topPlat.x) - 20 : 28
+            // #3598 — when the tower goes she rides down to a lower girder and
+            // waits there: the ape takes the fall, she just lost her perch.
+            const g4 = gs.platforms[4]
+            const landY = g4 ? g4.y + g4.slope * (px + 4 - g4.x) - 16 : 112
+            const py = gs.collapse > 0
+                ? base + Math.min(landY - base, gs.collapse * gs.collapse * 0.006)
+                : base
             // Dress (pink)
             ctx.fillStyle = '#ff88aa'
             ctx.beginPath()
@@ -324,8 +378,8 @@ const DonkeyKongGame = () => {
             // Hair
             ctx.fillStyle = '#ff88aa'
             ctx.fillRect(px + 1, py - 1, 6, 2)
-            // HELP text
-            if (gs.tickN % 60 < 40) {
+            // HELP text — she stops calling once the tower itself is answering
+            if (gs.tickN % 60 < 40 && gs.collapse === 0) {
                 ctx.fillStyle = '#ffffff'
                 ctx.font = '5px monospace'
                 ctx.textAlign = 'center'
@@ -335,7 +389,8 @@ const DonkeyKongGame = () => {
 
         const drawJumpman = () => {
             const p = gs.player
-            const mx = p.x
+            // #3598 — the yank: he can't move his feet, but the pull shakes him.
+            const mx = p.x + (gs.pullTimer > 0 ? Math.sin(gs.pullTimer * 1.2) * 1.2 : 0)
             const my = p.y
             const dir = p.dir
 
@@ -506,7 +561,11 @@ const DonkeyKongGame = () => {
             ctx.scale(scale, scale)
 
             // Platforms
-            gs.platforms.forEach(p => drawGirder(p))
+            gs.platforms.forEach((p, i) => {
+                const [dy, tilt] = girderCrash(i)
+                drawGirder(p, dy, tilt)
+                if (i === TOP_PLAT) drawRivets()
+            })
 
             // Ladders (broken ones flicker)
             gs.ladders.forEach(l => {
@@ -630,6 +689,21 @@ const DonkeyKongGame = () => {
                     if (!gs.watching) { gs.watching = true; setWatching(true) }
                     return gs.watching
                 },
+                // #3598 — finale state for the drive harness (rivets pulled,
+                // pull/collapse phase) and a cheat that skips straight to the
+                // crash so QA can watch it without climbing.
+                rivets: () => gs.rivets.map(r => (r.pulled ? 1 : 0)),
+                finale: () => ({ rivetPhase: gs.rivetPhase, pullTimer: gs.pullTimer, collapse: gs.collapse, dkFall: gs.dkFall }),
+                topple: () => {
+                    gs.rivets.forEach(r => { r.pulled = true })
+                    gs.pullTimer = 0
+                    gs.pullIdx = -1
+                    gs.rivetPhase = true
+                    if (gs.collapse === 0 && gs.winTimer === 0 && gs.deathTimer === 0) gs.collapse = 1
+                },
+                // honest death for the drive (idling on the start corner is not
+                // reliably lethal here — barrels roll away from it).
+                kill: () => { gs.deathTimer = 90; gs.lives = 1 },
             }
             mountDbg({
                 title: 'DONKEY KONG',

@@ -27,13 +27,20 @@ and randomly dive ladders, jump them for 100, reach her girder for the lap's
 ```
 npm run kongcheck            # rules + seat pins + 24-seed watch sweep
 npm run kongcheck -- --mutant # 17 planted bugs, every one must turn it red
+npm run kongcheck -- --mutant  # determinism + rule gates + rule mutants
+npm run kongdrive              # real Chrome: keys, seat, finale crash, restart
 npm run watchcheck -- --only donkeykong   # Y seats/steers/re-seats in Chrome
 npm run contractcheck        # the exposeGame contract (in contractGames)
 ```
 Ports: the browser checks read `DEV_PORT` (slot a 5173 / slot b 5178 / QA 5176).
 
 ## Honest gaps (vs the arcade original)
-- Single screen: the arcade's rivet level and the collapse that finishes it.
+- Rivet finale shipped (#3598): reaching Pauline's girder arms the pull phase
+  and the collapse-rebuild lap now plays. The arcade's second screen — the
+  dedicated 25 m rivet stage with 8 rivets, section-by-section girder drops,
+  crush boxes and the exact score tables — is still UNVERIFIED in-repo and
+  lives here as a finale on the same screen (4 rivets, tilt-fall of the two
+  top girders, +100/pull, +1000 lap bank).
 - Oil drum is decor; the arcade's flame kills. No score bonus timers, no
   50/100-point distinction for walking past vs jumping over barrels' edges.
 - Barrels never fall onto ladders they didn't board (onLadder is per-barrel;

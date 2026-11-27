@@ -208,6 +208,7 @@
     "pongdrive": "node scripts/pongdrive.mjs",
     "asteroidscheck": "node scripts/asteroidscheck.mjs",
     "kongcheck": "node scripts/kongcheck.mjs",
+    "kongdrive": "node scripts/kongdrive.mjs",
     "centipedechek": "node scripts/centipedechek.mjs",
     "defendercheck": "node scripts/defendercheck.mjs",
     "defenderplay": "node scripts/defenderplay.mjs",
