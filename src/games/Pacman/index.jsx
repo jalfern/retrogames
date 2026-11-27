@@ -847,7 +847,11 @@ const PacmanGame = () => {
                 probe: () => ({
                     tick: tickN, score: gs.score, done: gameOver, seed, lives, deaths,
                     round, stage: speedStage(gs.score),
-                    pac: { x: pacman.x, y: pacman.y, p: pacman.progress, speed: pacman.speed },
+                    pac: { x: pacman.x, y: pacman.y, p: pacman.progress, speed: pacman.speed,
+                        // #3755: dir + attract so pacmandrive can map the drawn
+                        // wedge onto the logical cell and prove attract vs play
+                        dir: { x: pacman.dir.x, y: pacman.dir.y } },
+                    attract: isAttractMode,
                     power: pacman.poweredUp ? pacman.powerTimer : 0,
                     fruit: fruitTr.fruit ? { x: fruitTr.fruit.x, y: fruitTr.fruit.y, kind: fruitTr.fruit.kind || 'cherry' } : null,
                     phase: phase, phaseT: phaseT, // #3667: the round-lift machine, visible to QA

@@ -82,7 +82,13 @@ npm run feedbackcheck          # pin law + rollout floor (48)
   shipped the lift: live round clear, freeze flash, wordless chase shorts after
   rounds 1-2, per-kind fruit arpeggios and the stage-lift tell. Shorts beyond
   r2 and the arcade's exact gag scripts stay UNVERIFIED in-repo.
-- No live browser-drive script for this title — browser-tier evidence is
+- ~~No live browser-drive script for this title — browser-tier evidence is
   advisory and the Node gate carries the proof. (This bullet long cited #737 as
   a dev-box Chrome abort; #737 is the feedback-button platform issue — a misref,
-  and every other title's play/drive suite runs live Chrome these days.)
+  and every other title's play/drive suite runs live Chrome these days.)~~
+  #3755 shipped `npm run pacmandrive` — real headless Chrome drives the human
+  loop end to end (attract → key-start → dots → (23,1) energizer frightens →
+  powered ghost-chase → death → respawn → game-over → key-restart), with the
+  drawn wedge pixel-checked against the logical head at both checkpoints
+  (mcsaucerdrive convention). Browser-tier stays advisory by design (#472);
+  `pacmancheck` remains the proof-bearing Node gate.
