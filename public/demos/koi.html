@@ -36,6 +36,13 @@
     #hud { font-size: 9px; letter-spacing:.1em; max-width: 62vw; }
   }
   #sound { position:fixed; right:14px; top:14px; z-index:3; display:flex; gap:8px; }
+  #hud.night { color:#f3d9ae; background:rgba(24,26,52,.82); border-color:#4a3a24; box-shadow:0 2px 0 rgba(0,0,0,.5); }
+  #chips { position:fixed; left:max(12px, env(safe-area-inset-left)); top:max(12px, env(safe-area-inset-top)); z-index:6; display:flex; gap:8px; }
+  #chips button { font:10px/1 Georgia, serif; letter-spacing:.12em; text-transform:uppercase; color:#e8d9b4;
+    background:rgba(26,28,50,.82); border:1px solid #6b5636; border-radius:999px; padding:7px 12px; cursor:pointer;
+    box-shadow:0 2px 0 rgba(0,0,0,.45); transition:all .15s; }
+  #chips button[aria-pressed="true"] { color:#1e1608; background:#f3d9ae; border-color:#f3d9ae; }
+  #chips button:focus-visible { outline:2px solid #f3d9ae; outline-offset:2px; }
 </style>
 </head>
 <body>
@@ -47,6 +54,20 @@
 const canvas = document.getElementById('stage');
 const ctx = canvas.getContext('2d');
 const hintEl = document.getElementById('hud');
+
+// ---------- lantern night mode (#3779) ----------
+// ?style=lantern boots the night skin (darkened garden, stars + moon,
+// normal-mapped pond floor, sprite-stacked koi); L or the LANTERN chip toggles.
+// Day mode is the default and is byte-identical to the pre-lantern build.
+const urlParams = new URLSearchParams(location.search);
+let style = (urlParams.get('style') === 'lantern' || urlParams.get('normalmap') === '1') ? 'lantern' : 'day';
+let normalMode = urlParams.get('normalmap') === '1';
+const lanternMode = () => style === 'lantern';
+// tiny colour helpers for the night render (day paths untouched)
+function hexRGB(hex) { const n = parseInt(hex.slice(1), 16); return [(n >> 16) & 255, (n >> 8) & 255, n & 255]; }
+function mixRGB(a, b, t) { return [a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t, a[2] + (b[2] - a[2]) * t]; }
+function mulRGB(a, m) { return [a[0] * m, a[1] * m, a[2] * m]; }
+function rgbStr(a) { return `rgb(${Math.round(a[0])},${Math.round(a[1])},${Math.round(a[2])})`; }
 
 // ---------- sizing / coordinate model ----------
 let VW = 0, VH = 0, DPR = 1, S = 1, OX = 0, OY = 0;
@@ -70,6 +91,7 @@ function resize() {
   }
   K = H / DESIGN_H0;
   computeLayout();
+  syncLanterns();
 }
 window.addEventListener('resize', resize);
 
@@ -126,11 +148,18 @@ function updateRipples(dt) {
 }
 function drawPadGlow() {
   pondPath(ctx); ctx.save(); ctx.clip();
+  const night = lanternMode();
   for (const p of lilies) {
     const bobY = Math.sin(tNow * 1.1 + p.phase) * 3;
+    const flick = night ? 0.85 + 0.15 * Math.sin(tNow * 2.7 + p.phase * 2.3) : 1;
     const glow = ctx.createRadialGradient(p.x, p.y + bobY, p.r * 0.15, p.x, p.y + bobY, p.r * 1.7);
-    glow.addColorStop(0, 'rgba(255,240,196,0.30)');
-    glow.addColorStop(1, 'rgba(255,240,196,0)');
+    if (night) {
+      glow.addColorStop(0, 'rgba(255,170,80,' + (0.34 * flick).toFixed(3) + ')');
+      glow.addColorStop(1, 'rgba(255,160,70,0)');
+    } else {
+      glow.addColorStop(0, 'rgba(255,240,196,0.30)');
+      glow.addColorStop(1, 'rgba(255,240,196,0)');
+    }
     ctx.fillStyle = glow;
     ctx.beginPath(); ctx.arc(p.x, p.y + bobY, p.r * 1.7, 0, Math.PI * 2); ctx.fill();
   }
@@ -144,8 +173,8 @@ function drawRipples() {
       if (tt <= 0) continue;
       const rad = 14 + tt * 150 * (r.rings === 3 ? 1.15 : 1);
       const a = (1 - tt) * 0.55;
-      ctx.strokeStyle = `rgba(238,244,236,${a})`;
-      ctx.lineWidth = 3.4 * (1 - tt) + 1;
+      ctx.strokeStyle = lanternMode() ? `rgba(190,204,232,${a * 0.55})` : `rgba(238,244,236,${a})`;
+      ctx.lineWidth = lanternMode() ? 2.2 * (1 - tt) + 0.9 : 3.4 * (1 - tt) + 1;
       ctx.beginPath();
       ctx.ellipse(r.x, r.y, rad, rad * 0.62, 0, 0, Math.PI * 2);
       ctx.stroke();
@@ -307,13 +336,19 @@ function drawStones() {
     ctx.fillStyle = 'rgba(8,20,18,0.28)';
     ctx.beginPath(); ctx.ellipse(0, 7, w * 0.92, h * 0.72, 0, 0, Math.PI * 2); ctx.fill();
     const g = ctx.createRadialGradient(0, -h * 0.3, 4, 0, 0, w * 0.95);
-    g.addColorStop(0, '#8d8577');
-    g.addColorStop(0.72, '#6e675c');
-    g.addColorStop(1, '#4d4740');
+    if (lanternMode()) {
+      g.addColorStop(0, '#4a443c');
+      g.addColorStop(0.72, '#332e27');
+      g.addColorStop(1, '#221e19');
+    } else {
+      g.addColorStop(0, '#8d8577');
+      g.addColorStop(0.72, '#6e675c');
+      g.addColorStop(1, '#4d4740');
+    }
     ctx.fillStyle = g;
     ctx.beginPath(); ctx.ellipse(0, 0, w * 0.92, h * 0.9, 0, 0, Math.PI * 2); ctx.fill();
-    ctx.strokeStyle = '#1a2029'; ctx.lineWidth = 2.6; ctx.stroke();
-    ctx.fillStyle = 'rgba(255,255,255,0.20)';
+    ctx.strokeStyle = lanternMode() ? '#0d0b08' : '#1a2029'; ctx.lineWidth = 2.6; ctx.stroke();
+    ctx.fillStyle = lanternMode() ? 'rgba(255,240,210,0.10)' : 'rgba(255,255,255,0.20)';
     ctx.beginPath(); ctx.ellipse(-w * 0.22, -h * 0.42, w * 0.34, h * 0.20, -0.3, 0, Math.PI * 2); ctx.fill();
     ctx.restore();
   }
@@ -408,6 +443,665 @@ function drawGravel(x, y, w, h, count, seed) {
   }
 }
 
+// ---- lantern night mode (#3779) ----
+// Toggle: ?style=lantern or ?normalmap=1 URL param, L key, or the LANTERN / NORMALS chips.
+// Day is the default and is untouched. Normals view: purple-ish normals normals pass.
+let lanterns = [];
+let stars = [];
+let glCanvas = null;
+let gl = null;
+let glU = null;
+
+const GL_VERT = `#version 300 es
+layout(location = 0) in vec2 a_pos;
+void main() { gl_Position = vec4(a_pos, 0.0, 1.0); }`;
+const GL_FRAG = `#version 300 es
+precision highp float;
+uniform float u_time;
+uniform vec2 u_size;
+uniform vec2 u_center;
+uniform vec2 u_radii;
+uniform int u_viewNormal;
+uniform vec3 u_lights[4];
+uniform float u_intens[4];
+uniform vec4 u_ripples[6];
+uniform vec4 u_pads[12];
+out vec4 outColor;
+float hash21(vec2 p) {
+  p = fract(p * vec2(123.34, 456.21));
+  p += dot(p, p + 45.32);
+  return fract(p.x * p.y);
+}
+float heightAt(vec2 p) {
+  float h = 0.10 * sin(p.x * 0.011 + u_time * 0.55) * sin(p.y * 0.014 - u_time * 0.42);
+  vec2 cell = floor(p / vec2(96.0, 84.0));
+  for (int oy = -1; oy <= 1; oy++) {
+    for (int ox = -1; ox <= 1; ox++) {
+      vec2 c = cell + vec2(float(ox), float(oy));
+      float sel = hash21(c + vec2(0.31, 0.73));
+      float px = (c.x + hash21(c + vec2(11.0, 1.0))) * 96.0;
+      float py = (c.y + hash21(c + vec2(5.0, 13.0))) * 84.0;
+      float rad = 9.0 + sel * 20.0;
+      float dd = distance(p, vec2(px, py));
+      h += 0.22 * exp(-(dd * dd) / (2.0 * rad * rad));
+    }
+  }
+  for (int i = 0; i < 12; i++) {
+    if (u_pads[i].w < 0.5) continue;
+    vec2 pp = u_pads[i].xy;
+    float pr = u_pads[i].z;
+    float dd = distance(p, pp);
+    if (dd > pr * 1.32) continue;
+    float ang = atan(p.y - pp.y, p.x - pp.x);
+    float crest = exp(-pow((dd - pr * 0.92) / 6.5, 2.0)) * 0.30;
+    float vein = pow(max(0.0, sin(ang * 6.0 + u_time * 0.12)), 1.6) * exp(-pow((dd - pr * 0.55) / (pr * 0.45), 2.0)) * 0.34;
+    h += crest + vein;
+  }
+  for (int i = 0; i < 6; i++) {
+    if (u_ripples[i].w < 0.01) continue;
+    float dd = distance(p, u_ripples[i].xy);
+    h += u_ripples[i].w * exp(-pow((dd - u_ripples[i].z) / 15.0, 2.0));
+  }
+  return h;
+}
+void main() {
+  vec2 p = vec2(gl_FragCoord.x, u_size.y - gl_FragCoord.y);
+  vec2 d = p - u_center;
+  float rr = length(vec2(d.x / u_radii.x, d.y / u_radii.y));
+  if (rr > 1.04) discard;
+  float h = heightAt(p);
+  float eps = 2.5;
+  float hx = heightAt(p + vec2(eps, 0.0)) - heightAt(p - vec2(eps, 0.0));
+  float hy = heightAt(p + vec2(0.0, eps)) - heightAt(p - vec2(0.0, eps));
+  vec3 n3 = normalize(vec3(-hx * 0.55, -hy * 0.55, 0.85));
+  if (u_viewNormal == 1) {
+    vec3 norm = normalize(vec3(-hx * 2.6, -hy * 2.6, 0.85));
+    // amplified purple normals so pebble noise, pad veins and crest rims read
+    vec3 col = vec3(0.58 + norm.x * 0.42, 0.44 + norm.y * 0.36, 0.84);
+    col = mix(vec3(0.34, 0.26, 0.55), col, 0.78);
+    outColor = vec4(col, 1.0);
+    return;
+  }
+  vec3 base = mix(vec3(0.045, 0.105, 0.138), vec3(0.075, 0.140, 0.168), smoothstep(0.1, 1.0, rr));
+  vec3 col = base * vec3(0.45, 0.55, 0.68);
+  col += vec3(0.045, 0.055, 0.095) * (1.0 - rr * 0.35);  // cold moonlight
+  col *= 1.0 + n3.y * 0.26;
+  for (int i = 0; i < 4; i++) {
+    float falloff = u_lights[i].z;
+    float dist = distance(p, u_lights[i].xy);
+    float fall = u_intens[i] / (1.0 + (dist / falloff) * (dist / falloff));
+    col += vec3(1.00, 0.60, 0.28) * fall * 0.34;
+  }
+  float spec = pow(max(h, 0.0), 2.2) * 0.78;
+  col += vec3(0.95, 0.92, 0.78) * clamp(spec, 0.0, 0.50);
+  float rim = smoothstep(0.82, 1.05, rr);
+  col *= 1.0 - rim * 0.55;
+  outColor = vec4(col, 1.0);
+}`;
+
+function syncLanterns() {
+  const pond = L.pond;
+  const defs = [
+    { i: 0, hang: false, drift: true, rxr: 0.44, ryr: 0.46, speed: 0.085, phase: 0.5 },
+    { i: 1, hang: false, drift: true, rxr: 0.56, ryr: 0.34, speed: -0.065, phase: 2.7 },
+    { i: 2, hang: false, drift: true, rxr: 0.36, ryr: 0.56, speed: 0.050, phase: 4.6 },
+    { i: 3, hang: true, drift: false, a: null },
+  ];
+  const old = lanterns;
+  lanterns = defs.map(d => {
+    let x, y;
+    if (d.hang) {
+      x = 915;
+      y = 120 * K + 122;
+    } else {
+      const a = d.phase + tNow * d.speed;
+      x = pond.cx + Math.cos(a) * pond.rx * d.rxr;
+      y = pond.cy + Math.sin(a) * pond.ry * d.ryr;
+    }
+    const ol = old.find(o => o.i === d.i);
+    return { i: d.i, hang: d.hang, drift: d.drift, a: d.a, rxr: d.rxr, ryr: d.ryr, speed: d.speed, phase: d.phase, x, y, bob: ol ? ol.bob : 0, sway: ol ? ol.sway : 0.4 + Math.random() * 2.2 };
+  });
+  // stars, seeded, clear the moon disc
+  const rng = mulberry(4242);
+  const moon = { x: 520, y: 130, r: 46 };
+  stars = [];
+  const horizon = L.horizon;
+  for (let i = 0; i < 34; i++) {
+    const x = 30 + rng() * 1140;
+    const y = 22 + rng() * Math.max(10, horizon - 48);
+    if (Math.hypot(x - moon.x, y - moon.y) < 78) continue;
+    stars.push({ x, y, r: 0.9 + rng() * 1.9, tw: rng() * 6.28, twAmp: 0.35 + rng() * 0.55 });
+  }
+}
+
+function updateLanterns(dt) {
+  const pond = L.pond;
+  for (const ln of lanterns) {
+    if (ln.drift) {
+      const a = ln.phase + tNow * ln.speed;
+      ln.x = pond.cx + Math.cos(a) * pond.rx * ln.rxr + Math.sin(tNow * 0.5 + ln.i * 2.1) * 13;
+      ln.y = pond.cy + Math.sin(a) * pond.ry * ln.ryr + Math.cos(tNow * 0.38 + ln.i * 1.4) * 9;
+    }
+    let target = 0;
+    for (const r of ripples) {
+      const tt = Math.min(1, Math.max(0, r.t));
+      const rad = 14 + tt * 150 * (r.rings === 3 ? 1.15 : 1);
+      const d = Math.hypot(ln.x - r.x, ln.y - r.y);
+      target += Math.exp(-((d - rad) * (d - rad)) / (2 * 30 * 30)) * (1 - tt) * 2.6 * (r.rings === 3 ? 1.25 : 1);
+    }
+    ln.bob += (Math.min(4.2, target) - ln.bob) * Math.min(1, dt * 5.5);
+    ln.sway = Math.sin(tNow * 0.9 + ln.i * 1.7) * 0.05;
+  }
+}
+
+function ensureGL() {
+  const wantW = 1200, wantH = Math.round(H);
+  if (gl && glCanvas && glCanvas.width === wantW && glCanvas.height === wantH) return true;
+  // (re)build canvas + context
+  glCanvas = document.createElement('canvas');
+  glCanvas.width = wantW; glCanvas.height = wantH;
+  glCanvas.style.display = 'none';
+  const cgl = glCanvas.getContext('webgl2', { preserveDrawingBuffer: true, antialias: false, depth: false, stencil: false, alpha: true });
+  if (!cgl) { gl = null; glU = null; return false; }
+  const vs = cgl.createShader(cgl.VERTEX_SHADER);
+  cgl.shaderSource(vs, GL_VERT); cgl.compileShader(vs);
+  if (!cgl.getShaderParameter(vs, cgl.COMPILE_STATUS)) { console.error('koi GL vertex:', cgl.getShaderInfoLog(vs)); gl = null; glU = null; return false; }
+  const fs = cgl.createShader(cgl.FRAGMENT_SHADER);
+  cgl.shaderSource(fs, GL_FRAG); cgl.compileShader(fs);
+  if (!cgl.getShaderParameter(fs, cgl.COMPILE_STATUS)) { console.error('koi GL fragment:', cgl.getShaderInfoLog(fs)); gl = null; glU = null; return false; }
+  const prog = cgl.createProgram();
+  cgl.attachShader(prog, vs); cgl.attachShader(prog, fs); cgl.linkProgram(prog);
+  if (!cgl.getProgramParameter(prog, cgl.LINK_STATUS)) { console.error('koi GL link:', cgl.getProgramInfoLog(prog)); gl = null; glU = null; return false; }
+  cgl.useProgram(prog);
+  const buf = cgl.createBuffer();
+  cgl.bindBuffer(cgl.ARRAY_BUFFER, buf);
+  cgl.bufferData(cgl.ARRAY_BUFFER, new Float32Array([-1, -1, 3, -1, -1, 3]), cgl.STATIC_DRAW);
+  const loc = cgl.getAttribLocation(prog, 'a_pos');
+  cgl.enableVertexAttribArray(loc);
+  cgl.vertexAttribPointer(loc, 2, cgl.FLOAT, false, 0, 0);
+  gl = cgl;
+  glU = {
+    prog,
+    time: cgl.getUniformLocation(prog, 'u_time'),
+    size: cgl.getUniformLocation(prog, 'u_size'),
+    center: cgl.getUniformLocation(prog, 'u_center'),
+    radii: cgl.getUniformLocation(prog, 'u_radii'),
+    viewNormal: cgl.getUniformLocation(prog, 'u_viewNormal'),
+    lights: cgl.getUniformLocation(prog, 'u_lights'),
+    intens: cgl.getUniformLocation(prog, 'u_intens'),
+    ripples: cgl.getUniformLocation(prog, 'u_ripples'),
+    pads: cgl.getUniformLocation(prog, 'u_pads'),
+  };
+  // detect context loss handled at the render site
+  return true;
+}
+
+function drawLanternPond2D() {
+  // fallback when WebGL is unavailable
+  const pond = L.pond;
+  pondPath(ctx);
+  const g = ctx.createRadialGradient(pond.cx, pond.cy, 40, pond.cx, pond.cy, pond.rx * 1.1);
+  g.addColorStop(0, '#181a2e');
+  g.addColorStop(0.55, '#1c2136');
+  g.addColorStop(1, '#232a3c');
+  ctx.fillStyle = g; ctx.fill();
+  ctx.save(); pondPath(ctx); ctx.clip();
+  const rng = mulberry(77);
+  for (let i = 0; i < 90; i++) {
+    const a = rng() * Math.PI * 2, rr = Math.sqrt(rng()) * 0.9;
+    const px = pond.cx + Math.cos(a) * pond.rx * rr;
+    const py = pond.cy + Math.sin(a) * pond.ry * rr;
+    ctx.fillStyle = 'rgba(120,110,95,0.22)';
+    ctx.beginPath(); ctx.arc(px, py, 4 + rng() * 9, 0, Math.PI * 2); ctx.fill();
+  }
+  for (const ln of lanterns) {
+    const flick = 1 + Math.sin(tNow * 3.1 + ln.i * 1.9) * 0.10;
+    const gr = (ln.hang ? 260 : 210) * flick;
+    const gg = ctx.createRadialGradient(ln.x, ln.y - 28, 10, ln.x, ln.y - 28, gr);
+    gg.addColorStop(0, 'rgba(255,190,96,0.50)');
+    gg.addColorStop(0.6, 'rgba(255,160,70,0.18)');
+    gg.addColorStop(1, 'rgba(255,150,60,0)');
+    ctx.fillStyle = gg;
+    ctx.beginPath(); ctx.arc(ln.x, ln.y - 28, gr, 0, Math.PI * 2); ctx.fill();
+  }
+  ctx.restore();
+  pondPath(ctx); ctx.lineWidth = 6; ctx.strokeStyle = '#0d1220'; ctx.stroke();
+}
+
+function drawLanternPond() {
+  const pond = L.pond;
+  if (!ensureGL()) { drawLanternPond2D(); return; }
+  const t = tNow;
+  const gl0 = gl;
+  try {
+    gl0.viewport(0, 0, glCanvas.width, glCanvas.height);
+    gl0.useProgram(glU.prog);
+    gl0.uniform1f(glU.time, t);
+    gl0.uniform2f(glU.size, 1200, glCanvas.height);
+    gl0.uniform2f(glU.center, pond.cx, pond.cy);
+    gl0.uniform2f(glU.radii, pond.rx, pond.ry);
+    gl0.uniform1i(glU.viewNormal, normalMode ? 1 : 0);
+    const lights = [], intens = [];
+    for (const ln of lanterns) {
+      const bob = ln.bob || 0;
+      const fl = 1 + Math.sin(t * 3.1 + ln.i * 1.9) * 0.14 + Math.sin(t * 7.3 + ln.i * 3.1) * 0.06;
+      const x = ln.x;
+      const y = ln.hang ? (ln.y - 28 + bob * 0.8) : (ln.y - 30 + bob * 0.8);
+      lights.push([x, y, ln.hang ? 150 : 128]);
+      intens.push((ln.hang ? 1.05 : 0.88) * fl);
+    }
+    const ripplesU = [];
+    for (let i = 0; i < 6; i++) {
+      const src = ripples[Math.max(0, ripples.length - 6 + i)];
+      if (!src) { ripplesU.push([0, 0, 0, 0]); continue; }
+      const rad = 14 + Math.min(1, Math.max(0, src.t)) * 150 * (src.rings === 3 ? 1.15 : 1);
+      // keep shader ripples at zero: the height bump renders as a pale
+      // disc under the rings; the drawn rings alone read as water ripples
+      ripplesU.push([src.x, src.y, rad, 0.0]);
+    }
+    const padsU = [];
+    for (let i = 0; i < 12; i++) {
+      const p = lilies[i];
+      if (p) padsU.push([p.x, p.y + Math.sin(t * 0.55 + p.bob) * 5, p.r, 1]);
+      else padsU.push([0, 0, 0, 0]);
+    }
+    gl0.uniform3fv(glU.lights, new Float32Array(lights.flat()));
+    gl0.uniform1fv(glU.intens, new Float32Array(intens));
+    gl0.uniform4fv(glU.ripples, new Float32Array(ripplesU.flat()));
+    gl0.uniform4fv(glU.pads, new Float32Array(padsU.flat()));
+    gl0.drawArrays(gl0.TRIANGLES, 0, 3);
+  } catch (e) {
+    console.error('koi GL render failed:', e);
+    gl = null; glU = null;
+    drawLanternPond2D();
+    return;
+  }
+  ctx.drawImage(glCanvas, 0, 0, 1200, H);
+  pondPath(ctx); ctx.lineWidth = 6; ctx.strokeStyle = '#0d1220'; ctx.stroke();
+}
+
+function drawNightDusk() {
+  ctx.fillStyle = 'rgba(6,9,24,0.86)';
+  ctx.fillRect(0, 0, L.w, L.h);
+  const hz = L.horizon;
+  const ember = ctx.createLinearGradient(0, hz - 80, 0, hz + 30);
+  ember.addColorStop(0, 'rgba(255,140,60,0)');
+  ember.addColorStop(0.7, 'rgba(255,130,58,0.14)');
+  ember.addColorStop(1, 'rgba(255,130,58,0)');
+  ctx.fillStyle = ember;
+  ctx.fillRect(0, hz - 80, L.w, 110);
+  const moonX = 520, moonY = 130, moonR = 46;
+  const mg = ctx.createRadialGradient(moonX, moonY, moonR * 0.4, moonX, moonY, moonR * 1.95);
+  mg.addColorStop(0, 'rgba(235,234,220,0.42)');
+  mg.addColorStop(1, 'rgba(235,234,220,0)');
+  ctx.fillStyle = mg; ctx.beginPath(); ctx.arc(moonX, moonY, moonR * 1.95, 0, Math.PI * 2); ctx.fill();
+  ctx.fillStyle = '#ecdfc4'; ctx.beginPath(); ctx.arc(moonX, moonY, moonR, 0, Math.PI * 2); ctx.fill();
+  ctx.fillStyle = 'rgba(214,205,182,0.8)';
+  ctx.beginPath(); ctx.arc(moonX - 12, moonY - 8, moonR * 0.16, 0, Math.PI * 2); ctx.fill();
+  ctx.beginPath(); ctx.arc(moonX + 14, moonY + 10, moonR * 0.10, 0, Math.PI * 2); ctx.fill();
+  ctx.beginPath(); ctx.arc(moonX + 4, moonY - 16, moonR * 0.08, 0, Math.PI * 2); ctx.fill();
+  for (const s of stars) {
+    const tw = s.twAmp * (0.55 + 0.45 * Math.sin(tNow * 1.7 + s.tw));
+    ctx.fillStyle = 'rgba(235,238,255,' + tw.toFixed(3) + ')';
+    ctx.beginPath(); ctx.arc(s.x, s.y, s.r, 0, Math.PI * 2); ctx.fill();
+  }
+}
+
+function drawWaterTintNight() {
+  pondPath(ctx); ctx.save(); ctx.clip();
+  const tint = ctx.createLinearGradient(0, L.pond.cy - L.pond.ry, 0, L.pond.cy + L.pond.ry);
+  tint.addColorStop(0, 'rgba(20,26,52,0.42)');
+  tint.addColorStop(0.5, 'rgba(18,22,44,0.36)');
+  tint.addColorStop(1, 'rgba(10,14,32,0.52)');
+  ctx.fillStyle = tint; ctx.fillRect(0, 0, L.w, L.h);
+  for (const ln of lanterns) {
+    if (ln.hang) continue;
+    const sx = Math.max(L.pond.cx - L.pond.rx * 0.72, Math.min(L.pond.cx + L.pond.rx * 0.72, ln.x));
+    const y0 = Math.max(L.pond.cy - L.pond.ry * 0.66, ln.y - 14);
+    const len = 108 + (ln.bob || 0) * 42;
+    const flick = 1 + Math.sin(tNow * 3.1 + ln.i * 1.9) * 0.14;
+    const rg = ctx.createLinearGradient(0, y0, 0, y0 + len);
+    rg.addColorStop(0, 'rgba(255,168,84,' + (0.30 * flick).toFixed(3) + ')');
+    rg.addColorStop(1, 'rgba(255,168,84,0)');
+    ctx.fillStyle = rg;
+    for (const off of [-0.32, 0, 0.32]) {
+      const wHalf = 26 * (1 - Math.abs(off) * 0.9);
+      const x = sx + off * 52;
+      const w = wHalf + Math.sin(tNow * 2.2 + off * 4 + ln.i) * 9;
+      ctx.beginPath();
+      ctx.moveTo(x - w, y0);
+      ctx.lineTo(x + w, y0);
+      ctx.lineTo(x + w * 0.55, y0 + len);
+      ctx.lineTo(x - w * 0.55, y0 + len);
+      ctx.closePath();
+      ctx.fill();
+    }
+  }
+  const hang = lanterns.find(l => l.hang);
+  if (hang) {
+    const flick = 1 + Math.sin(tNow * 2.7 + 1.3) * 0.16;
+    const x = Math.max(L.pond.cx - L.pond.rx * 0.55, Math.min(L.pond.cx + L.pond.rx * 0.55, hang.x));
+    const y0 = Math.max(L.pond.cy - L.pond.ry * 0.66, hang.y + 14);
+    const len = 150 + (hang.bob || 0) * 46;
+    const rg = ctx.createLinearGradient(0, y0, 0, y0 + len);
+    rg.addColorStop(0, 'rgba(255,168,84,' + (0.26 * flick).toFixed(3) + ')');
+    rg.addColorStop(1, 'rgba(255,168,84,0)');
+    ctx.fillStyle = rg;
+    ctx.beginPath();
+    ctx.moveTo(x - 24, y0); ctx.lineTo(x + 24, y0);
+    ctx.lineTo(x + 13, y0 + len); ctx.lineTo(x - 13, y0 + len);
+    ctx.closePath(); ctx.fill();
+  }
+  const edge = ctx.createRadialGradient(L.pond.cx, L.pond.cy, L.pond.rx * 0.05, L.pond.cx, L.pond.cy, L.pond.rx * 1.12);
+  edge.addColorStop(0, 'rgba(5,8,18,0.46)');
+  edge.addColorStop(0.55, 'rgba(5,8,18,0.20)');
+  edge.addColorStop(1, 'rgba(5,8,18,0.06)');
+  ctx.fillStyle = edge; ctx.fillRect(0, 0, L.w, L.h);
+  ctx.restore();
+  pondPath(ctx); ctx.lineWidth = 6; ctx.strokeStyle = '#0d1220'; ctx.stroke();
+}
+
+function drawLanterns() {
+  for (const ln of lanterns) {
+    const bob = ln.bob || 0;
+    const sway = Math.sin(tNow * 0.9 + ln.i * 1.7) * 0.05;
+    const fl = 1 + Math.sin(tNow * 3.1 + ln.i * 1.9) * 0.14 + Math.sin(tNow * 7.3 + ln.i * 3.1) * 0.06;
+    const lx = ln.x, ly = ln.y + bob;
+    if (ln.hang) {
+      ctx.save();
+      ctx.strokeStyle = '#241c12';
+      ctx.lineWidth = 2.5;
+      ctx.beginPath(); ctx.moveTo(lx, 120 * K + 26); ctx.lineTo(lx, ly - 34); ctx.stroke();
+      ctx.restore();
+    }
+    ctx.save();
+    ctx.translate(lx, ly);
+    ctx.rotate(sway);
+    // warm radial glow
+    const gR = 92 * fl;
+    const g = ctx.createRadialGradient(0, -30, 6, 0, -30, gR);
+    g.addColorStop(0, 'rgba(255,190,96,0.55)');
+    g.addColorStop(0.45, 'rgba(255,160,72,0.20)');
+    g.addColorStop(1, 'rgba(255,150,66,0)');
+    ctx.fillStyle = g; ctx.beginPath(); ctx.arc(0, -30, gR, 0, Math.PI * 2); ctx.fill();
+    if (!ln.hang && !ln.drift) {
+      // pole + base (shore-mounted lanterns only)
+      ctx.strokeStyle = '#1f1a12'; ctx.lineWidth = 5; ctx.lineCap = 'round';
+      ctx.beginPath(); ctx.moveTo(0, 0); ctx.lineTo(0, -26); ctx.stroke();
+      ctx.fillStyle = '#241d14';
+      ctx.beginPath(); ctx.ellipse(0, 0, 15, 5.4, 0, 0, Math.PI * 2); ctx.fill();
+      ctx.strokeStyle = '#0f0d09'; ctx.lineWidth = 2; ctx.stroke();
+    } else if (ln.drift) {
+      // floating lanterns: soft warm reflection smear on the pond surface
+      const fl2 = 1 + Math.sin(tNow * 2.7 + ln.i * 2.3) * 0.22;
+      const rg2 = ctx.createRadialGradient(0, 2, 2, 0, 2, 44 * fl2);
+      rg2.addColorStop(0, 'rgba(255,180,90,0.30)');
+      rg2.addColorStop(1, 'rgba(255,180,90,0)');
+      ctx.fillStyle = rg2;
+      ctx.beginPath(); ctx.ellipse(0, 2, 46 * fl2, 9, 0, 0, Math.PI * 2); ctx.fill();
+    }
+    // cap
+    ctx.fillStyle = '#241d14';
+    ctx.beginPath(); ctx.moveTo(-11, -46); ctx.lineTo(11, -46); ctx.lineTo(0, -58); ctx.closePath(); ctx.fill();
+    ctx.strokeStyle = '#0f0d09'; ctx.lineWidth = 2.2; ctx.stroke();
+    // body
+    const bg = ctx.createLinearGradient(-11, 0, 11, 0);
+    bg.addColorStop(0, '#3a2b18'); bg.addColorStop(0.5, '#5a4123'); bg.addColorStop(1, '#3a2b18');
+    ctx.fillStyle = bg;
+    ctx.beginPath();
+    ctx.moveTo(-10, -44); ctx.lineTo(10, -44); ctx.lineTo(12, -20); ctx.lineTo(-12, -20); ctx.closePath(); ctx.fill();
+    ctx.strokeStyle = '#0f0d09'; ctx.lineWidth = 2.4; ctx.stroke();
+    // flame core
+    const fg = ctx.createRadialGradient(0, -31, 1, 0, -31, 12);
+    fg.addColorStop(0, 'rgba(255,238,180,0.95)');
+    fg.addColorStop(0.55, 'rgba(255,190,96,0.55)');
+    fg.addColorStop(1, 'rgba(255,170,80,0)');
+    ctx.fillStyle = fg; ctx.beginPath(); ctx.arc(0, -31, 12, 0, Math.PI * 2); ctx.fill();
+    ctx.restore();
+  }
+}
+
+function lanternAmb(k) {
+  // moonlight ambient + warm falloff from the nearest lantern
+  let best = null, bd = Infinity;
+  for (const ln of lanterns) {
+    const d = Math.hypot(ln.x - k.x, ln.y - k.y);
+    if (d < bd) { bd = d; best = ln; }
+  }
+  const t = tNow;
+  const flick = best ? 1 + Math.sin(t * 3.1 + best.i * 1.9) * 0.06 : 1;
+  const fall = best ? (best.hang ? 1.0 : 0.85) / (1 + (bd / 230) * (bd / 230)) * flick : 0;
+  return [0.34 + 0.92 * fall, 0.36 + 0.58 * fall, 0.44 + 0.26 * fall, fall];
+}
+function paintPatternNight(k, t, L_, W_, amb) {
+  const v = k.variety;
+  const rng = mulberry(v.seed + 101);
+  const kind = v.name;
+  const lit = (c, m = 1) => { const [r, g, b] = hexRGB(c); return `rgb(${Math.min(255, Math.round(r * amb[0] * m))},${Math.min(255, Math.round(g * amb[1] * m))},${Math.min(255, Math.round(b * amb[2] * m))})`; };
+  const litA = (r, g, b, a, m = 1) => `rgba(${Math.min(255, Math.round(r * amb[0] * m))},${Math.min(255, Math.round(g * amb[1] * m))},${Math.min(255, Math.round(b * amb[2] * m))},${a})`;
+  if (kind === 'Ogon') {
+    ctx.fillStyle = litA(255, 236, 170, 0.75, 0.82);
+    ctx.beginPath();
+    ctx.ellipse(0, -W_ * 0.12, L_ * 0.30, W_ * 0.30, 0.05, 0, Math.PI * 2); ctx.fill();
+    return;
+  }
+  if (kind === 'Asagi') {
+    ctx.fillStyle = lit(v.patch, 0.9);
+    ctx.beginPath();
+    ctx.ellipse(-L_ * 0.05, -W_ * 0.05, L_ * 0.42, W_ * 0.46, 0, 0, Math.PI * 2); ctx.fill();
+    ctx.fillStyle = litA(120, 140, 150, 0.4, 0.85);
+    ctx.beginPath();
+    ctx.ellipse(L_ * 0.22, W_ * 0.10, L_ * 0.26, W_ * 0.34, 0, 0, Math.PI * 2); ctx.fill();
+    return;
+  }
+  if (kind === 'Tancho') {
+    ctx.fillStyle = lit(v.patch, 0.9);
+    ctx.beginPath();
+    ctx.ellipse(L_ * 0.26, 0, W_ * 0.38, W_ * 0.36, 0, 0, Math.PI * 2); ctx.fill();
+    ctx.fillStyle = litA(180, 80, 50, 0.35, 0.85);
+    ctx.beginPath();
+    ctx.ellipse(L_ * 0.02, 0, L_ * 0.50, W_ * 0.22, 0, 0, Math.PI * 2); ctx.fill();
+    return;
+  }
+  const nP = kind === 'Sanke' ? 3 : kind === 'Showa' ? 3 : kind === 'Bekko' ? 2 : 3;
+  for (let i = 0; i < nP; i++) {
+    const u = 0.16 + 0.52 * rng();
+    const x = L_ * 0.5 - u * L_;
+    const y = (rng() - 0.5) * W_ * 0.55;
+    const rr = W_ * (0.30 + rng() * 0.30);
+    ctx.fillStyle = i % 2 === 0 ? lit(v.patch, 0.9) : lit(v.patch2 || v.patch, 0.9);
+    if (kind === 'Sanke' && i === 2) ctx.fillStyle = lit(v.patch2 || v.patch, 0.9);
+    if (kind === 'Showa' && i === 2) ctx.fillStyle = lit(v.patch2 || v.patch, 0.9);
+    if (kind === 'Bekko' && i === 1) ctx.fillStyle = lit(v.patch, 0.9);
+    ctx.beginPath();
+    ctx.ellipse(x, y, rr * (1.1 + rng() * 0.5), rr * 0.9, (rng() - 0.5) * 0.6, 0, Math.PI * 2);
+    ctx.fill();
+  }
+  if (kind === 'Bekko') {
+    ctx.fillStyle = lit(v.patch, 0.9);
+    ctx.beginPath();
+    ctx.ellipse(L_ * 0.30, 0, W_ * 0.38, W_ * 0.38, 0, 0, Math.PI * 2); ctx.fill();
+  }
+  if (kind === 'Hi Utsuri' || kind === 'Kohaku') {
+    ctx.fillStyle = 'rgba(0,0,0,0.22)';
+    ctx.beginPath();
+    ctx.ellipse(-L_ * 0.28, 0, L_ * 0.22, W_ * 0.35, 0, 0, Math.PI * 2); ctx.fill();
+  }
+}
+function nearestLanternFor(k) {
+  let best = null, bd = Infinity;
+  for (const ln of lanterns) {
+    const d = Math.hypot(ln.x - k.x, ln.y - k.y);
+    if (d < bd) { bd = d; best = ln; }
+  }
+  return { ln: best, d: bd };
+}
+// Sprite-stacked ridges: thin cross-section slices along the spine (drawn
+// tail->head), each shifted slightly toward the nearest lantern (roll/bank on
+// the turn) and shaded by its own world-distance warm light + moonlight, so
+// lantern light wraps the ridge.
+function drawKoiStack(k, t, amb, L_) {
+  const n = 16;
+  const best = nearestLanternFor(k).ln;
+  const cosH = Math.cos(k.heading), sinH = Math.sin(k.heading);
+  const localAng = best ? Math.atan2(best.y - k.y, best.x - k.x) - k.heading : -Math.PI / 2;
+  const lx = Math.cos(localAng), ly = Math.sin(localAng);
+  const base = hexRGB(k.variety.base);
+  for (let i = 0; i < n; i++) {
+    const u = 0.04 + 0.86 * (i / (n - 1)); // 0 head -> ~0.9 tail along the body
+    const p = spineAt(k, t, u);
+    const w = L_ * 0.36 * 0.5 * widthProfile(u) * 0.98;
+    const band = L_ * (0.052 + 0.020 * (1 - u));
+    const lift = L_ * 0.030 * (0.45 + 0.55 * widthProfile(u));
+    const ox = lx * lift, oy = ly * lift;
+    const wx = k.x + (p.x + ox) * cosH - (p.y + oy) * sinH;
+    const wy = k.y + (p.x + ox) * sinH + (p.y + oy) * cosH;
+    const dL = best ? Math.hypot(best.x - wx, best.y - wy) : 1e9;
+    const fall = best ? (best.hang ? 1.05 : 0.82) / (1 + (dL / 200) * (dL / 200)) : 0;
+    const flick = 1 + Math.sin(t * 3.1 + (best ? best.i * 1.9 : 0)) * 0.07;
+    const warm = Math.min(1, fall * 2.05 * flick);
+    const moon = 0.50; // moonlight floor
+    const rr = Math.min(255, Math.round(base[0] * (moon * amb[0] + 0.62 * warm)));
+    const gg = Math.min(255, Math.round(base[1] * (moon * amb[1] + 0.52 * warm)));
+    const bb = Math.min(255, Math.round(base[2] * (moon * amb[2] + 0.46 * warm)));
+    // wide-thin rib: long axis across the spine (local y), thin along the body
+    ctx.fillStyle = rgbStr([rr, gg, bb]);
+    ctx.beginPath();
+    ctx.ellipse(p.x + ox, p.y + oy, Math.max(1.6, band), Math.max(2, w), 0, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.strokeStyle = 'rgba(8,10,18,0.40)';
+    ctx.lineWidth = 1.2;
+    ctx.stroke();
+  }
+}
+function drawKoiLantern(k) {
+  const t = tNow;
+  const L_ = k.size;
+  const fade = k.hidden ? 0.30 : 1;
+  const amb = lanternAmb(k);
+  ctx.save();
+  ctx.translate(k.x, k.y);
+  ctx.rotate(k.heading);
+  ctx.globalAlpha = fade;
+  const hiddenShrink = k.hidden ? 0.9 : 1;
+  ctx.scale(hiddenShrink, hiddenShrink);
+  const base = hexRGB(k.variety.base);
+  const patchRGB = hexRGB(k.variety.patch || k.variety.base);
+  const litC = (c, m = 1) => { const [r, g, b] = c; return rgbStr([Math.min(255, r * amb[0] * m), Math.min(255, g * amb[1] * m), Math.min(255, b * amb[2] * m)]); };
+  const tailN = 16;
+  const tailL = [], tailR = [];
+  for (let i = 0; i <= tailN; i++) {
+    const u = i / tailN;
+    const xu = spineAt(k, t, 0.96 + u * 0.44);
+    const w = L_ * (0.045 + 0.115 * Math.sin(u * Math.PI * 0.62));
+    tailL.push({ x: xu.x, y: xu.y - w });
+    tailR.push({ x: xu.x, y: xu.y + w });
+  }
+  ctx.fillStyle = litC(base, 0.82);
+  ctx.globalAlpha = fade * 0.92;
+  ctx.beginPath();
+  ctx.moveTo(tailL[0].x, tailL[0].y);
+  for (let i = 1; i <= tailN; i++) {
+    const xc = (tailL[i - 1].x + tailL[i].x) / 2, yc = (tailL[i - 1].y + tailL[i].y) / 2;
+    ctx.quadraticCurveTo(tailL[i - 1].x, tailL[i - 1].y, xc, yc);
+  }
+  ctx.lineTo(tailL[tailN].x, tailL[tailN].y);
+  const midX = (tailL[tailN].x + tailR[tailN].x) / 2;
+  const notchX = midX + L_ * 0.05;
+  const midY = (tailL[tailN].y + tailR[tailN].y) / 2;
+  ctx.lineTo(notchX, midY);
+  ctx.lineTo(tailR[tailN].x, tailR[tailN].y);
+  for (let i = tailN; i >= 1; i--) {
+    const xc = (tailR[i].x + tailR[i - 1].x) / 2, yc = (tailR[i].y + tailR[i - 1].y) / 2;
+    ctx.quadraticCurveTo(tailR[i].x, tailR[i].y, xc, yc);
+  }
+  ctx.lineTo(tailR[0].x, tailR[0].y);
+  ctx.closePath(); ctx.fill();
+  ctx.lineWidth = 3; ctx.strokeStyle = '#0e1420'; ctx.stroke();
+  ctx.globalAlpha = fade;
+  // side fins (dim)
+  const flap = Math.sin(t * 5 + k.phase * 2) * 0.28;
+  for (const s of [-1, 1]) {
+    ctx.save(); ctx.translate(L_ * 0.10, s * L_ * 0.14); ctx.rotate(s * (0.55 + flap));
+    ctx.fillStyle = 'rgba(0,0,0,0.30)';
+    ctx.beginPath(); ctx.ellipse(0, s * 8, L_ * 0.19, L_ * 0.055, 0, 0, Math.PI * 2); ctx.fill();
+    ctx.fillStyle = litC(patchRGB, 0.55);
+    ctx.globalAlpha = fade * 0.75;
+    ctx.beginPath(); ctx.ellipse(0, s * 6, L_ * 0.17, L_ * 0.045, 0, 0, Math.PI * 2); ctx.fill();
+    ctx.restore();
+  }
+  ctx.globalAlpha = fade;
+  // body: deep ink underfill, then sprite-stacked ridges, then softened pattern
+  bodyPath(k, t); ctx.fillStyle = 'rgba(9,12,20,1)'; ctx.fill();
+  ctx.save(); bodyPath(k, t); ctx.clip();
+  drawKoiStack(k, t, amb, L_);
+  ctx.globalAlpha = fade * 0.55;
+  paintPatternNight(k, t, L_, L_ * 0.36, amb);
+  ctx.globalAlpha = fade;
+  ctx.fillStyle = `rgba(255,235,200,${(0.10 + amb[3] * 0.16).toFixed(3)})`;
+  ctx.beginPath(); ctx.ellipse(-L_ * 0.02, -L_ * 0.055, L_ * 0.42, L_ * 0.075, 0, 0, Math.PI * 2); ctx.fill();
+  ctx.restore();
+  bodyPath(k, t); ctx.lineWidth = 3.4; ctx.strokeStyle = '#0e1420'; ctx.stroke();
+  // pale eyes
+  for (const s of [-1, 1]) {
+    ctx.fillStyle = '#e8d9a8';
+    ctx.beginPath(); ctx.arc(L_ * 0.36, s * L_ * 0.075, 3.6, 0, Math.PI * 2); ctx.fill();
+    ctx.fillStyle = '#0a0d14';
+    ctx.beginPath(); ctx.arc(L_ * 0.36, s * L_ * 0.075, 1.7, 0, Math.PI * 2); ctx.fill();
+  }
+  ctx.restore();
+}
+
+// ---- lantern controls (chips + keys) ----
+let chipStyleEl = null, chipNormalEl = null;
+function buildChips() {
+  if (document.getElementById('chips')) return;
+  const host = document.createElement('div');
+  host.id = 'chips';
+  host.innerHTML = '<button id="chipStyle" type="button" aria-pressed="false">◐ LANTERN</button><button id="chipNormal" type="button" aria-pressed="false" hidden>▤ NORMALS</button>';
+  document.body.appendChild(host);
+  chipStyleEl = host.querySelector('#chipStyle');
+  chipNormalEl = host.querySelector('#chipNormal');
+  chipStyleEl.addEventListener('click', toggleStyle);
+  chipNormalEl.addEventListener('click', toggleNormal);
+}
+function setUrlStyle() {
+  const params = new URLSearchParams();
+  if (lanternMode()) params.set('style', 'lantern');
+  if (normalMode) params.set('normalmap', '1');
+  const qs = params.toString();
+  try { history.replaceState(null, '', qs ? '?' + qs : location.pathname); } catch (e) {}
+}
+function refreshChips() {
+  const night = lanternMode();
+  document.body.classList.toggle('night', night);
+  if (hintEl) hintEl.classList.toggle('night', night);
+  if (chipStyleEl) {
+    chipStyleEl.textContent = night ? '◑ DAY' : '◐ LANTERN';
+    chipStyleEl.setAttribute('aria-pressed', night ? 'true' : 'false');
+  }
+  if (chipNormalEl) {
+    chipNormalEl.hidden = !night;
+    chipNormalEl.textContent = normalMode ? '▤ LIGHT' : '▤ NORMALS';
+    chipNormalEl.setAttribute('aria-pressed', normalMode ? 'true' : 'false');
+  }
+}
+function toggleStyle() {
+  style = lanternMode() ? 'day' : 'lantern';
+  setUrlStyle();
+  refreshChips();
+}
+function toggleNormal() {
+  if (!lanternMode()) return;
+  normalMode = !normalMode;
+  setUrlStyle();
+  refreshChips();
+}
+function onLanternKey(e) {
+  if (e.key === 'l' || e.key === 'L') { e.preventDefault(); toggleStyle(); }
+  else if (e.key === 'n' || e.key === 'N') { if (lanternMode()) { e.preventDefault(); toggleNormal(); } }
+}
+
 // ---------- main loop ----------
 let tNow = 0, frames = 0, last = 0;
 const t0 = performance.now();
@@ -420,24 +1114,29 @@ function loop(now) {
   window.__koiTest.frames = frames;
   requestAnimationFrame(loop);
 }
-function update(dt) { updateRipples(dt); updateKoi(dt); updateLilies(dt); updateVisitor(dt); }
+function update(dt) { updateRipples(dt); updateKoi(dt); updateLilies(dt); updateVisitor(dt); updateLanterns(dt); }
 function draw() {
   ctx.setTransform(1, 0, 0, 1, 0, 0);
-  ctx.fillStyle = '#e9dfca'; ctx.fillRect(0, 0, canvas.width, canvas.height);
+  ctx.fillStyle = lanternMode() ? '#070b1c' : '#e9dfca'; ctx.fillRect(0, 0, canvas.width, canvas.height);
   ctx.setTransform(DPR * S, 0, 0, DPR * S, DPR * OX, DPR * OY);
   drawGround();
   drawMaple(150, 378 * K - 250, 1.0);
   drawBridgeEdge(740, 120 * K);
+  if (lanternMode()) drawNightDusk();
   // shadow of maple + fallen leaves over rim
-  drawPondBase();
+  if (lanternMode()) drawLanternPond(); else drawPondBase();
   drawShadows();
-  drawKoi();
-  drawWaterTint();
+  if (lanternMode()) {
+    const sorted = [...koi].sort((a, b) => a.size - b.size);
+    for (const k of sorted) drawKoiLantern(k);
+  } else drawKoi();
+  if (lanternMode()) drawWaterTintNight(); else drawWaterTint();
   drawPadGlow();
   drawRipples();
   drawTurtle();
   drawLilies();
   drawStones();
+  if (lanternMode()) drawLanterns();
   drawFrog();
   drawGrainAndFrame();
   if (window.__debugKoi) drawDebugKoi();
@@ -964,9 +1663,15 @@ function drawLilies() {
     ctx.beginPath(); ctx.ellipse(3, 5, p.r * 0.98, p.r * 0.84, 0, 0, Math.PI * 2); ctx.fill();
     const gapA = p.gapA, gapW = p.gapW;
     const g = ctx.createRadialGradient(0, 0, p.r * 0.15, 0, 0, p.r * 1.05);
-    g.addColorStop(0, '#3f7a52');
-    g.addColorStop(0.75, '#2f5f42');
-    g.addColorStop(1, '#254b34');
+    if (lanternMode()) {
+      g.addColorStop(0, '#1d3327');
+      g.addColorStop(0.75, '#16281f');
+      g.addColorStop(1, '#101f18');
+    } else {
+      g.addColorStop(0, '#3f7a52');
+      g.addColorStop(0.75, '#2f5f42');
+      g.addColorStop(1, '#254b34');
+    }
     ctx.fillStyle = g;
     ctx.beginPath();
     ctx.moveTo(0, 0);
@@ -985,7 +1690,9 @@ function drawLilies() {
     ctx.strokeStyle = 'rgba(224,240,214,0.26)'; ctx.lineWidth = 2.2;
     ctx.beginPath(); ctx.arc(0, 0, p.r * 0.86, gapA + 0.3, gapA + Math.PI * 2 - gapW - 0.3, false); ctx.stroke();
     ctx.restore();
-    if (p.bloomKind === 1 && p.bloomT > 0) drawFlower(p, bobY, p.bloomT);
+    if (p.bloomKind === 1 && p.bloomT > 0) {
+      if (lanternMode()) { ctx.globalAlpha = 0.8; drawFlower(p, bobY, p.bloomT); ctx.globalAlpha = 1; } else drawFlower(p, bobY, p.bloomT);
+    }
   }
 }
 
@@ -1050,7 +1757,7 @@ function drawTurtle() {
   ctx.fillStyle = 'rgba(8,20,18,0.25)';
   ctx.beginPath(); ctx.ellipse(0, 8, 46, 20, 0, 0, Math.PI * 2); ctx.fill();
   // flippers
-  ctx.fillStyle = '#3d5c33';
+  ctx.fillStyle = lanternMode() ? '#2a3d24' : '#3d5c33';
   const stroke = '#1b2418';
   ctx.strokeStyle = stroke; ctx.lineWidth = 2.4;
   for (const [fx, fy, ra] of [[-30, -18, -0.5], [-30, 18, 0.5], [34, -14, -0.9], [34, 14, 0.9]]) {
@@ -1061,18 +1768,19 @@ function drawTurtle() {
   // head
   ctx.save(); ctx.translate(44, 0);
   ctx.beginPath(); ctx.arc(0, 0, 10, 0, Math.PI * 2);
-  ctx.fillStyle = '#4c6a3c'; ctx.fill(); ctx.stroke();
+  ctx.fillStyle = lanternMode() ? '#33482c' : '#4c6a3c'; ctx.fill(); ctx.stroke();
   ctx.fillStyle = '#1b2418';
   ctx.beginPath(); ctx.arc(5, -3.6, 1.8, 0, Math.PI * 2); ctx.arc(5, 3.6, 1.8, 0, Math.PI * 2); ctx.fill();
   ctx.restore();
   // shell
   const g = ctx.createRadialGradient(-5, -6, 4, 0, 0, 40);
-  g.addColorStop(0, '#5c7046'); g.addColorStop(1, '#2e3f28');
+  if (lanternMode()) { g.addColorStop(0, '#415330'); g.addColorStop(1, '#22301f'); }
+  else { g.addColorStop(0, '#5c7046'); g.addColorStop(1, '#2e3f28'); }
   ctx.fillStyle = g;
   ctx.beginPath(); ctx.ellipse(0, 0, 38, 24, 0, 0, Math.PI * 2); ctx.fill();
   ctx.strokeStyle = stroke; ctx.lineWidth = 3; ctx.stroke();
   // shell pattern
-  ctx.strokeStyle = 'rgba(226,235,209,0.45)'; ctx.lineWidth = 1.8;
+  ctx.strokeStyle = lanternMode() ? 'rgba(168,180,142,0.32)' : 'rgba(226,235,209,0.45)'; ctx.lineWidth = 1.8;
   ctx.beginPath();
   ctx.moveTo(0, -22); ctx.quadraticCurveTo(0, 0, 0, 22);
   ctx.moveTo(-26, -12); ctx.quadraticCurveTo(0, -4, 26, -12);
@@ -1088,7 +1796,7 @@ function drawFrog() {
   ctx.save();
   ctx.translate(x, y - hop * 34);
   // legs
-  ctx.fillStyle = '#6f8f3e';
+  ctx.fillStyle = lanternMode() ? '#48592c' : '#6f8f3e';
   ctx.strokeStyle = '#222d13'; ctx.lineWidth = 2.2;
   ctx.beginPath(); ctx.ellipse(-13, 8, 11, 7, -0.5, 0, Math.PI * 2); ctx.fill(); ctx.stroke();
   ctx.beginPath(); ctx.ellipse(13, 8, 11, 7, 0.5, 0, Math.PI * 2); ctx.fill(); ctx.stroke();
@@ -1101,7 +1809,7 @@ function drawFrog() {
     ctx.fillStyle = '#6f8f3e';
   }
   // belly stripe
-  ctx.strokeStyle = 'rgba(210,225,170,0.5)'; ctx.lineWidth = 2;
+  ctx.strokeStyle = lanternMode() ? 'rgba(190,205,140,0.32)' : 'rgba(210,225,170,0.5)'; ctx.lineWidth = 2;
   ctx.beginPath(); ctx.moveTo(-9, 4); ctx.quadraticCurveTo(0, 8, 9, 4); ctx.stroke();
   ctx.restore();
 }
@@ -1134,16 +1842,17 @@ function drawGrainAndFrame() {
     ctx.restore();
   }
   // double-rule ink frame
-  ctx.strokeStyle = 'rgba(34,28,20,0.85)';
+  const night = lanternMode();
+  ctx.strokeStyle = night ? 'rgba(74,58,32,0.85)' : 'rgba(34,28,20,0.85)';
   ctx.lineWidth = 3;
   roundRectPath(14, 14, VW - 28, VH - 28, 4); ctx.stroke();
-  ctx.strokeStyle = 'rgba(34,28,20,0.4)';
+  ctx.strokeStyle = night ? 'rgba(74,58,32,0.40)' : 'rgba(34,28,20,0.4)';
   ctx.lineWidth = 1.4;
   roundRectPath(24, 24, VW - 48, VH - 48, 4); ctx.stroke();
   // vignette
   const v = ctx.createRadialGradient(VW / 2, VH * 0.44, VH * 0.30, VW / 2, VH * 0.5, VH * 0.78);
   v.addColorStop(0, 'rgba(0,0,0,0)');
-  v.addColorStop(1, 'rgba(28,22,14,0.22)');
+  v.addColorStop(1, night ? 'rgba(4,8,18,0.30)' : 'rgba(28,22,14,0.22)');
   ctx.fillStyle = v;
   ctx.fillRect(0, 0, VW, VH);
   ctx.restore();
@@ -1195,6 +1904,9 @@ window.__koiTest = {
   koi: () => koi.map(k => ({ id:k.id, name:k.variety.name, x:Math.round(k.x), y:Math.round(k.y), heading:+k.heading.toFixed(2), state:k.state, hidden:k.hidden })),
 };
 
+buildChips();
+refreshChips();
+window.addEventListener('keydown', onLanternKey);
 resize();
 spawnKoi();
 spawnLilies();
@@ -1207,7 +1919,7 @@ requestAnimationFrame(loop);
 window.DEMO_CREDITS = {
   name: 'KOI POND', accent: '#2fa98c',
   builder: { tag: 'INKLING', model: 'Inkling-2-Mini-oQ4e-mtp', where: 'via opencode' },
-  issues: [3603], span: '~1 h', shipped: '2026-11-26',
+  issues: [3603, 3779], span: '~2 h', shipped: '2026-11-27',
   assist: 'solo', note: 'guest build brief: ship Jon\'s koi pond prototype (v2, tag v2-final) as a demo; v3 rejected',
 };
 </script>
