@@ -7,7 +7,7 @@ import { isWatchKey, isTakeoverKey, playWatchStart, playWatchStop, watchSfxLog, 
 import { mountDbg, unmountDbg } from '../../utils/DebugKit'
 import { GAMES } from '../../config/games'
 import { exposeGame, unexposeGame, exposeFeedbackState, unexposeFeedbackState, seedFromQuery, contractHoldsLoop } from '../../utils/gameContract'
-import { GW, GH, TOP_PLAT, makeRun, tickDonkeyKong, stateHash, BRACE_WIDTH, BRACE_PLATE, BRACE_PAD, barrelRideFrame } from './sim.js'
+import { GW, GH, TOP_PLAT, makeRun, tickDonkeyKong, stateHash, BRACE_WIDTH, BRACE_PLATE, BRACE_PAD, barrelRideFrame, BARREL_SPEED } from './sim.js'
 import { attractFrame, DIM } from './attract.js'
 
 // DONKEY KONG — shell only since #1637 b27: canvas, sound, chrome, seat.
@@ -149,6 +149,10 @@ const DonkeyKongGame = () => {
         const applyEvents = (ev) => {
             if (ev.jump) audioController.playTone(400, 0.08, 'square')
             if (ev.jumpedBarrel) audioController.playTone(600, 0.08, 'square')
+            // #3754 — the walk-past 50's voice: lower and shorter than the
+            // jump-over 100's blip, so the two halves of the arcade's obstacle
+            // bonus read as the bigger/smaller pair the §Scoring law says.
+            if (ev.passedBarrel) audioController.playTone(500, 0.05, 'square')
             // #2018: the event set was missing DK's throw and the rungs.
             if (ev.barrel) audioController.playTone(160, 0.06, 'triangle')
             // #3641 — barrel-voice grammar: board tick, descent clicks and the
@@ -742,6 +746,7 @@ const DonkeyKongGame = () => {
                     climbing: gs.player.climbing, barrels: gs.barrels.length,
                     attract: gs.attract, over: gs.over,
                     hammer: gs.hammer, swingSeq: gs.swingSeq,
+                    passed: gs.player.passedBarrels.size, // #3754 walk-past witness
                     // #3618 half-rung state for the drive harness
                     hang: gs.player.hanging,
                     brk: gs.player.climbLadder && gs.player.climbLadder.broken
@@ -774,6 +779,21 @@ const DonkeyKongGame = () => {
                 // honest death for the drive (idling on the start corner is not
                 // reliably lethal here — barrels roll away from it).
                 kill: () => { gs.deathTimer = 90; gs.lives = 1 },
+                // #3754 — deterministic live proof of the walk-past 50: same
+                // rig as kongcheck §obstacle-bonus (runner settled on a girder,
+                // one barrel rolling past on the floor below), driven against
+                // the live world. Returns the paid delta.
+                walkpast: () => {
+                    const s0 = gs.score, n0 = gs.player.passedBarrels.size
+                    gs.player.x = 150
+                    gs.player.y = 176
+                    gs.player.vx = 0; gs.player.vy = 0
+                    for (let i = 0; i < 10; i++) tickDonkeyKong(gs, { left: false, right: false, up: false, down: false, jump: false })
+                    gs.barrels.push({ x: 120, y: 222, w: 10, h: 10, vx: BARREL_SPEED, vy: 0, rot: 0, onLadder: false, falling: false })
+                    let paid = 0
+                    for (let i = 0; i < 80; i++) paid += (tickDonkeyKong(gs, { left: false, right: false, up: false, down: false, jump: false }).passedBarrel || 0)
+                    return { paid, delta: gs.score - s0, witnesses: gs.player.passedBarrels.size - n0 }
+                },
             }
             mountDbg({
                 title: 'DONKEY KONG',

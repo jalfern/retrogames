@@ -272,6 +272,7 @@ export function makeRun(seed, opts = {}) {
             hanging: false,    // #3618 stopped at a broken ladder's break line
             dir: 1, frame: 0, walkFrame: 0, climbFrame: 0,
             jumpedBarrels: new Set(),
+            passedBarrels: new Set(),   // #3754 walk-past-50 witness (mirrors jumped)
         },
         barrels: [],
     }
@@ -290,6 +291,7 @@ function resetPlayer(gs) {
     p.dir = 1
     p.frame = 0
     p.jumpedBarrels = new Set()
+    p.passedBarrels = new Set()   // #3754 — witnesses reset with the life
     gs.barrels = []
     gs.barrelTimer = 180
     gs.deathTimer = 0
@@ -547,7 +549,7 @@ function attractPlan(gs) {
 // human input, watchStep drives instead.
 // ---------------------------------------------------------------------------
 export function tickDonkeyKong(gs, input = null) {
-    const ev = { jump: false, jumpedBarrel: 0, died: false, respawn: false, won: false, over: false, barrel: false, hammerUp: false, swing: false, hammered: 0, hammerDown: false, climbed: false, hang: false, noClimb: false, reached: false, pull: false, rivet: false, collapse: false, barrelVoices: [] }
+    const ev = { jump: false, jumpedBarrel: 0, passedBarrel: 0, died: false, respawn: false, won: false, over: false, barrel: false, hammerUp: false, swing: false, hammered: 0, hammerDown: false, climbed: false, hang: false, noClimb: false, reached: false, pull: false, rivet: false, collapse: false, barrelVoices: [] }
     const p = gs.player
     gs.tickN++
     if (gs.swing > 0) gs.swing--
@@ -898,6 +900,25 @@ export function tickDonkeyKong(gs, input = null) {
                     ev.jumpedBarrel++
                 }
             }
+            // #3754 — the arcade's other half of the obstacle bonus
+            // (Wikipedia §Scoring: jump an obstacle = 100, WALK PAST one = 50).
+            // A barrel crossing Mario's column BELOW his feet while grounded
+            // and alive pays +50, once per barrel. Canvas y grows downward, so
+            // "below" is negative dy: the band −48..−10 sits clear of the
+            // |dy|<10 kill box and spans the real geometry — girder spacings
+            // put a lower-track barrel at dy≈−35 (32 px rows, −43 under the
+            // 40 px floor gap), a top-pair row at ≈−27 — and it starts below
+            // the jump law's −24..0 window only because grounded excludes
+            // airborne anyway; a grounded barrel at −24..−10 is mid-fall past
+            // the feet, which the arcade counts as walked past too. Jumped
+            // barrels never double-dip; the dead pay nothing.
+            else if (p.grounded && !p.climbing && gs.deathTimer <= 0) {
+                if (Math.abs(dx) < 16 && dy <= -10 && dy > -48 && !p.passedBarrels.has(b) && !p.jumpedBarrels.has(b)) {
+                    p.passedBarrels.add(b)
+                    gs.score += 50
+                    ev.passedBarrel++
+                }
+            }
         }
     }
 
@@ -968,6 +989,7 @@ function cloneWorld(gs) {
         player: {
             ...gs.player,
             jumpedBarrels: new Set([...gs.player.jumpedBarrels].map(b => ref.get(b)).filter(Boolean)),
+            passedBarrels: new Set([...gs.player.passedBarrels].map(b => ref.get(b)).filter(Boolean)),
         },
         barrels,
     }
@@ -1210,7 +1232,7 @@ export function stateHash(gs) {
     let s = `K${gs.tickN}|${gs.score}|${gs.lives}|${gs.over ? 1 : 0}|${gs.deathTimer}|${gs.winTimer}|${gs.barrelTimer}|${gs.rngState}|`
     s += `H${gs.hammer}|${gs.swingSeq}|${gs.hammers.map(h => (h.taken ? 1 : 0)).join('')}|`
     s += `R${gs.rivetPhase ? 1 : 0}${gs.rivets.map(r => (r.pulled ? 1 : 0)).join('')}|${gs.pullTimer}|${gs.collapse}|${Math.round(gs.dkFall * 1e4)}|`
-    s += `${r4(p.x)},${r4(p.y)},${r4(p.vx)},${r4(p.vy)},${p.grounded ? 1 : 0},${p.climbing ? 1 : 0},${p.dir},${p.jumpedBarrels.size}|`
+    s += `${r4(p.x)},${r4(p.y)},${r4(p.vx)},${r4(p.vy)},${p.grounded ? 1 : 0},${p.climbing ? 1 : 0},${p.dir},${p.jumpedBarrels.size}|${p.passedBarrels.size}|`
     s += gs.barrels.map(b => `${r4(b.x)},${r4(b.y)},${r4(b.vx)},${r4(b.vy)},${b.onLadder ? 1 : 0},${b.falling ? 1 : 0},${b.ladderBot || 0},${b.takenBits || 0},${b.ladderIdx ?? -1}`).join(';')
     let h = 0x811c9dc5
     for (let i = 0; i < s.length; i++) {

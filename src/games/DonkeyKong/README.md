@@ -41,8 +41,13 @@ Ports: the browser checks read `DEV_PORT` (slot a 5173 / slot b 5178 / QA 5176).
   25 m second screen with 8 rivets and section-by-section drops was never
   sourceable in-repo, so it stays shipped history, not a spec. The prose
   below is kept for the record.
-- Oil drum is decor; the arcade's flame kills. No score bonus timers, no
-  50/100-point distinction for walking past vs jumping over barrels' edges.
+- **CLOSED by #3754 (walk-past 50):** the obstacle bonus now pays both halves
+  of the arcade's pair (Wikipedia §Scoring) — a barrel crossing Mario's column
+  below his feet while grounded and alive pays 50, once per barrel
+  (`passedBarrels` witness, rides the hash); the airborne crossing keeps its
+  100.
+- Oil drum is decor; the arcade's flame kills (spec unverifiable against ROMs
+  in-repo). No score bonus timers; the timer-zero capture law is unmodelled.
 - **CLOSED by #3622:** barrels meet ladders mid-air — see Corner pair below.
   (Was: a barrel meeting a ladder mid-air kept rolling; the edge-check could
   never set `falling=true` — gravity beats it to `vy>0` — so no airborne
