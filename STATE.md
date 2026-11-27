@@ -1,74 +1,78 @@
-# STATE — forge board snapshot (slot b, 2026-11-27 — pacmandrive #3755 SHIPPED `76158df`)
+# STATE — forge board snapshot (slot a, 2026-11-27 — DONKEY KONG bonus fuse SHIPPED `e63faf2`)
 
-## This session (slot b)
-- Found main RED (#601): nightly 46034576636 failed `nightlybotcheck` + `dvhcheck`.
-  #3772 merged the fix ahead of me (`da3457a`) — both gates verified green at that
-  tip locally. The freeze-lift refresh on main was STARVED ~80 min behind a
-  duplicate PR’s branch run in the `nightly` concurrency group: cancelled
-  46048400905, closed duplicate #3774 (content ⊆ #3772), refresh resumed and is
-  IN PROGRESS at da3457a (~green 21:00Z → freeze lifts honestly).
-- TARGET #3766 REFUSED at claim (held by a — she shipped PINBALL `9d35638`).
-  Normal ladder: halt none; steer none; `next` #1712 waiting-jon; game-queue
-  empty; feedback all held (#3761 building-qa, #3244/#2971 waiting-jon); QA-borrow
-  blocked (live QA MASTER mini+studio); flagshipStage null; weakestStage =
-  PAC-MAN 0 weak, and its only gap is the harness job #3755 — claimed directly
-  (the board’s free-lane job, never-dry-safe: it was never filed as a POLISH claim).
-- **SHIPPED #3755** (PR #3781, squash `76158df`): `npm run pacmandrive` — real
-  headless Chrome drives the human loop with real keys: attract → key-start →
-  dots (+70) → tunnel circuit (col 6 up, wrap at row 14, col 21 down, row 20
-  east, col 26 down) → energizer (23,26) frightens (live power + scared seen) →
-  powered chase → death → respawn → game-over → key-restart, zero page errors;
-  drawn wedge pixel-checked vs logical head at two checkpoints (off ≤0.03 cells).
-  17/17; two named mutants die (frighten-off reddens §pellet; pac-yellow→green
-  reddens BOTH wedge legs, yellows=0). `__pacTest.probe` gains `dir`+`attract`
-  (DEV, additive). README honest gap struck with evidence; idle-kick no longer
-  names PAC-MAN (now `KICK FROGGER 0 weak`). pacmancheck 154/154, lints + build green.
-- Housekeeping: closed slot b’s stale STATE PR #3770 (its STATE was superseded by
-  e6312f8, which already folded the park — merging would have reverted main’s STATE).
+## This session (slot a) — never-dry stage shipped
+- **Claimed #3786** (POLISH — DONKEY KONG, filed here from `KICK DONKEY KONG 0
+  weak`): the README gap "No score bonus timers; the timer-zero capture law is
+  unmodelled" → shipped as PR #3792, squash `e63faf2`, prod-verified (deployment
+  sha `e63faf2`, bundle `index-9oVheL4q.js` carries the `BONUS` HUD).
+- **The law (Wikipedia DK §Gameplay):** `BONUS_START` 5000 lights every board,
+  −100 every real second while live; the rescue banks what remains (flat
+  `WIN_SCORE` 1000 deleted, payout pops `+<counter>` at her perch); zero arms
+  `captured`/`captureTimer` — 90 ticks of the ape lifting Pauline (HELP cuts
+  off mid-grab), then life spent, board rebuilt fresh-fuse, honest terminal.
+  Frozen during death/win/capture/collapse; never runs in attract (title demo
+  must not gamble lives). Counter rides `stateHash` + `cloneWorld`; watch seat
+  treats the grab as an honest wait.
+- **Proof:** kongcheck 174 green (new §bonus-timer; lap-bank rewritten to
+  counter semantics; fleet floors `capsAll===0` — lap ≈850 of 3000 ticks;
+  README-honesty pin). Hand mutation (`if (gs.bonus <= 0)`→false) red 3,
+  restore green. kongdrive 18/18 real Chrome: real-second countdown, live
+  grab, life paid, fresh fuse, 0 page errors. Screens verified attract-at-5000
+  and mid-grab.
+- Filed `QA — DONKEY KONG: oil-drum flame kill + capture-grab polish` (#3796,
+  feedback) owning the last honest gap; its body quotes the gap verbatim so
+  `ownsGap` suppresses it (idle-kick moved 0 weak → -1 weak: named-only).
 
 ## Harness facts paid this session (kept so lanes stop re-paying)
-- **Poll+steer latency ≈ one cell** at ghost speed: press turns EARLY and let the
-  arcade pre-turn law land them (a held direction turns at the first legal cell).
-  Pressing at the target reads late — pac coasts past the row-14 tunnel mouth.
-- **`until()`-style poll helpers must return NULL on timeout.** A truthy final
-  sample reads as a passed leg — three phantom greens before this bit.
-- A +50 score delta is NOT the energizer unless position agrees (5 dots also
-  spell +50); demand the witness cell. Likewise: OR-chained fallback bounds are
-  not load-bearing — prove-fail mutants must break the GAME rule line (frighten).
-- The `nightly` concurrency group serialises EVERYTHING: never leave a nightly
-  dispatched on a lane branch while a freeze-lift refresh is queued on main —
-  it starves the refresh and re-locks the factory (this cost ~80 min today).
-- `main-ok` passes on a `cancelled` latest nightly (no-verdict ≠ red); prefer
-  merging while the honest refresh is merely queued, and never let a refresh
-  occupy the group twice (dispatch once after merge, not before).
+- **`__game.step()` closes the loop lock until `__game.release()`.** Any
+  wall-clock assertion after a scripted drive (fuse rates, timers) must call
+  `window.__game.release()` first or rAF never resumes and the clock stands still.
+- **A run-wide fuse touches every long rig.** kongcheck barrel-law scans
+  (360 s, attract:false) now capture+reset mid-scan and measure a frozen world;
+  physics rigs top the counter via `noFuse(gs)` (kongcheck-local). Keep the
+  fuse LIVE only where laps bank (it resets) and prove `caps===0` there.
+- **`parseGaps` filters whole bullets by `CLOSED by #N`.** Closing half a
+  multi-law bullet while the other half stays open requires SPLITTING the
+  bullets, or the open half silently leaves the gaps list.
+- No golden hashes are pinned in contractcheck/kongcheck — `stateHash` format
+  changes self-replay clean (grep for `samples.push` only compares runs).
+- 3000-tick budget: a watch lap here is ~850 ticks, so a 50 s fuse has 3.5×
+  margin — measure lap time before picking any run-wide timer.
 
 ## BOARD facts at close
-- main tip `76158df` (push CI green). Nightly refresh @ da3457a IN PROGRESS —
-  green ≈21:00Z lifts the #601 freeze for everyone (no new red cause known:
-  both failing gates verified green locally at da3457a+mine).
-- building: none. building-qa: #3778 (QA live), #3744 fireflies demo.
-  game-queue: empty. halt: 0. #3755 shipped+closed; #3774 closed (duplicate).
-- Rule 4 satisfied: game code merged this window (`76158df` touches src/games/**).
+- main `e63faf2`: today merged #3792 (DK fuse, mine), #3795 (pinball ghosts),
+  #3790 (gap-notes retire + word-boundary naming), #3787 (pinball DMD ring),
+  #3785 (fireflies), #3781/#3783/#3784 (earlier). building: none. building-qa:
+  #3794, #3793 (pinball dress/hierarchy), #3779 (koi demo). game-queue: empty.
+- idle-kick at close: `KICK DONKEY KONG -1 weak` — no unowned gap left on the
+  shelf; the point is QA-backlog naming (#3796), and its gap is owned.
+- halt/steer: 0. jonq: AWAITING #3791 (dry-shelf flagship question, filed by
+  another lane today — do NOT file a second dry-queue question), #3516, #3244,
+  #2971; #1712 waiting-jon `next` (research lane, not claimable here).
 
 ## PLAYABLE on main right now
-- PINBALL — rescue sweep shows the kickback save: https://jalfern.com/retrogames/pinball
-- DONKEY KONG popups (#3767) + walk-past 50 (#3759), ORRERY guidance (#3780),
-  MC hot-seat P2 (#3765) + bonus city (#3753), Centipede kill-pop (#3736).
-- Dev-only: `npm run dev` + `npm run pacmandrive` drives PAC-MAN end to end.
+- DONKEY KONG beats a fuse: yellow BONUS counter counts 5000.down while you
+  climb; saving her banks the remainder; dawdle 50 s and the ape takes her —
+  https://jalfern.com/retrogames/donkeykong
+- PINBALL speed-graded ghosts (#3795) + DMD ring fix (#3787); MC seat-2
+  batteries (`4dc509c`); PAC-MAN human-loop drive (#3781); DK walk-past 50.
 
 ## Open questions (links only — #605)
-- #3516 (Arkanoid art rung — AWAITING, default *done*, deadline 11-28). Nothing
-  ANSWERED/DEFAULTED to execute; asked nothing new.
+- #3791, #3516, #3244, #2971, #1712 (all AWAITING; none mine this session).
 
 ## Next claims (for whoever is free)
-1. NEVER-DRY next true gameplay rung: **DK fireballs/electric-floor + timer-zero
-   capture** (slot a’s audit; README honest gaps, no QA issue owns them —
-   verify ownership with `weakestStage` at claim time; DK was building-qa-held
-   by #3761, check it is clear first).
-2. Frogger’s remaining bullet is the driver-horizon note (not buildable — leave).
-3. QA: #3778 in flight; #3744 fireflies demo queued.
+1. Board is dry by ownership: DONKEY KONG -1 weak is QA-named (#3796 owns the
+   flame gap). A builder kick naming DK index -1 has NO unowned gap — do not
+   re-file the flame gap; check the QA lane is alive, else it is the QA
+   borrow's job (#3796 is the concrete fix: fireball kills).
+2. QA lane holds #3793/#3794/#3779.
+3. Dry-shelf flagship question #3791 is AWAITING Jon — that is the only
+   dry-queue question on the board until its 2026-11-29 deadline.
 
 ## Slot state at handoff
-- :5178 stopped via `scripts/devstop.sh` at close.
-- Worktree `~/Dev/retrogames-forge-pacmandrive` pruned after merge.
-- STATE parked via `statepark.mjs park b`; shift report pushed.
+- :5173 stopped via `scripts/devstop.sh` at close; no other port touched.
+- Worktree `retrogames-forge-dk-timer-capture` pruned after the STATE docs PR.
+- STATE parked via `statepark.mjs park a`; shift report pushed.
+- STATE commit to main goes through the docs PR opened with this report
+  (game merged this session, so the STATE fold-in is allowed; merge only via
+  `scripts/forge-merge.sh`).
