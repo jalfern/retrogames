@@ -215,6 +215,9 @@ export const MANUAL_CHECKS = [
   "scripts/mystviewcheck.mjs",
   "scripts/neonraincheck.mjs",
   "scripts/oceancheck.mjs",
+  // #3647: ORRERY — browser-driven demo gate (Chrome via CDP over file://,
+  // no dev server); advisory from the lane: npm run orrerycheck.
+  "scripts/orrerycheck.mjs",
   "scripts/padlinkcheck.mjs",
   // #1712: the human-dataset gate — relaysim round-trip of scripted takes,
   // split purity, verbatim audio and determinism; --mutant proves the split
