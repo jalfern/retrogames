@@ -21,7 +21,7 @@ const mutEq = process.argv.find((a) => a.startsWith('--mutate='))
 const MUT = mutEq ? mutEq.split('=')[1] : (MUTI > -1 ? process.argv[MUTI + 1] || null : null)
 if (MUTI > -1 && !MUT) {
     let died = 0
-    const RULES = ['seed', 'economy', 'mirror', 'search', 'kickback', 'skin', 'demo', 'smithzone', 'smithload', 'tiltnudge', 'powerzone', 'solo', 'seam', 'mix', 'packmagnet', 'magspent', 'magclock', 'magstall', 'magrearm', 'chaincone', 'chainslot', 'holoring', 'spinrung', 'spincool', 'spingrade', 'kbSweepR', 'kbSweepL', 'kbSweepSticky', 'kbSweepSquat', 'kbSweepSide', 'kbSweepWhoosh', 'kbSweepStub', 'kbSweepDim']
+    const RULES = ['seed', 'economy', 'mirror', 'search', 'kickback', 'skin', 'demo', 'smithzone', 'smithload', 'tiltnudge', 'powerzone', 'solo', 'seam', 'mix', 'packmagnet', 'magspent', 'magclock', 'magstall', 'magrearm', 'chaincone', 'chainslot', 'holoring', 'spinrung', 'spincool', 'spingrade', 'kbSweepR', 'kbSweepL', 'kbSweepSticky', 'kbSweepSquat', 'kbSweepSide', 'kbSweepWhoosh', 'kbSweepLatch', 'kbSweepStub', 'kbSweepDim']
     for (const rule of RULES) {
         const res = spawnSync(process.execPath, [fileURLToPath(import.meta.url), `--mutate=${rule}`], { encoding: 'utf8' })
         // child convention at EOF: exit 0 = the rule broke and the check saw red
@@ -242,9 +242,16 @@ if (MUT) {
         // #3766: the rescue loses its voice back to a generic blip.
         kbSweepWhoosh: {
             file: 'src/games/Pinball/index.jsx',
-            from: 'a.playTone(110, 0.06, \'square\', 0.16); a.playNoise(0.04, 0.15)',
+            from: 'a.playSweep(330, 110, 0.06, \'square\', 0.16); a.playNoise(0.04, 0.15)',
             to: 'a.playSweep(980, 980, 0.04, \'square\', 0.09)',
             note: 'kickback drops its grapple clunk — the rescue is just another blip',
+        },
+        // #3806: the rescue goes back to silence on phone speakers.
+        kbSweepLatch: {
+            file: 'src/games/Pinball/index.jsx',
+            from: 'a.playTone(196, 0.12, \'square\', 0.07, 0.13)',
+            to: 'a.playTone(880, 0.12, \'square\', 0.07, 0.13)',
+            note: 'the carry-band latch moves back above the band — the phone loses the ring',
         },
         // #3800 item 3: the rescue shrinks back to a 52 px stub — the classic
         // ball-save reads the WHOLE lane, drain to outlane top.
@@ -2232,9 +2239,63 @@ const wrap = (gs) => {
     const kbCase = jsxSrc.match(/case 'kickback':([\s\S]*?)break/)
     const rampCase = jsxSrc.match(/case 'ramp': case 'rampL':([\s\S]*?)break/)
     r.check('#3766 the kickback sfx is a grapple (clunk+noise+snap+ring), distinct from the ramp blip',
-        !!kbCase && /playNoise/.test(kbCase[1]) && /playTone\(110/.test(kbCase[1]) && /playTone\(880/.test(kbCase[1]) &&
+        !!kbCase && /playNoise/.test(kbCase[1]) && /playSweep\(330, 110/.test(kbCase[1]) && /playTone\(880/.test(kbCase[1]) &&
         !/playTone\(980/.test(kbCase[1]) && !!rampCase && /playTone\(980/.test(rampCase[1]) && !/playNoise/.test(rampCase[1]),
         kbCase && kbCase[1].trim())
+}
+
+// -------------------------------------- #3806 grapple phone band ----------
+// The rescue's voice died on phone speakers: the 110 Hz clunk kept only its
+// 3rd harmonic above the 150 Hz knee and the 880 Hz ring had no in-band line
+// at all — only the short snap carried. Measured with #3336's model (12 dB/oct
+// knee below 150 Hz → power (f/fc)^4; carry band 160–340 Hz; square odd 1/n,
+// triangle odd 1/n², noise density across 20–20k). Voicing fix, gain untouched.
+{
+    const jsxSrc = readFileSync(new URL('../src/games/Pinball/index.jsx', import.meta.url), 'utf8')
+    const kb = (jsxSrc.match(/case 'kickback':([\s\S]*?)break/) || [null, ''])[1]
+    const KNEE = 150, LO = 160, HI = 340
+    const kneeP = (hz) => (hz >= KNEE ? 1 : Math.pow(hz / KNEE, 4))
+    const tonal = (f, dur, vol, type) => {
+        let e = 0
+        for (let n = 1; n <= 31; n += 2) {
+            const h = f * n, a = type === 'triangle' ? 1 / (n * n) : 1 / n
+            if (h >= LO && h <= HI) e += a * a * vol * vol * dur * kneeP(h)
+        }
+        return e
+    }
+    const noiseE = (dur, vol) => dur * vol * vol * ((HI - LO) / (20000 - 20))
+    const sweepE = (f0, f1, dur, vol, type) => {
+        let e = 0, S = 200
+        for (let i = 0; i < S; i++) e += tonal(f0 + ((f1 - f0) * (i + 0.5)) / S, dur / S, vol, type)
+        return e
+    }
+    // diagnosis pinned — the OLD stack (frozen literals, main before #3806)
+    const PRE = tonal(110, 0.06, 0.16, 'square') + noiseE(0.04, 0.15) +
+        tonal(247, 0.09, 0.12, 'triangle') + tonal(880, 0.04, 0.05, 'square')
+    r.check('#3806 diagnosis pinned — the old 880 ring carried NOTHING in-band (the latch was inaudible)',
+        tonal(880, 0.04, 0.05, 'square') === 0 && tonal(110, 0.06, 0.16, 'square') < 0.15 * PRE,
+        `ring=0 · clunk ${(tonal(110, 0.06, 0.16, 'square') / PRE * 100).toFixed(0)}% of stack`)
+    // the fix, sourced off the live literals — sweep clunk + snap + latch
+    const mSweep = kb.match(/playSweep\(330, 110, ([\d.]+), 'square', ([\d.]+)/)
+    const mSnap = kb.match(/playTone\(247, ([\d.]+), 'triangle', ([\d.]+)/)
+    const mLatch = kb.match(/playTone\(196, ([\d.]+), 'square', ([\d.]+)/)
+    const mNoise = kb.match(/playNoise\(0\.04, 0\.15\)/)
+    r.check('#3806 the clunk launches at the band top (330) and falls; snap and latch are wired',
+        !!mSweep && !!mSnap && !!mLatch && !!mNoise)
+    const POST = (mSweep ? sweepE(330, 110, +mSweep[1], +mSweep[2], 'square') : 0) +
+        (mNoise ? noiseE(0.04, 0.15) : 0) +
+        (mSnap ? tonal(247, +mSnap[1], +mSnap[2], 'triangle') : 0) +
+        (mLatch ? tonal(196, +mLatch[1], +mLatch[2], 'square') : 0) +
+        tonal(880, 0.04, 0.05, 'square')
+    r.check('#3806 in-band power at least DOUBLES (+3 dB) through the phone curve (measured off the sfx literals)',
+        POST >= 2 * PRE, `pre=${PRE.toExponential(3)} post=${POST.toExponential(3)} (${(10 * Math.log10(POST / PRE)).toFixed(1)} dB)`)
+    // every carrier the phone CAN hear sits in the carry band; the latch rings longest
+    r.check('#3806 every in-band carrier is inside 160–340 and the latch is the sustained tail (dur ≥ snap)',
+        mLatch && mSnap && +mLatch[1] >= +mSnap[1] && 196 >= LO && 196 <= HI && 247 >= LO && 247 <= HI)
+    // character contract: clunk still lands LOW (settles at 110) and the latch is
+    // quieter than the snap — the rescue stays a solenoid, not a chime; no gain bump
+    r.check('#3806 character kept — clunk settles at 110 (solenoid thunk, same 0.16 peak), latch below the snap',
+        mSweep && mLatch && mSnap && +mSweep[2] === 0.16 && +mLatch[2] < +mSnap[2])
 }
 
 // --------------------------------------------- solo bed (#3304) ----
