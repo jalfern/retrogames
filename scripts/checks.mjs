@@ -143,6 +143,9 @@ export const MANUAL_CHECKS = [
   // fetch); advisory from the lane: npm run britannreadycheck.
   "scripts/britanniareadycheck.mjs",
   "scripts/bombcheck.mjs",
+  // #3763: BONSAI — browser-driven demo gate (needs the dev server);
+  // advisory from the lane: npm run bonsaicheck.
+  "scripts/bonsaicheck.mjs",
   "scripts/boredomcheck.mjs",
   "scripts/cachecheck.mjs",
   "scripts/campfirecheck.mjs",
