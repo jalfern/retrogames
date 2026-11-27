@@ -14,7 +14,7 @@
 
 import { readFileSync } from 'node:fs'
 import { spawnSync } from 'node:child_process'
-import { START_LIVES, WIN_SCORE, BARREL_SPEED, HAMMER_SWINGS, RIVET_SCORE, PULL_TICKS, COLLAPSE_TICKS, RIVET_X, DK_PLAT, TOP_PLAT, DK_FALL_STOP, BREAK_FRACS, BARREL_CLICK_EVERY, BARREL_CLICK_RANGE, barrelBoardVoice, barrelDangleVoice, barrelRollClick, BRACE_WIDTH, BRACE_PLATE, BRACE_PAD, barrelRideFrame, spanBoardY, makeRun, tickDonkeyKong, watchStep, stateHash, rnd, getPlatformY, buildLevel, platformIndex } from '../src/games/DonkeyKong/sim.js'
+import { START_LIVES, BONUS_START, BONUS_DROP, BONUS_TICK, CAPTURE_TICKS, BARREL_SPEED, HAMMER_SWINGS, RIVET_SCORE, PULL_TICKS, COLLAPSE_TICKS, RIVET_X, DK_PLAT, TOP_PLAT, DK_FALL_STOP, BREAK_FRACS, BARREL_CLICK_EVERY, BARREL_CLICK_RANGE, barrelBoardVoice, barrelDangleVoice, barrelRollClick, BRACE_WIDTH, BRACE_PLATE, BRACE_PAD, barrelRideFrame, spanBoardY, makeRun, tickDonkeyKong, watchStep, stateHash, rnd, getPlatformY, buildLevel, platformIndex } from '../src/games/DonkeyKong/sim.js'
 import { seedRng, seedFromQuery } from '../src/utils/gameContract.js'
 import { parseGaps } from './lib/idle.mjs'
 import { plant, pull } from './lib/mutateguard.mjs'
@@ -28,6 +28,13 @@ const ok = (cond, name, detail = '') => {
     if (cond) { passes++; console.log(`  ok   ${name}`) }
     else { fails++; console.log(`  FAIL ${name}${detail ? ` — ${detail}` : ''}`) }
 }
+
+// #3786 — the fuse is a law of the RUN, not of the barrel. Physics rigs that
+// hold a parked site open for thousands of ticks would otherwise catch a
+// capture at 3000 ticks mid-scan: the board resets, the world freezes at the
+// terminal, and the stream the scan measures disappears. Top the counter up —
+// these rigs test steel, not stakes (§bonus-timer above owns the fuse law).
+const noFuse = (g) => { g.bonus = Number.MAX_SAFE_INTEGER; return g }
 
 // ------------------------------------------------------------- seeded dice ----
 console.log('seeded stream: the dice live inside gs')
@@ -347,8 +354,9 @@ console.log('rules: gravity, jump, crush, dive, arc, lap, terminal')
 
     // #3598 — the lap IS the rivet finale: reaching her girder ARMS it,
     // walking the row pulls all four rivets (+100 each), the last one out
-    // starts the collapse, and ~2.5 s later the lap banks +1000 and the
-    // board rebuilds fresh. The old instant-win is gone.
+    // starts the collapse, and ~2.5 s later the lap banks the remainder of
+    // the bonus counter (#3786 — the arcade pays the fuse, not a flat fee)
+    // and the board rebuilds fresh. The old instant-win is gone.
     const w = makeRun(7)
     w.attract = false
     w.player.x = 100
@@ -367,11 +375,78 @@ console.log('rules: gravity, jump, crush, dive, arc, lap, terminal')
     let lapWon = false
     for (let i = 0; i < COLLAPSE_TICKS + 5 && !lapWon; i++) lapWon = tickDonkeyKong(w, null).won
     ok(lapWon && w.winTimer === 90, 'the collapse ends in the lap flag', `won=${lapWon}`)
-    for (let i = 0; i < 95; i++) tickDonkeyKong(w, null)
-    ok(w.score === WIN_SCORE + 4 * RIVET_SCORE && w.player.x === 24 && w.player.y === 216,
-        'the lap banks 1000 (+ the four rivets) and resets the board', `score=${w.score}`)
+    const bankAt = w.bonus, sAt = w.score // #3786 — the fuse still running at the flag
+    let bankPop = false
+    for (let i = 0; i < 95; i++) {
+        tickDonkeyKong(w, null)
+        if (!bankPop) bankPop = w.popups.some(q => q.text === `+${bankAt}`)
+    }
+    ok(bankAt > 0 && bankAt < BONUS_START && bankAt % BONUS_DROP === 0,
+        'the rescue arrives with the fuse still lit, banked in hundreds', `bank=${bankAt}`)
+    ok(sAt === 4 * RIVET_SCORE && w.score === sAt + bankAt && w.player.x === 24 && w.player.y === 216,
+        'the lap banks the counter still on the fuse (rivets already booked) and resets the board', `sAt=${sAt} score=${w.score - sAt}`)
+    ok(bankPop && w.bonus === BONUS_START, 'the bank pops +<counter> at her perch and the next lap lights a fresh fuse', `pop=${bankPop} bonus=${w.bonus}`)
     ok(w.rivets.every(r => !r.pulled) && w.collapse === 0 && w.dkFall === 0 && !w.rivetPhase && w.pullTimer === 0,
         'the board rebuilds for the next lap: fresh rivets, level girders, ape back on his perch')
+}
+
+// ----------------------------------------------------------- bonus timer ----
+// #3786 — the arcade fuse (Wikipedia, Donkey Kong §Gameplay): points for
+// "completing each stage according to a steadily decreasing bonus counter",
+// and "a life is lost when ... the bonus counter reaches zero". The counter
+// steps by hundreds while the board is live, freezes with every animation,
+// the rescue banks what remains (proven in §lap above), zero captures: the
+// grab animates, the life pays, the board rebuilds with a fresh fuse. The
+// attract demo owns the wheel but never the stake.
+console.log('BONUS TIMER: the fuse, the bank, the capture (#3786)')
+{
+    const g = makeRun(11)
+    let sawStep = false
+    for (let i = 0; i < BONUS_TICK * 3 + 2; i++) {
+        tickDonkeyKong(g, null)
+        if (g.bonus === BONUS_START - BONUS_DROP * 3) sawStep = true
+    }
+    ok(sawStep && g.bonus === BONUS_START - BONUS_DROP * 3,
+        'the fuse steps down by hundreds, one step a real second', `bonus=${g.bonus}`)
+    const b = g.bonus, bt = g.bonusTick
+    g.deathTimer = 100 // longer than the window below: the spin must outlast the ticks
+    for (let i = 0; i < BONUS_TICK + 2; i++) tickDonkeyKong(g, null)
+    ok(g.bonus === b && g.bonusTick === bt,
+        'the counter freezes with the death animation', `bonus=${g.bonus} sub=${g.bonusTick}`)
+}
+{
+    const ga = makeRun(11, { attract: true })
+    for (let i = 0; i < BONUS_TICK * 2 + 5; i++) tickDonkeyKong(ga, null)
+    ok(ga.bonus === BONUS_START,
+        'the attract demo never runs the fuse — the title screen cannot gamble lives', `bonus=${ga.bonus}`)
+}
+{
+    const g = makeRun(7)
+    g.bonus = BONUS_DROP
+    g.bonusTick = BONUS_TICK - 1
+    const ev = tickDonkeyKong(g, null)
+    ok(ev.captured && g.captured && g.captureTimer === CAPTURE_TICKS && g.bonus === 0,
+        'counter-zero fires the capture: the grab arms and the board stops live play',
+        JSON.stringify({ cap: ev.captured, t: g.captureTimer, b: g.bonus }))
+    let respawn = false
+    for (let i = 0; i < CAPTURE_TICKS + 2 && !respawn; i++) respawn = tickDonkeyKong(g, null).respawn
+    ok(respawn && g.lives === START_LIVES - 1 && g.bonus === BONUS_START && !g.captured && g.captureTimer === 0,
+        'the grab spends the life and rebuilds the board with a fresh fuse', `lives=${g.lives} bonus=${g.bonus}`)
+    g.lives = 1
+    g.bonus = BONUS_DROP
+    g.bonusTick = BONUS_TICK - 1
+    tickDonkeyKong(g, null)
+    let over = false
+    for (let i = 0; i < CAPTURE_TICKS + 2 && !over; i++) over = tickDonkeyKong(g, null).over
+    ok(over && g.lives === 0, 'the capture at the last life is an honest terminal', `lives=${g.lives}`)
+}
+{
+    // the counter rides the replay witness — two boards one step apart in the
+    // fuse must hash apart, or the sweep's byte-equality is blind to it
+    const g1 = makeRun(5)
+    const g2 = makeRun(5)
+    g2.bonus -= BONUS_DROP
+    ok(stateHash(g1) !== stateHash(g2), 'the fuse rides the replay witness hash (#3786)')
 }
 
 // ---------------------------------------------------------- rivet finale ----
@@ -627,6 +702,10 @@ console.log('seat semantics: driver in, driver out, honest waits')
     att.winTimer = 0
     att.collapse = 1 // #3598 — the crash is the same honest wait
     ok(watchStep(att) === null, 'watchStep waits through the collapse')
+    att.collapse = 0
+    att.captureTimer = 40 // #3786 — the grab is the same honest wait
+    ok(watchStep(att) === null, 'watchStep waits through the capture grab')
+    att.captureTimer = 0
 }
 
 // ---------------------------------------------------- WATCH driver sweep ----
@@ -645,17 +724,19 @@ console.log('WATCH driver sweep: 24 seeds of seated play on the shipped physics'
         gs.attract = false
         gs.watching = true
         const samples = []
-        let deaths = 0, wins = 0
+        let deaths = 0, wins = 0, caps = 0, arcs = 0
         for (let i = 0; i < TICKS; i++) {
             const ev = tickDonkeyKong(gs, null)
             if (ev.died) deaths++
+            if (ev.captured) caps++ // #3786 — the seat must never bank on a dead fuse
             if (ev.won) wins++
+            arcs += ev.jumpedBarrel * 100 + ev.passedBarrel * 50 // #3786 — obstacle points counted from the events, not scraped off the score (the lap payout is the fuse now)
             if (i % 300 === 0) samples.push(stateHash(gs))
             if (gs.over) break
         }
-        return { gs, samples, deaths, wins }
+        return { gs, samples, deaths, caps, arcs, wins }
     }
-    let det = 0, zeroDeath = 0, wonAll = 0
+    let det = 0, zeroDeath = 0, wonAll = 0, capsAll = 0
     let minWinTick = Infinity, totalArcPoints = 0
     const red = []
     for (let s = 1; s <= SEEDS; s++) {
@@ -665,12 +746,14 @@ console.log('WATCH driver sweep: 24 seeds of seated play on the shipped physics'
         if (JSON.stringify(a.samples) === JSON.stringify(b.samples)) det++
         if (a.deaths === 0) zeroDeath++
         if (a.wins >= 1) wonAll++
+        capsAll += a.caps
         minWinTick = Math.min(minWinTick, a.gs.tickN)
-        totalArcPoints += a.gs.score % WIN_SCORE
+        totalArcPoints += a.arcs
         if (a.gs.over || a.wins < 1) red.push(`${seed}${a.gs.over ? ':OVER' : ':NOWIN'}`)
     }
     ok(det === SEEDS, `${SEEDS}/${SEEDS} seeds replay byte-equal (hash sampled every 300 ticks)`, red.join(' '))
     ok(wonAll === SEEDS, `every seed banks a lap under the watch`, red.join(' '))
+    ok(capsAll === 0, 'no seed burns the fuse — the proven route beats the counter every lap (#3786)', `${capsAll}`)
     ok(zeroDeath >= (FAST ? 7 : 22), `zero-death runs on ${FAST ? 7 : 22}+ seeds`, `${zeroDeath}/${SEEDS}`)
     ok(totalArcPoints >= (FAST ? 200 : 400), 'the fleet arcs real barrels for points (progress, not waiting)', `${totalArcPoints}`)
     ok(minWinTick >= 300, 'no seed banks its lap suspiciously fast (the route uses the ladders)', `${minWinTick}`)
@@ -699,7 +782,7 @@ console.log('corner pair #3622: mid-air takes at the fall-gap corner')
     const ids = new WeakMap()
     let nextId = 1, aerial = 0, r1land = 0, dangling = 0, r2aerial = 0, doubleSame = 0, stuck = 0
     for (const seed of [7919, 15838, 31676]) {
-        const gs = makeRun(seed) // runner parked at spawn: no lap, the ape keeps throwing
+        const gs = noFuse(makeRun(seed)) // runner parked at spawn: no lap, the ape keeps throwing
         const snap = new Map()
         const onFrom = new Map()
         for (let t = 0; t < 60 * 360; t++) {
@@ -819,7 +902,7 @@ console.log('double board #3657: spans share, never clip')
     // their span id. 360 s × three corner seeds, parked runner.
     let clip = 0, blind = 0
     for (const seed of [7919, 15838, 31676]) {
-        const gs = makeRun(seed)
+        const gs = noFuse(makeRun(seed))
         for (let t = 0; t < 60 * 360; t++) {
             tickDonkeyKong(gs, {})
             const riders = gs.barrels.filter(bb => bb.onLadder)
@@ -867,7 +950,7 @@ console.log('barrel voices #3641: board tick, descent clicks, dangling clatter')
     const ids = new WeakMap()
     let nextId = 1
     for (const seed of [7919, 15838, 31676]) {
-        const gs = makeRun(seed) // same seeds as §corner pair
+        const gs = noFuse(makeRun(seed)) // same seeds as §corner pair
         const snap = new Map()
         for (let t = 0; t < 60 * 360; t++) {
             for (const b of gs.barrels) {
@@ -973,7 +1056,7 @@ console.log('left corner #3657-2: tip catches the left fall column')
     ok(x3 >= -4 && x3 < 0, `girder-4 column crosses at cx≈${x3.toFixed(1)} — inside the tip`, `cross=${x3.toFixed(2)}`)
     let caught = 0, voidLeft = 0
     for (let seed = 1; seed <= 12; seed++) {
-        const gs = makeRun(seed, { human: true })
+        const gs = noFuse(makeRun(seed, { human: true }))
         const prev = new Map()
         for (let t = 0; t < 9000; t++) {
             tickDonkeyKong(gs, {})
@@ -1162,7 +1245,7 @@ if (process.argv.includes('--mutant')) {
             `    if (true) {
         gs.barrelTimer--`],
         ['the lap banks 0 (win bonus hollow)', S,
-            `gs.score += WIN_SCORE`,
+            `gs.score += paid`,
             `gs.score += 0`],
         ['ladders never take divers (the dive chance dies)', S,
             `if (rnd(gs) < BARREL_DIVE_CHANCE) {`,

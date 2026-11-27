@@ -7,7 +7,7 @@ import { isWatchKey, isTakeoverKey, playWatchStart, playWatchStop, watchSfxLog, 
 import { mountDbg, unmountDbg } from '../../utils/DebugKit'
 import { GAMES } from '../../config/games'
 import { exposeGame, unexposeGame, exposeFeedbackState, unexposeFeedbackState, seedFromQuery, contractHoldsLoop } from '../../utils/gameContract'
-import { GW, GH, TOP_PLAT, makeRun, tickDonkeyKong, stateHash, BRACE_WIDTH, BRACE_PLATE, BRACE_PAD, barrelRideFrame, BARREL_SPEED, POPUP_LIFE } from './sim.js'
+import { GW, GH, TOP_PLAT, makeRun, tickDonkeyKong, stateHash, BRACE_WIDTH, BRACE_PLATE, BRACE_PAD, barrelRideFrame, BARREL_SPEED, POPUP_LIFE, CAPTURE_TICKS } from './sim.js'
 import { attractFrame, DIM } from './attract.js'
 
 // DONKEY KONG — shell only since #1637 b27: canvas, sound, chrome, seat.
@@ -181,6 +181,12 @@ const DonkeyKongGame = () => {
                 audioController.playSweep(400, 80, 0.4, 'sawtooth')
             }
             if (ev.won) audioController.playSweep(400, 1000, 0.8, 'square')
+            // #3786 — the fuse ran out: the grab is a descending doom-sweep,
+            // not the barrel-death voice (Mario was never touched — she is).
+            if (ev.captured) {
+                audioController.playSweep(500, 90, 0.7, 'sawtooth')
+                audioController.playNoise(0.25, 0.25)
+            }
             // #3598 — the finale's voices: arrival sting, the rivet creak and
             // snap, and the crash of the whole tower.
             if (ev.reached) {
@@ -413,25 +419,32 @@ const DonkeyKongGame = () => {
             const py = gs.collapse > 0
                 ? base + Math.min(landY - base, gs.collapse * gs.collapse * 0.006)
                 : base
+            // #3786 — the capture: the counter hit zero, and the ape's arm
+            // takes her off the girder. She slides down toward his perch while
+            // the grab animates; her call cuts off the instant he has her.
+            const grabT = gs.captured && gs.captureTimer > 0 ? 1 - gs.captureTimer / CAPTURE_TICKS : 0
+            const gx = px + (86 - px) * grabT
+            const gy = py + (64 - py) * grabT
             // Dress (pink)
             ctx.fillStyle = '#ff88aa'
             ctx.beginPath()
-            ctx.moveTo(px, py + 16)
-            ctx.lineTo(px + 4, py + 6)
-            ctx.lineTo(px + 8, py + 16)
+            ctx.moveTo(gx, gy + 16)
+            ctx.lineTo(gx + 4, gy + 6)
+            ctx.lineTo(gx + 8, gy + 16)
             ctx.fill()
             // Head
             ctx.fillStyle = '#e8a060'
-            ctx.fillRect(px + 2, py, 4, 5)
+            ctx.fillRect(gx + 2, gy, 4, 5)
             // Hair
             ctx.fillStyle = '#ff88aa'
-            ctx.fillRect(px + 1, py - 1, 6, 2)
+            ctx.fillRect(gx + 1, gy - 1, 6, 2)
             // HELP text — she stops calling once the tower itself is answering
-            if (gs.tickN % 60 < 40 && gs.collapse === 0) {
+            // (#3786: or once the counter has paid and he has her in the grab)
+            if (gs.tickN % 60 < 40 && gs.collapse === 0 && grabT === 0) {
                 ctx.fillStyle = '#ffffff'
                 ctx.font = '5px monospace'
                 ctx.textAlign = 'center'
-                ctx.fillText('HELP!', px + 4, py - 4)
+                ctx.fillText('HELP!', gx + 4, gy - 4)
             }
         }
 
@@ -594,6 +607,17 @@ const DonkeyKongGame = () => {
             ctx.fillStyle = '#00ffff'
             ctx.fillText(`${gs.score}`, sx + 4 * scale, sy - 4 * scale)
 
+            // #3786 — BONUS rides the HUD centre, arcade-style: white label,
+            // yellow counter, the hundreds stepping down while the board is
+            // live. It freezes with the death/win/collapse animations and
+            // holds full in attract — the same laws the sim keeps.
+            ctx.textAlign = 'center'
+            ctx.fillStyle = '#ffffff'
+            ctx.fillText(`BONUS`, sx + (GW / 2) * scale, sy - 12 * scale)
+            ctx.fillStyle = '#ffff00'
+            ctx.fillText(`${gs.bonus}`, sx + (GW / 2) * scale, sy - 4 * scale)
+            ctx.textAlign = 'left'
+
             // Lives
             ctx.fillStyle = '#ffffff'
             ctx.textAlign = 'right'
@@ -751,6 +775,7 @@ const DonkeyKongGame = () => {
             window.__dkTest = {
                 state: () => ({
                     attract: gs.attract, over: gs.over, score: gs.score, lives: gs.lives,
+                    bonus: gs.bonus, // #3786 fuse readout for the drive harness
                     x: gs.player.x, y: gs.player.y, climb: gs.player.climbing, barrels: gs.barrels.length,
                 }),
                 // #1637 b27 — the watch contract the pilot drives against.
@@ -764,6 +789,8 @@ const DonkeyKongGame = () => {
                     hammer: gs.hammer, swingSeq: gs.swingSeq,
                     passed: gs.player.passedBarrels.size, // #3754 walk-past witness
                     popups: gs.popups.length, // #3761 bonus-popup witness (FX count)
+                    bonus: gs.bonus, // #3786 — the fuse, for the capture drive
+                    cap: gs.captured ? 1 : 0, // #3786 — grab armed witness
                     // #3618 half-rung state for the drive harness
                     hang: gs.player.hanging,
                     brk: gs.player.climbLadder && gs.player.climbLadder.broken
@@ -829,13 +856,16 @@ const DonkeyKongGame = () => {
             mountDbg({
                 title: 'DONKEY KONG',
                 getState: () => [
-                    `score ${gs.score}  lives ${gs.lives}  barrels ${gs.barrels.length}`,
+                    `score ${gs.score}  bonus ${gs.bonus}  lives ${gs.lives}  barrels ${gs.barrels.length}`,
                     `jumpman ${Math.round(gs.player.x)},${Math.round(gs.player.y)} climb ${gs.player.climbing}  watching ${gs.watching}`,
                     `seed ${gs.seed}  tick ${gs.tickN}  over ${gs.over}`,
                 ],
                 actions: [
                     { label: 'Drop a barrel on the player', run: () => { gs.deathTimer = 0; gs.barrels.push({ x: gs.player.x, y: gs.player.y + 4, w: 10, h: 10, vx: 0, vy: 0, rot: 0, onLadder: false, falling: false }) } },
                     { label: 'Clear barrels', run: () => { gs.barrels = [] } },
+                    // #3786 — burn the fuse to a single step from zero so the
+                    // capture law is one second of watching, not fifty.
+                    { label: 'Burn fuse to 100', run: () => { gs.bonus = 100; gs.bonusTick = 0 } },
                 ],
             })
         }
@@ -865,6 +895,7 @@ const DonkeyKongGame = () => {
             },
             state: () => ({
                 tick: gs.tickN, score: gs.score, done: gs.over, seed: gs.seed, lives: gs.lives,
+                bonus: gs.bonus, // #3786 — the fuse on the contract surface
                 x: Math.round(gs.player.x), y: Math.round(gs.player.y),
                 climbing: gs.player.climbing, barrels: gs.barrels.length,
                 hash: stateHash(gs),

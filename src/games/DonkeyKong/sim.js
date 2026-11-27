@@ -631,11 +631,14 @@ export function tickDonkeyKong(gs, input = null) {
         if (gs.winTimer <= 0) {
             // #3786 — the arcade pays the counter, not a flat lap fee: saving
             // her banks whatever the fuse still holds (always >= 100 — zero is
-            // the capture, never a payout), and the banked amount pops at her
-            // perch so a muted phone still sees the price of the rescue.
-            gs.score += gs.bonus
-            gs.popups.push({ x: 112, y: 34, text: `+${gs.bonus}`, age: 0 })
+            // the capture, never a payout). The banked amount pops at her perch
+            // so a muted phone still sees the price of the rescue; the popup is
+            // pushed AFTER resetPlayer (which wipes the FX buffer) so it rides
+            // the transition onto the fresh board, arcade tally-screen style.
+            const paid = gs.bonus
+            gs.score += paid
             resetPlayer(gs) // #3598 — rebuilds the board too: fresh rivets, level girders, ape back on his perch
+            gs.popups.push({ x: 112, y: 34, text: `+${paid}`, age: 0 })
         }
         return ev
     }
@@ -1303,7 +1306,7 @@ const JUMP_CANDS = [
 // credit flows through the route's ladders.
 export function watchStep(gs) {
     if (gs.over || gs.attract) return null
-    if (gs.deathTimer > 0 || gs.winTimer > 0 || gs.collapse > 0) return null // #3598 — the crash is an honest wait
+    if (gs.deathTimer > 0 || gs.winTimer > 0 || gs.collapse > 0 || gs.captureTimer > 0) return null // #3598 — the crash is an honest wait; #3786 — so is the grab
     const cands = barrelThreat(gs) ? [...WALK_CANDS, ...JUMP_CANDS] : WALK_CANDS
     let best = null
     let bestV = -Infinity
