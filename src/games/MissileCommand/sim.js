@@ -71,7 +71,7 @@ export const SMART_CORE_R = 4 // blast-meets-core envelope, the saucer rule at w
 // center battery's ABMs fly much faster. Below the gate every ABM is still 15,
 // so the waves 1..6 proofs replay untouched.
 export function siloSpeed(gs, silo) {
-    return gs.wave >= SMART_FIRST_WAVE && silo.x === CENTER_SILO_X ? CENTER_ABM_SPEED : ABM_SPEED
+    return gs.smartWave && silo.x === CENTER_SILO_X ? CENTER_ABM_SPEED : ABM_SPEED
 }
 export const SAUCER_Y_MIN = 120
 export const SAUCER_Y_MAX = 200
@@ -109,6 +109,7 @@ export function makeRun(seed) {
         attractFerries: 0, // scripted ferry counter for the attract ad (#3638)
         smartLeftInWave: 0, // evasive warheads (#3630), empty below SMART_FIRST_WAVE
         smartTimer: 0,
+        smartWave: false, // #3630: the wave-scoped battery-speed rule — startWave flips it from the gate; harnesses that grade other doctrine clear it
         crosshair: { x: SCREEN_WIDTH / 2, y: SCREEN_HEIGHT / 2 },
         state: 'playing', // playing | waveEnd | gameOver
         spawning: true,
@@ -124,7 +125,7 @@ export function makeRun(seed) {
 
 export const citiesAlive = (gs) => gs.cities.filter((c) => c.alive).length
 
-export function startWave(gs) {
+export function startWave(gs, opts = {}) {
     gs.missilesLeftInWave = 10 + gs.wave * 2
     // #3629: the cruise salvo rolls only at or past the gate — below
     // SAUCER_FIRST_WAVE the seeded stream is untouched, so every wave 1..5
@@ -137,7 +138,10 @@ export function startWave(gs) {
     }
     // #3630 smart bombs: one guaranteed per wave from the gate, +1 every four,
     // cap two. Rolls ride after the saucer rolls, below the gate never.
-    if (gs.wave >= SMART_FIRST_WAVE) {
+    // opts.noSmart is the doctrine-harness opt-out: not just the arrivals but
+    // the DIE too, so a graded wave replays bit-exact against the pre-smart sim.
+    gs.smartWave = gs.wave >= SMART_FIRST_WAVE && !opts.noSmart
+    if (gs.smartWave) {
         gs.smartLeftInWave = Math.min(2, 1 + Math.floor((gs.wave - SMART_FIRST_WAVE) / 4))
         gs.smartTimer = 120 + Math.floor(gs.rand() * 240)
     } else {
@@ -581,7 +585,10 @@ export function gunnerStep(gs, opts = {}) {
             const silo = nearestSilo(gs, p.x)
             if (!silo) return null // batteries dry or dead — nothing to spend
             const d = Math.hypot(p.x - silo.x, p.y - silo.y)
-            const k = abmArrivalTicks(d)
+            // #3630: predict with the launching silo's real speed — from the
+            // smart gate the center flies 28, and a boom computed at 15
+            // detonates early and misses. Below the gate this is ABM_SPEED.
+            const k = abmArrivalTicks(d, siloSpeed(gs, silo))
             if (k <= j) {
                 // Detonates at tick now+k with radius >= 1; the warhead is at
                 // this exact point at now+j >= now+k — distance 0 < radius.
@@ -662,7 +669,7 @@ export function gunnerStep(gs, opts = {}) {
             const silo = nearestSilo(gs, px)
             if (!silo) break // batteries dry or dead — nothing to spend
             const d = Math.hypot(px - silo.x, saucer.y - silo.y)
-            const k = abmArrivalTicks(d)
+            const k = abmArrivalTicks(d, siloSpeed(gs, silo)) // #3630 center flies 28
             if (k <= j) {
                 saucer.coverUntil = gs.tick + k + 4
                 return { aimX: px, aimY: saucer.y, wid: saucer.id, boom: gs.tick + k }

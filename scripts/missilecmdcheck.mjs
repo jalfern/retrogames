@@ -313,8 +313,7 @@ console.log('saucers (#3638): deep doctrine waves 6..10, bonus on vs off')
     const run = (seed, wave, noBonus) => {
         const gs = makeRun(seed)
         gs.wave = wave
-        startWave(gs)
-        gs.smartLeftInWave = 0 // #3630 isolation: ferry doctrine is graded without the wave-7 arrivals
+        startWave(gs, { noSmart: true }) // #3630 isolation: ferry doctrine graded bit-exact against the pre-smart sim (arrivals AND their die)
         let guard = 0
         while (gs.wave <= wave && !gs.over && guard++ < 40000) tickMc(gs, gunnerStep(gs, { noBonus }))
         return { over: gs.over, wave: gs.wave, cities: citiesAlive(gs), score: gs.score }
@@ -671,8 +670,8 @@ if (process.argv.includes('--mutant')) {
             `y: 130 + (n % 3) * 26,`,
             `y: SAUCER_Y_MIN + Math.floor(gs.rand() * (SAUCER_Y_MAX - SAUCER_Y_MIN)),`],
         ['the smart-bomb gate opens at wave 1 (byte-parity floor shatters)', S,
-            `if (gs.wave >= SMART_FIRST_WAVE) {\n        gs.smartLeftInWave`,
-            `if (gs.wave >= 1) {\n        gs.smartLeftInWave`],
+            `gs.smartWave = gs.wave >= SMART_FIRST_WAVE && !opts.noSmart`,
+            `gs.smartWave = true`],
         ['the center battery keeps the slow speed (arcade counter-rule gone)', S,
             `export const CENTER_ABM_SPEED = 28`,
             `export const CENTER_ABM_SPEED = 15`],
