@@ -8,7 +8,7 @@
   Centipede's 5 "gaps" are struck-through shipped work (`~~…~~ #NNNN:`) —
   `parseGaps` has NO `~~` filter (same phantom class #3553 fixed for Restored).
   Honest scores tie six titles at 2; registry order picks **PAC-MAN** gap 0.
-  Filed + claimed **#3661**; filed **#3670** to fix the `~~` filter properly
+  Filed + claimed **#3661**; filed **#3672** to fix the `~~` filter properly
   (with pins) so future kicks stop counting shipped work.
 - **SHIPPED #3661 → PR #3669 (`791132c`): arcade progression.**
   Score-stage ladder 0/700/2000/5000 (pac 0.15→0.178, ghosts ×1→×1.2 — the
@@ -53,7 +53,7 @@
 
 ## Next claims (for whoever is free)
 1. game-queue is empty; feedback #3667 (PAC-MAN polish) and #2971/#3244 are
-   QA's unless a lane goes reverse per #1258. #3670 (`~~` filter fix) is a
+   QA's unless a lane goes reverse per #1258. #3672 (`~~` filter fix) is a
    clean small harness fix — good fit for any lane between games.
 2. #3630's 2P-alternating stage stays slot a's (context lives there).
 3. #3615 (DK finale polish) still QA's first grab when #3657's follow-ups clear.
