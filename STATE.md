@@ -1,68 +1,74 @@
-# STATE — forge board snapshot (slot a, 2026-11-27 — PINBALL rescue sweep SHIPPED `9d35638`)
+# STATE — forge board snapshot (slot b, 2026-11-27 — pacmandrive #3755 SHIPPED `76158df`)
 
-## This session (slot a) — resumed corpse, shipped in the first hour
-- TARGET #3766 claimed as “already yours” — live corpse of the warden-killed
-  session `forge/pinball-kbsweep` (last checkpoint cf21b08: “live leg green at
-  this tip… merging on static green”). Resumed per step 1b, no rebuild needed.
-- Verified at the tip locally (pinballcheck 342/342), PR #3776 body complete
-  (`Closes #3766`, no WIP/hold), `scripts/forge-merge.sh` → MERGED `9d35638`
-  (required check `static` green; cleanup done: remote branch gone, lane
-  re-detached, worktree pruned).
-- SHIPPED: the kickback rescue now SHOWS — `gs.kbSweep`/`gs.kbSweepL` chase a
-  light up the save’s own outlane on both flanks of both cabinets, plus the
-  distinct grapple voice (clunk+snap+ring, gated against regressing to the ramp
-  blip); pinballcheck §8c 10 pins + 6 named mutants; pinballplay live pixel
-  leg on a page-side rAF accumulator; README walk-clause CLOSED. Rides with it:
-  ADVENTURE gate-rite CLOSED audit mark, ROGUE lamp/oil BLOCKED mark
-  (Wikipedia §Gameplay/§UI 2026-11-27 — lamp is Moria-lineage, #3695 precedent).
-- Prod verified: live chunk `Pinball-CmSzj86C.js` carries `kbSweep`/`kbSweepL`.
-  #3766 shipped + closed.
+## This session (slot b)
+- Found main RED (#601): nightly 46034576636 failed `nightlybotcheck` + `dvhcheck`.
+  #3772 merged the fix ahead of me (`da3457a`) — both gates verified green at that
+  tip locally. The freeze-lift refresh on main was STARVED ~80 min behind a
+  duplicate PR’s branch run in the `nightly` concurrency group: cancelled
+  46048400905, closed duplicate #3774 (content ⊆ #3772), refresh resumed and is
+  IN PROGRESS at da3457a (~green 21:00Z → freeze lifts honestly).
+- TARGET #3766 REFUSED at claim (held by a — she shipped PINBALL `9d35638`).
+  Normal ladder: halt none; steer none; `next` #1712 waiting-jon; game-queue
+  empty; feedback all held (#3761 building-qa, #3244/#2971 waiting-jon); QA-borrow
+  blocked (live QA MASTER mini+studio); flagshipStage null; weakestStage =
+  PAC-MAN 0 weak, and its only gap is the harness job #3755 — claimed directly
+  (the board’s free-lane job, never-dry-safe: it was never filed as a POLISH claim).
+- **SHIPPED #3755** (PR #3781, squash `76158df`): `npm run pacmandrive` — real
+  headless Chrome drives the human loop with real keys: attract → key-start →
+  dots (+70) → tunnel circuit (col 6 up, wrap at row 14, col 21 down, row 20
+  east, col 26 down) → energizer (23,26) frightens (live power + scared seen) →
+  powered chase → death → respawn → game-over → key-restart, zero page errors;
+  drawn wedge pixel-checked vs logical head at two checkpoints (off ≤0.03 cells).
+  17/17; two named mutants die (frighten-off reddens §pellet; pac-yellow→green
+  reddens BOTH wedge legs, yellows=0). `__pacTest.probe` gains `dir`+`attract`
+  (DEV, additive). README honest gap struck with evidence; idle-kick no longer
+  names PAC-MAN (now `KICK FROGGER 0 weak`). pacmancheck 154/154, lints + build green.
+- Housekeeping: closed slot b’s stale STATE PR #3770 (its STATE was superseded by
+  e6312f8, which already folded the park — merging would have reverted main’s STATE).
 
 ## Harness facts paid this session (kept so lanes stop re-paying)
-- **Prod verification must target the game’s LAZY chunk** — games are route-
-  split, so game symbols never live in `index-*.js`; pull the `Pinball-<hash>.js`
-  name out of the served index bundle and grep THAT asset.
-- Only **object properties** survive minification (`gs.kbSweep` yes; a local
-  `let p2Batt` no). Choose prod markers accordingly.
-- Vercel lands on main as a **commit status** (`gh api …/commits/<sha>/status`
-  → context `Vercel`), not a check-run — a main tip can look event-dropped
-  (#3269 family) while its deploy is green.
+- **Poll+steer latency ≈ one cell** at ghost speed: press turns EARLY and let the
+  arcade pre-turn law land them (a held direction turns at the first legal cell).
+  Pressing at the target reads late — pac coasts past the row-14 tunnel mouth.
+- **`until()`-style poll helpers must return NULL on timeout.** A truthy final
+  sample reads as a passed leg — three phantom greens before this bit.
+- A +50 score delta is NOT the energizer unless position agrees (5 dots also
+  spell +50); demand the witness cell. Likewise: OR-chained fallback bounds are
+  not load-bearing — prove-fail mutants must break the GAME rule line (frighten).
+- The `nightly` concurrency group serialises EVERYTHING: never leave a nightly
+  dispatched on a lane branch while a freeze-lift refresh is queued on main —
+  it starves the refresh and re-locks the factory (this cost ~80 min today).
+- `main-ok` passes on a `cancelled` latest nightly (no-verdict ≠ red); prefer
+  merging while the honest refresh is merely queued, and never let a refresh
+  occupy the group twice (dispatch once after merge, not before).
 
 ## BOARD facts at close
-- main GREEN at ddb456e. Merged since last STATE: `4dc509c` #3765 MC P2 (slot b),
-  `da3457a` #3772 red-main fix, `9ca90ab` #3769 orrery art, `22b369a` #3767 DK
-  popups, `9d35638` #3776 PINBALL (ours), `ab9496f` #3771 bonsai demo,
-  `ddb456e` #3782 orrery guidance.
-- building: #3755 pacmandrive — LIVE (`forge/pacmandrive` @ 7540ac6, CI running).
-  building-qa: #3778 (QA live on `qa/pinball-dmd-latch`), #3744 fireflies demo.
-  game-queue: empty. halt: 0.
-- Slot b’s STATE PR #3770 still OPEN awaiting the green nightly — this STATE
-  folds their 18:42 park; left for lane b (noted on their PR).
-- Nightly @ da3457a pending; main-ok reports OK (latest run cancelled).
-- Rule 4 satisfied: game code merged (#3776).
+- main tip `76158df` (push CI green). Nightly refresh @ da3457a IN PROGRESS —
+  green ≈21:00Z lifts the #601 freeze for everyone (no new red cause known:
+  both failing gates verified green locally at da3457a+mine).
+- building: none. building-qa: #3778 (QA live), #3744 fireflies demo.
+  game-queue: empty. halt: 0. #3755 shipped+closed; #3774 closed (duplicate).
+- Rule 4 satisfied: game code merged this window (`76158df` touches src/games/**).
 
 ## PLAYABLE on main right now
-- PINBALL — the rescue shows: both kickback saves chase lamps up the lane with
-  a grapple snap: https://jalfern.com/retrogames/pinball
-- DONKEY KONG bonus popups (#3767) + walk-past 50 (#3759), ORRERY first-contact
-  guidance (#3780), MC hot-seat P2 batteries (#3765), Centipede kill-pop (#3736).
+- PINBALL — rescue sweep shows the kickback save: https://jalfern.com/retrogames/pinball
+- DONKEY KONG popups (#3767) + walk-past 50 (#3759), ORRERY guidance (#3780),
+  MC hot-seat P2 (#3765) + bonus city (#3753), Centipede kill-pop (#3736).
+- Dev-only: `npm run dev` + `npm run pacmandrive` drives PAC-MAN end to end.
 
 ## Open questions (links only — #605)
-- #3516 (Arkanoid art rung — AWAITING, default *done*, deadline 11-28).
-  Nothing ANSWERED/DEFAULTED to execute; asked nothing new.
+- #3516 (Arkanoid art rung — AWAITING, default *done*, deadline 11-28). Nothing
+  ANSWERED/DEFAULTED to execute; asked nothing new.
 
 ## Next claims (for whoever is free)
-1. #3755 pacmandrive — live, don’t touch.
-2. NEVER-DRY audit after this close: PAC-MAN’s gap = #3755 (in progress);
-   Frogger note not buildable; ADVENTURE CLOSED; ROGUE BLOCKED; MC gaps 0;
-   PINBALL residue items 3–5 are open prose on #3446 (owned). Next true
-   gameplay rung likely **DK fireballs/electric-floor + timer-zero capture**
-   (README honest gaps still open, no QA issue owns them) — verify ownership
-   with `weakestStage` at claim time.
+1. NEVER-DRY next true gameplay rung: **DK fireballs/electric-floor + timer-zero
+   capture** (slot a’s audit; README honest gaps, no QA issue owns them —
+   verify ownership with `weakestStage` at claim time; DK was building-qa-held
+   by #3761, check it is clear first).
+2. Frogger’s remaining bullet is the driver-horizon note (not buildable — leave).
 3. QA: #3778 in flight; #3744 fireflies demo queued.
 
 ## Slot state at handoff
-- :5173 never started this session (merge-only resume; nothing on the port to
-  stop — `scripts/devstop.sh` idle-clean).
-- Worktree `~/Dev/retrogames-forge-pinball-kbsweep` pruned after merge.
-- STATE parked via `statepark.mjs park a`; shift report pushed.
+- :5178 stopped via `scripts/devstop.sh` at close.
+- Worktree `~/Dev/retrogames-forge-pacmandrive` pruned after merge.
+- STATE parked via `statepark.mjs park b`; shift report pushed.
