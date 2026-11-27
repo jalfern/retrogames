@@ -66,8 +66,8 @@ divergence centipedadrive caught (a fresh board is a fresh shot). Report
 
 ## Verify
 ```
-npm run centipedechek            # field replay + scoring law + menagerie law + wiring (59)
-npm run centipedechek -- --mutant  # 17 mutants, all must die
+npm run centipedechek            # field replay + scoring law + menagerie law + wiring + sound grammar (104)
+npm run centipedechek -- --mutant  # 31 mutants, all must die
 npm run centipedadrive          # real Chrome: sky-shot summon, seeded rollout, honest death
 npm run lint:centipede
 ```
@@ -86,7 +86,15 @@ identical seeded drives answer identically including what was seen en route.
   every cut compounds ×1.25 — dice-free, so `?seed=N` replays the whole ladder.
   The exact rates are this repo's pinned spec; the monotone climb and the
   cut-accelerates-the-rear law are the arcade's.
-- Sound is a tone sketch; no arcade munch/click sequence.
+- ~~Sound is a tone sketch; no arcade munch/click sequence.~~ #3632: the
+  swarm munches — a two-syllable clack whose pitch and interval follow the
+  column's distance to the zapper (`munchCue` in `sim.js`, pinned), plus a
+  re-synthesized grammar: crack zapper, woodblock mushroom chip / filtered
+  crunch, layered pew with head sparkle, spider ricochet boing + squelch
+  kill, scorpion entry hiss and venom sizzle, flea zoom-in and floor boing,
+  three-note wave jingle, three-layer death. All synthesized at runtime via
+  `audioController`; the exact machine waveforms are UNVERIFIED — this is our
+  arcade-close rendering, not a claim about the original's output.
 - The menagerie passes *through* the centipede column (the arcade's exact
   bug-vs-bug collisions are unwitnessed); cadences, spider bounce grammar
   and the poisoned-segment speed law are this repo's pinned spec, not
