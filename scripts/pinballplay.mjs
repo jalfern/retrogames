@@ -649,7 +649,11 @@ try {
         await wait(50)
         gpPost = Math.max(gpPost, await gpBand()); gpFrames++
         const cs = await page.evaluate(() => window.__chase)
-        if (cs) { chaseLit = cs.max; chaseSweep = cs.sweepMax; if (cs.max >= 8 && cs.sweepMax >= 8) break }
+        // #3806 review: head pixels land ~100 ms after the coil — breaking there
+        // sampled the grapple AFTER it decayed (frames=2, both near-silence). The
+        // audio window must cover clunk (0-60), snap (60-150) and ring+latch
+        // (130-250 ms), so hold the poll open past 8 sampled frames (~400 ms).
+        if (cs) { chaseLit = cs.max; chaseSweep = cs.sweepMax; if (cs.max >= 8 && cs.sweepMax >= 8 && gpFrames >= 8) break }
     }
     await page.evaluate(() => { cancelAnimationFrame(window.__chaseRaf) })
     ok('#3766 the re-armed save chases live: white head+tail pixels ride the column while kbSweep runs',
