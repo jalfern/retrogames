@@ -10,6 +10,7 @@ export const PAL = {
     fieldBot: '#070a1e',
     lane: '#ffb02e',          // bold amber lane graphics
     laneDim: 'rgba(255,176,46,0.25)',
+    laneRgb: '255,176,46',
     neon: '#31e1ff',          // cyan neon guides / targets
     hot: '#ff3d5e',           // bumper caps / alerts
     sling: '#ff8a3d',
@@ -43,6 +44,7 @@ export const PAL_EMBER = {
     fieldBot: '#120405',
     lane: '#ffd166',
     laneDim: 'rgba(255,209,102,0.25)',
+    laneRgb: '255,209,102',
     neon: '#ff9d2e',
     hot: '#ff4d3a',
     sling: '#ffb05c',
@@ -83,6 +85,7 @@ export const PAL_TIDE = {
     fieldBot: '#02141a',
     lane: '#ff7a59',
     laneDim: 'rgba(255,122,89,0.25)',
+    laneRgb: '255,122,89',
     neon: '#52f0b8',
     hot: '#ffd23d',
     sling: '#8ae0c0',
@@ -115,6 +118,7 @@ export const PAL_TOXIC = {
     fieldBot: '#050f04',
     lane: '#b6ff3d',
     laneDim: 'rgba(182,255,61,0.25)',
+    laneRgb: '182,255,61',
     neon: '#ff5ce1',
     hot: '#ff9f1c',
     sling: '#d8ff7a',
@@ -147,6 +151,7 @@ export const PAL_NOIR = {
     fieldBot: '#020208',
     lane: '#ff2ea6',
     laneDim: 'rgba(255,46,166,0.25)',
+    laneRgb: '255,46,166',
     neon: '#8d7bff',
     hot: '#ff5c7a',
     sling: '#ff8ac4',
@@ -179,6 +184,7 @@ export const PAL_GLACIER = {
     fieldBot: '#04101c',
     lane: '#e8f4ff',
     laneDim: 'rgba(232,244,255,0.25)',
+    laneRgb: '232,244,255',
     neon: '#37c8ff',
     hot: '#ff6a2e',
     sling: '#9fdcff',
@@ -214,6 +220,9 @@ export const PAL_INFERNO = {
     fieldBot: '#050101',
     lane: '#fff3d0',
     laneDim: 'rgba(255,243,208,0.25)',
+    // #3793: the lit-hierarchy law reads laneRgb for single-lit faces — kits
+    // ship every key the law touches (parity).
+    laneRgb: '255,243,208',
     neon: '#ff6a00',
     hot: '#ff2d1a',
     sling: '#ffd0a0',
@@ -238,6 +247,37 @@ export const PAL_INFERNO = {
     hotDim: 'rgba(255,45,26,0.25)',
     kickerRgb: '255,243,208',
 };
+
+// #3793: lit-hierarchy law (display-only, stateHash-clean). A real machine
+// reads three intensity CLASSES at a glance: single lit (one banked lock, a
+// lane progress lamp, a ready kickback) sit low and steady in lane amber; a
+// completed SET flashes hot; the jackpot moment (multiball live) strobes
+// every lit lamp full white, faster and hotter. Every playfield lamp takes
+// its brightness from these helpers so the classes can never drift back into
+// one look — the #3793 complaint was that progress, sets and jackpots all
+// glowed at a single class.
+export const LAMP_UNLIT = 0, LAMP_SINGLE = 1, LAMP_SET = 2, LAMP_JACKPOT = 3
+
+// The jackpot window: the pack is live, or its flash is announcing it.
+export function jackpotNow(gs) { return !!gs.multiball || gs.mbFlash > 0 }
+
+// `level` is LAMP_SINGLE for plain progress or LAMP_SET for a completed set
+// (and for the score-just-landed flashes). A dark lamp never escalates.
+export function lampClass(level, jackpot) { return level > 0 && jackpot ? LAMP_JACKPOT : level }
+
+// The single source of brightness. `fill`/`alt` alternate on a `rate`-shifted
+// frame clock (rate 0 = steady); bloom and alpha rise strictly with the class.
+export function lampLook(cls, pal) {
+    if (cls === LAMP_JACKPOT) return { fill: '#ffffff', alt: pal.hot, blur: 20, alpha: 1, rate: 2 }
+    if (cls === LAMP_SET) return { fill: '#ffffff', alt: pal.hot, blur: 10, alpha: 1, rate: 3 }
+    if (cls === LAMP_SINGLE) return { fill: pal.lane, alt: null, blur: 4, alpha: 0.72, rate: 0 }
+    return { fill: pal.hotOff, alt: null, blur: 0, alpha: 0.4, rate: 0 }
+}
+
+// Current-phase fill: the flash/strobe classes flip white↔hot on their rate.
+export function lampFill(look, tick) {
+    return look.rate > 0 && (tick >> look.rate) % 2 === 0 ? look.fill : (look.alt || look.fill)
+}
 
 export const SCORE_DIGITS = 6;
 export const SEG_W = 14, SEG_H = 24;    // 7-segment glyph size

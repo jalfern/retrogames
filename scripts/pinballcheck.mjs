@@ -272,6 +272,7 @@ if (MUT) {
 }
 
 const { makeGame, stepGame, stateOf, stateHash, resetBall, TABLE, W, H, BALL_R, mulberry32, demoPad, demoOver, compileTable, sanitizeDef, SMITH_REFS, SMITH_LIMITS, bumperZoneOk, zoneGuidePath, tiltImpulse, TILT_NUDGE, soloBed, SOLO_FLOOR, SOLO_BASE, SOLO_CAP, SOLO_HEAT_AT } = await import('../src/games/Pinball/sim.js')
+const { PAL_NOIR, PAL_GLACIER, PAL_INFERNO, LAMP_UNLIT, LAMP_SINGLE, LAMP_SET, LAMP_JACKPOT, jackpotNow, lampClass, lampLook, lampFill } = await import('../src/games/Pinball/art.js')
 const { SKINS, skinsFor, skinAt, parseStyle, styleIndex, PAL, PAL_EMBER, PAL_TIDE, PAL_TOXIC, kitIndex, styleWarn, KIT_STORE, ATTRACT_DMD, FONT, textFit, marqueeFit } = await import('../src/games/Pinball/art.js')
 
 const r = new Report('pinballcheck')
@@ -2402,6 +2403,61 @@ const wrap = (gs) => {
     r.check('#3778 the pixel-strip proof samples inside the paint loop while the line is up',
         /window\.__strip = \{ lit: 0 \}/.test(playSrc) && /if \(s && s\.dmd\.text\)/.test(playSrc) &&
         /getImageData\(112, 246, 136, 24\)/.test(playSrc) && !/const strip = g\.getImageData/.test(playSrc))
+}
+
+// --- 8d. lit hierarchy (#3793): single-lit amber < set-lit flash < jackpot strobe ---
+// The complaint: every lit target (JET LANE SET, RAMP SET, kickback-ready,
+// lock lamps, bank lamps) glowed at one intensity class, so the playfield
+// never told progress from completion from the jackpot. The law: brightness
+// comes from the shared class helpers in art.js; the classes are strictly
+// ordered; a live multiball escalates every LIT lamp and never a dark one;
+// and the whole mechanism is display-only — stateHash never sees it.
+{
+    const idxSrc = readFileSync(new URL('../src/games/Pinball/index.jsx', import.meta.url), 'utf8')
+    // brightness metric: bloom + whiteness + alpha (strobe RATE is urgency,
+    // not brightness, and is proven separately).
+    const b = (c) => { const k = lampLook(c, PAL); return k.blur + (k.fill === '#ffffff' ? 50 : 0) + k.alpha * 10 }
+    r.check('#3793 the intensity classes are strictly ordered dark < single < set < jackpot',
+        b(LAMP_UNLIT) < b(LAMP_SINGLE) && b(LAMP_SINGLE) < b(LAMP_SET) && b(LAMP_SET) < b(LAMP_JACKPOT),
+        [LAMP_UNLIT, LAMP_SINGLE, LAMP_SET, LAMP_JACKPOT].map(b).join(' < '))
+    r.check('#3793 single-lit is steady lane amber; the flash classes alternate white<->hot',
+        lampLook(LAMP_SINGLE, PAL).rate === 0 && lampLook(LAMP_SINGLE, PAL).fill === PAL.lane &&
+        lampLook(LAMP_SET, PAL).rate > 0 && lampLook(LAMP_JACKPOT, PAL).rate > 0 &&
+        lampLook(LAMP_SET, PAL).alt === PAL.hot && lampLook(LAMP_JACKPOT, PAL).alt === PAL.hot)
+    r.check('#3793 the jackpot strobes faster than the set flash',
+        lampLook(LAMP_JACKPOT, PAL).rate < lampLook(LAMP_SET, PAL).rate,
+        `jackpot rate ${lampLook(LAMP_JACKPOT, PAL).rate} vs set rate ${lampLook(LAMP_SET, PAL).rate}`)
+    r.check('#3793 the jackpot window is multiball live or its announce flash',
+        jackpotNow({ multiball: true, mbFlash: 0 }) && jackpotNow({ multiball: false, mbFlash: 60 }) &&
+        !jackpotNow({ multiball: false, mbFlash: 0 }))
+    r.check('#3793 a lit lamp escalates inside the jackpot and a dark lamp never does',
+        lampClass(LAMP_SINGLE, true) === LAMP_JACKPOT && lampClass(LAMP_SET, true) === LAMP_JACKPOT &&
+        lampClass(LAMP_UNLIT, true) === LAMP_UNLIT && lampClass(LAMP_SINGLE, false) === LAMP_SINGLE)
+    // the same bank of lock lamps, three moments of one ball:
+    const gsH = makeGame(77)
+    const lockLvl = () => (gsH.locks > 0 ? (gsH.lockFlash > 0 ? LAMP_SET : LAMP_SINGLE) : LAMP_UNLIT)
+    gsH.locks = 1; gsH.lockFlash = 0
+    const quiet = lampLook(lampClass(lockLvl(), jackpotNow(gsH)), PAL)
+    gsH.lockFlash = 8
+    const banked = lampLook(lampClass(lockLvl(), jackpotNow(gsH)), PAL)
+    gsH.multiball = true
+    const pack = lampLook(lampClass(lockLvl(), jackpotNow(gsH)), PAL)
+    r.check('#3793 one banked lock reads quiet amber, the bank moment flashes, the pack out-shines it',
+        quiet.fill === PAL.lane && quiet.blur === 4 && banked.blur > quiet.blur && pack.blur > banked.blur && pack.rate === 2)
+    const hH = stateHash(gsH)
+    for (const c of [LAMP_SINGLE, LAMP_SET, LAMP_JACKPOT]) lampFill(lampLook(lampClass(c, true), PAL), gsH.tick)
+    r.check('#3793 the hierarchy is display-only — calling the helpers cannot move stateHash',
+        stateHash(gsH) === hH)
+    r.check('#3793 every art kit carries the palette keys the hierarchy reads',
+        [PAL, PAL_EMBER, PAL_TIDE, PAL_TOXIC, PAL_NOIR, PAL_GLACIER, PAL_INFERNO]
+            .every((k) => k.lane && k.hot && k.hotRgb && k.hotOff && k.laneRgb))
+    // wiring: every lit lamp site in the shell draws through the classes, the
+    // RAMP SET finally has a playfield lamp, and the old uniform looks are gone.
+    r.check('#3793 every lamp site takes brightness from lampClass/lampLook and the RAMP SET lamp exists',
+        (idxSrc.match(/lampLook\(lampClass\(/g) || []).length >= 7 && /gs\.rampLit/.test(idxSrc) && /kbEscal/.test(idxSrc))
+    r.check('#3793 no lamp site keeps the old uniform pulse and kickback-ready is no longer a hot flash',
+        !/const pulse = on && \(gs\.tick >> 3\)/.test(idxSrc) && !/kbArmed \? pal\.hot\b/.test(idxSrc) &&
+        !/else if \(kbArmed\) \{ ctx\.shadowColor = pal\.hot/.test(idxSrc))
 }
 
 restoreAll()

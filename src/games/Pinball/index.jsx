@@ -17,7 +17,7 @@ import {
     compileTable, sanitizeDef, validateSmith, SMITH_REFS, SMITH_LIMITS, bumperZoneOk, zoneGuidePath, tiltImpulse, soloBed, SOLO_CAP,
 } from './sim.js'
 import { tiltVec } from '../../components/padTypes.js'
-import { PAL, PAL_EMBER, SCORE_X, SCORE_Y, SCORE_DIGITS, drawSevenSeg, paintField, PRESS, MESSAGES, MESSAGES_EMBER, drawDMD, dmdIdle, skinAt, skinsFor, parseStyle, styleIndex, kitIndex, styleWarn, KIT_STORE, ATTRACT_DMD, textFit, marqueeFit } from './art.js'
+import { PAL, PAL_EMBER, SCORE_X, SCORE_Y, SCORE_DIGITS, drawSevenSeg, paintField, PRESS, MESSAGES, MESSAGES_EMBER, drawDMD, dmdIdle, skinAt, skinsFor, parseStyle, styleIndex, kitIndex, styleWarn, KIT_STORE, ATTRACT_DMD, textFit, marqueeFit, LAMP_UNLIT, LAMP_SINGLE, LAMP_SET, jackpotNow, lampClass, lampLook, lampFill } from './art.js'
 
 const FIXED_DT = 1000 / 60
 
@@ -757,6 +757,7 @@ const PinballGame = () => {
             ctx.restore()
 
             const fl = L.getFl()
+            const jb = jackpotNow(gs)   // #3793: one jackpot window for the whole paint pass
             Object.keys(fl).forEach((k) => { if (Array.isArray(fl[k])) fl[k] = fl[k].map((x) => Math.max(0, x - 1)); else fl[k] = Math.max(0, fl[k] - 1) })
 
             // ---- rung 2: firelane lamp set + rollover rings + lock tower ----
@@ -788,6 +789,19 @@ const PinballGame = () => {
                     ctx.beginPath(); ctx.arc(v.rampCx, rr.y, 7, 0, 7); ctx.stroke()
                     ctx.restore()
                 })
+                // #3793: the RAMP SET lamp — the set lived only in the DMD line,
+                // so the playfield never read it. The bulb above the top rollover
+                // rides the SET flash class (jackpot escalates it to the strobe),
+                // mirroring the JET LANE SET idiom across the table.
+                if (gs.rampLit) {
+                    ctx.save()
+                    const lkR = lampLook(lampClass(LAMP_SET, jb), pal)
+                    ctx.shadowColor = pal.hot; ctx.shadowBlur = lkR.blur
+                    ctx.fillStyle = lampFill(lkR, gs.tick)
+                    ctx.globalAlpha = lkR.alpha
+                    ctx.beginPath(); ctx.arc(v.rampCx, 236, 3, 0, 7); ctx.fill()
+                    ctx.restore()
+                }
                 // #3432: JET LANE — the left ramp. Flank rope, chrome wire pair,
                 // two progress lamps and a SET lamp; the flank has its own flash
                 // field so the two ramps never cross-light.
@@ -813,7 +827,10 @@ const PinballGame = () => {
                         ctx.restore()
                     })
                     for (let i = 0; i < tb.rampL.rolls.length; i++) {
-                        const on = gs.rampLHits > i || fl.rampL > 0
+                        // #3793: progress is single-lit amber; the SET raises the
+                        // whole bank to the flash class (jackpot escalates further).
+                        const lvl = gs.rampLLit ? LAMP_SET : (gs.rampLHits > i || fl.rampL > 0 ? LAMP_SINGLE : LAMP_UNLIT)
+                        const lk = lampLook(lampClass(lvl, jb), pal)
                         const lx = rcx - 6 + i * 12
                         if (hotKit) {
                             // bronze bezel: dark seat + warm bone ring
@@ -828,15 +845,18 @@ const PinballGame = () => {
                             ctx.beginPath(); ctx.arc(lx, 288, 3.4, 0, 7); ctx.stroke()
                             ctx.restore()
                         }
-                        ctx.fillStyle = on ? pal.lane : pal.hotOff
-                        ctx.globalAlpha = on ? 0.8 : 0.4
+                        if (lk.blur) { ctx.shadowColor = pal.lane; ctx.shadowBlur = lk.blur }
+                        ctx.fillStyle = lampFill(lk, gs.tick)
+                        ctx.globalAlpha = lk.alpha
                         ctx.beginPath(); ctx.arc(lx, 288, 2.4, 0, 7); ctx.fill()
+                        ctx.shadowBlur = 0
                         ctx.globalAlpha = 1
                     }
                     if (gs.rampLLit) {
                         ctx.save()
-                        ctx.shadowColor = pal.hot; ctx.shadowBlur = 8 + 4 * Math.sin(gs.tick / 6)
-                        ctx.fillStyle = (gs.tick >> 3) % 2 === 0 ? '#ffffff' : pal.hot
+                        const lkS = lampLook(lampClass(LAMP_SET, jb), pal)
+                        ctx.shadowColor = pal.hot; ctx.shadowBlur = lkS.blur
+                        ctx.fillStyle = lampFill(lkS, gs.tick)
                         if (hotKit) {
                             // SET housing: dark seat + warm bone ring, then the bulb
                             ctx.globalAlpha = 0.9
@@ -873,12 +893,17 @@ const PinballGame = () => {
                 ctx.strokeStyle = pal.chrome; ctx.lineWidth = 2
                 ctx.beginPath(); ctx.moveTo(v.towerX1, v.lockBase); ctx.lineTo(v.towerIn1, v.lockTop); ctx.lineTo(v.towerIn2, v.lockTop); ctx.lineTo(v.towerX2, v.lockBase); ctx.stroke()
                 for (let i = 0; i < tb.lock.need; i++) {
-                    const on = i < gs.locks
-                    const pulse = on && (gs.tick >> 3) % 2 === 0
-                    ctx.fillStyle = on ? (pulse ? '#ffffff' : pal.hot) : pal.hotOff
-                    if (on) { ctx.shadowColor = pal.hot; ctx.shadowBlur = 10 }
+                    // #3793: banked locks are progress — single-lit amber standby.
+                    // Only the bank-just-landed moment flashes; the pack-off or a
+                    // live jackpot escalates through the class helper.
+                    const lvl = i < gs.locks ? (gs.lockFlash > 0 ? LAMP_SET : LAMP_SINGLE) : LAMP_UNLIT
+                    const lk = lampLook(lampClass(lvl, jb), pal)
+                    if (lk.blur) { ctx.shadowColor = lvl === LAMP_SINGLE && !jb ? pal.lane : pal.hot; ctx.shadowBlur = lk.blur }
+                    ctx.fillStyle = lampFill(lk, gs.tick)
+                    ctx.globalAlpha = lk.alpha
                     ctx.beginPath(); ctx.arc(v.lampX0 + i * v.lockLampStep, v.lampY, v.lockLampR, 0, 7); ctx.fill()
                     ctx.shadowBlur = 0
+                    ctx.globalAlpha = 1
                 }
                 // #3297 gate slam: a chrome gate slams shut across the tower mouth
                 // while balls are banked, and lifts on the pack-off. Same gs.locks
@@ -933,32 +958,38 @@ const PinballGame = () => {
                     }
                     ctx.restore()
                 }
-                // arm pad — hot while armed
+                // arm pad — amber standby while armed, flash when the arm lands
                 ctx.save()
-                const al = armed || fl.orbitArm > 0
-                ctx.strokeStyle = al ? '#ffffff' : pal.lane
-                ctx.globalAlpha = al ? 0.95 : 0.45
+                const armLvl = fl.orbitArm > 0 ? LAMP_SET : (armed ? LAMP_SINGLE : LAMP_UNLIT)
+                const lkA = lampLook(lampClass(armLvl, jb), pal)
+                ctx.strokeStyle = lampFill(lkA, gs.tick)
+                ctx.globalAlpha = lkA.alpha
                 ctx.lineWidth = 3
                 ctx.beginPath(); ctx.arc(tb.orbit.armPad.x, tb.orbit.armPad.y, 8, 0, 7); ctx.stroke()
-                if (al) { ctx.shadowColor = pal.lane; ctx.shadowBlur = 18; ctx.stroke() }
+                if (lkA.blur) { ctx.shadowColor = pal.lane; ctx.shadowBlur = lkA.blur * 1.5; ctx.stroke() }
                 ctx.restore()
-                // done pad — hot while the set is lit / just scored
+                // done pad — flash class while the set is lit / just scored
                 ctx.save()
-                const dl = gs.orbitLit || fl.orbit > 0
-                ctx.strokeStyle = dl ? pal.hot : pal.lane
-                ctx.globalAlpha = dl ? 0.95 : 0.45
+                const doneLvl = gs.orbitLit || fl.orbit > 0 ? LAMP_SET : LAMP_UNLIT
+                const lkD = lampLook(lampClass(doneLvl, jb), pal)
+                ctx.strokeStyle = doneLvl ? lampFill(lkD, gs.tick) : pal.lane
+                ctx.globalAlpha = lkD.alpha
                 ctx.lineWidth = 3
                 ctx.beginPath(); ctx.arc(tb.orbit.donePad.x, tb.orbit.donePad.y, 8, 0, 7); ctx.stroke()
-                if (dl) { ctx.shadowColor = pal.hot; ctx.shadowBlur = 18; ctx.stroke() }
+                if (lkD.blur) { ctx.shadowColor = pal.hot; ctx.shadowBlur = lkD.blur * 1.5; ctx.stroke() }
                 ctx.restore()
                 // orbit bank lamps, seated under the DMD insert
                 for (let i = 0; i < tb.orbit.need; i++) {
-                    const on = gs.orbitLit || i < gs.orbitBank
-                    const pulse = on && (gs.tick >> 3) % 2 === 0
-                    ctx.fillStyle = on ? (pulse ? '#ffffff' : pal.hot) : pal.hotOff
-                    if (on) { ctx.shadowColor = pal.hot; ctx.shadowBlur = 8 }
+                    // #3793: bank progress is single amber; the completed set
+                    // flashes and a live jackpot strobes the whole bank.
+                    const lvl = gs.orbitLit ? LAMP_SET : (i < gs.orbitBank ? LAMP_SINGLE : LAMP_UNLIT)
+                    const lk = lampLook(lampClass(lvl, jb), pal)
+                    if (lk.blur) { ctx.shadowColor = lvl === LAMP_SINGLE && !jb ? pal.lane : pal.hot; ctx.shadowBlur = lk.blur }
+                    ctx.fillStyle = lampFill(lk, gs.tick)
+                    ctx.globalAlpha = lk.alpha
                     ctx.beginPath(); ctx.arc(v.orbitLampX0 + i * 12, 276, 3, 0, 7); ctx.fill()
                     ctx.shadowBlur = 0
+                    ctx.globalAlpha = 1
                 }
                 // magnet post — halo pulses while armed; energy tether
                 // and bloom while it holds a ball; dull when spent.
@@ -1152,29 +1183,33 @@ const PinballGame = () => {
                 const kbCx = (KB.x1 + KB.x2) / 2, kbCy = KB.yFrom - 3
                 const kbArmed = !used && gs.launched && !gs.done
                 const kbLit = lit > 0
+                // #3793: the ready lamp joins the jackpot strobe like every lit lamp;
+                // standby-by-default stays quiet amber.
+                const kbEscal = jb && kbArmed && !kbLit && !(arm > 0)
+                const kbStrobe = (gs.tick >> 2) % 2 === 0 ? '#ffffff' : pal.hot
                 ctx.save()
                 if (kbLit) { ctx.shadowColor = '#ffffff'; ctx.shadowBlur = 16 }
                 else if (arm > 0) { ctx.shadowColor = '#ffffff'; ctx.shadowBlur = 12 + 6 * Math.sin(gs.tick / 4) }
-                else if (kbArmed) { ctx.shadowColor = pal.hot; ctx.shadowBlur = 8 + 5 * Math.sin(gs.tick / 6) }
+                else if (kbArmed) { ctx.shadowColor = kbEscal ? pal.hot : pal.lane; ctx.shadowBlur = kbEscal ? 20 : 4 }   // #3793: ready is a single-lit standby, not a flash
                 // plunger shaft pops up through the ring on fire
                 if (kbLit) {
                     ctx.fillStyle = pal.chrome
                     ctx.fillRect(kbCx - 4, kbCy - (lit / 18) * 10, 8, (lit / 18) * 10 + 4)
                 }
                 // rubber ring
-                ctx.strokeStyle = kbLit || arm > 0 ? '#ffffff' : (kbArmed ? pal.hot : 'rgba(148,163,184,0.5)')
+                ctx.strokeStyle = kbLit || arm > 0 ? '#ffffff' : (kbArmed ? (kbEscal ? kbStrobe : pal.lane) : 'rgba(148,163,184,0.5)')
                 ctx.lineWidth = 3
                 ctx.beginPath(); ctx.arc(kbCx, kbCy, 7.5, 0, 7); ctx.stroke()
                 // chrome face
                 ctx.fillStyle = kbLit ? '#ffffff'
                     : arm > 0 ? `rgba(255,255,255,${0.55 + 0.35 * Math.sin(gs.tick / 4)})`
-                    : kbArmed ? `rgba(${pal.hotRgb},${0.55 + 0.3 * Math.sin(gs.tick / 6)})`
+                    : kbArmed ? (kbEscal ? kbStrobe : `rgba(${pal.laneRgb},0.72)`)
                     : 'rgba(148,163,184,0.35)'
                 ctx.beginPath(); ctx.arc(kbCx, kbCy, 4.5, 0, 7); ctx.fill()
-                // #3451: per-side label — white on fire/arm, hot when live,
+                // #3451: per-side label — white on fire/arm, amber when live,
                 // dim chrome once spent (the once-per-side law reads at a glance)
                 ctx.fillStyle = kbLit || arm > 0 ? '#ffffff'
-                    : kbArmed ? `rgba(${pal.hotRgb},0.9)`
+                    : kbArmed ? `rgba(${pal.laneRgb},0.85)`
                     : 'rgba(148,163,184,0.55)'
                 ctx.font = 'bold 8px monospace'
                 ctx.textAlign = 'center'
@@ -1924,6 +1959,20 @@ const PinballGame = () => {
                 // dev rig (#3297): park balls in the tower so the gate slam can
                 // be screenshotted without farming 3 locks. DEV-only, like tiltInfo.
                 devLock: (n) => { gsRef.current.locks = n },
+                // dev rig (#3793): stage the lit-hierarchy looks — SET lamps, a bank
+                // in progress and the jackpot window — so the intensity classes can be
+                // screenshotted without farming feeds. Seam-only: lamps read gs, so
+                // staging gs flags paints them; no scores, no drain, DEV-only.
+                devLit: (o = {}) => {
+                    const g = gsRef.current
+                    if (o.rampLit !== undefined) g.rampLit = !!o.rampLit
+                    if (o.rampLLit !== undefined) g.rampLLit = !!o.rampLLit
+                    if (o.orbitLit !== undefined) g.orbitLit = !!o.orbitLit
+                    if (o.orbitBank !== undefined) g.orbitBank = o.orbitBank | 0
+                    if (o.lockFlash !== undefined) g.lockFlash = o.lockFlash | 0
+                    if (o.mb !== undefined) { g.multiball = !!o.mb; g.mbFlash = o.mb ? 60 : 0 }
+                    return { rampLit: g.rampLit, rampLLit: g.rampLLit, orbitLit: g.orbitLit, orbitBank: g.orbitBank, multiball: g.multiball }
+                },
                 // dev rig (#3304): flip the bed's pack overlay so the hand-off
                 // (solo → mb → solo) is driveable without farming three locks.
                 // Seam-only: it never touches gs.multiball, so drains, locks and
