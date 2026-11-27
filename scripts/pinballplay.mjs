@@ -628,16 +628,34 @@ try {
         }
         window.__chaseRaf = requestAnimationFrame(tick)
     }, [chX])
+    // #3806 live phone-band leg — the grapple must WRITE into the 160–340 carry
+    // band at the catch, not just in the static math. Ratio-based like #3336
+    // (absolute dBFS here is engine normalization, not mix truth).
+    const gpBand = () => page.evaluate(() => {
+        const f = window.__audioMix()
+        let p = 0
+        for (let i = 1; i < f.db.length; i++) {
+            const hz = i * f.binHz
+            if (hz >= 160 && hz <= 340 && f.db[i] > -Infinity) p += Math.pow(10, f.db[i] / 10)
+        }
+        return p
+    })
+    let gpPre = 0
+    for (let i = 0; i < 6; i++) { gpPre = Math.max(gpPre, await gpBand()); await wait(60) }
     await page.evaluate(() => window.__pinballTest.kbDrop('L'))
+    let gpPost = 0, gpFrames = 0
     let chaseLit = -1, chaseSweep = -1
     for (let i = 0; i < 80; i++) {
         await wait(50)
+        gpPost = Math.max(gpPost, await gpBand()); gpFrames++
         const cs = await page.evaluate(() => window.__chase)
         if (cs) { chaseLit = cs.max; chaseSweep = cs.sweepMax; if (cs.max >= 8 && cs.sweepMax >= 8) break }
     }
     await page.evaluate(() => { cancelAnimationFrame(window.__chaseRaf) })
     ok('#3766 the re-armed save chases live: white head+tail pixels ride the column while kbSweep runs',
         chaseLit >= 8 && chaseSweep >= 8, `lit=${chaseLit} sweep=${chaseSweep} ctrl=${chaseCtrl}`)
+    ok('#3806 the grapple writes into the 160–340 carry band live — ≥2× the pre-drop baseline (the phone hears the rescue)',
+        gpFrames > 3 && gpPost >= 2 * gpPre, `pre=${gpPre.toExponential(2)} post=${gpPost.toExponential(2)} frames=${gpFrames}`)
 
     ok('zero page errors through the whole drive', errors.length === 0, errors.join(';'))
 } finally {

@@ -385,7 +385,10 @@ One law now, sim-carried like the #1588 juice signals:
   gate proves the hash ignores it).
 - **The voice stays the grapple** (#3468): clunk + snap + latched ring, and a
   static gate now pins that it is NOT the ramp blip and can never regress to
-  one.
+  one. #3806 made the phone hear it: the clunk launches at 330 Hz and falls to
+  110 (a plain 110 Hz square kept only its 3rd harmonic above the 150 Hz knee),
+  and the latch rides a 196 Hz square in the 160–340 carry band — in-band power
+  2.1× through #3336's knee model, peaks and character unchanged.
 
 Gated in `pinballcheck` §8c: ten pins (arm side R / arm side L / EMBER mirror
 arm, fire-tick decay accounting, expires-not-sticky, spent save drains without

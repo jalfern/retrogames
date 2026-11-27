@@ -204,9 +204,14 @@ const sfxFor = (ev) => {
         case 'spinner': a.playTone(1500, 0.025, 'square', 0.05); break
         case 'kicker': a.playSweep(220, 660, 0.15, 'triangle', 0.12); break
         case 'kickback': // #3250: solenoid snap + launch; #3468 item 2: a distinct
-            // grapple read — low clunk + snap + a latched high ring, not the ramp whoosh
-            a.playTone(110, 0.06, 'square', 0.16); a.playNoise(0.04, 0.15)
-            a.playTone(247, 0.09, 'triangle', 0.12, 0.06); a.playTone(880, 0.04, 'square', 0.05, 0.13); break
+            // grapple read — clunk + snap + a latched ring, not the ramp whoosh.
+            // #3806 phone band: the clunk launches at 330 and falls (a plain 110 Hz
+            // square kept only its 3rd harmonic above the knee — the thunk was gone on
+            // a phone), and the latch rides 196 in the 160–340 carry band; the 880
+            // ring stays as colour for real speakers. In-band power 2.1× (#3336 law).
+            a.playSweep(330, 110, 0.06, 'square', 0.16); a.playNoise(0.04, 0.15)
+            a.playTone(247, 0.09, 'triangle', 0.12, 0.06)
+            a.playTone(880, 0.04, 'square', 0.05, 0.13); a.playTone(196, 0.12, 'square', 0.07, 0.13); break
         case 'plunge': a.playSweep(120, 700, 0.22, 'triangle', 0.14); break
         case 'ratchet': a.playTone(160 + 460 * (ev.power || 0), 0.02, 'square', 0.06); a.playNoise(0.015, 0.05); break
         case 'powerzone': a.playTone(110 + ev.zone * 45, 0.05, 'square', 0.12); a.playNoise(0.03, 0.08); break
