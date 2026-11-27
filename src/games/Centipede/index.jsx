@@ -5,7 +5,7 @@ import VirtualControls from '../../components/VirtualControls'
 import { GAMES } from '../../config/games'
 import { attractFrame, DIM } from './attract.js'
 import { exposeGame, unexposeGame, exposeFeedbackState, unexposeFeedbackState, seedFromQuery, seedRng } from '../../utils/gameContract'
-import { CELL_SIZE, START_LIVES, INVULN_TICKS, scoreForSegment, MUSHROOM_POINTS, mushroomField, SPIDER_POINTS, SCORPION_POINTS, FLEA_POINTS, SPIDER_EVERY, SCORPION_EVERY, FLEA_COOLDOWN, poisonMushroom, bulletEscapes, waveSpeed, splitSpd, munchCue, reviveGarden, REVIVE_POINTS, spiderDevours, scorpionStings } from './sim.js'
+import { CELL_SIZE, START_LIVES, INVULN_TICKS, scoreForSegment, MUSHROOM_POINTS, mushroomField, SPIDER_POINTS, SCORPION_POINTS, FLEA_POINTS, SPIDER_EVERY, SCORPION_EVERY, FLEA_COOLDOWN, poisonMushroom, bulletEscapes, waveSpeed, splitSpd, munchCue, reviveGarden, REVIVE_POINTS, spiderDevours, scorpionStings, biteFlash, stingFlash, CHOMP_FRAMES } from './sim.js'
 
 // CENTIPEDE (#1473 batch 16) — the Feb port's score was dead, one touch was
 // instant hard-reset, cut bodies never grew heads, and the mushroom field
@@ -91,6 +91,7 @@ const CentipedeGame = () => {
                 vy: 2,
                 health: 3,
                 seekAt: tickN + 90,
+                chomp: 0, // #3733 — jaw-clamp timer, set the tick it devours
             }
         }
         const spawnScorpion = () => {
@@ -606,6 +607,7 @@ const CentipedeGame = () => {
 
             if (state.spider) {
                 const s = state.spider
+                if (s.chomp > 0) s.chomp-- // #3733 — the jaw clamp decays on the tick clock
                 let bounced = false // #3632 — did the eater strike something this tick?
                 // Seek: every so often the eater leans toward the nearest
                 // mushroom it can smell — that's the bounce grammar of the
@@ -654,6 +656,8 @@ const CentipedeGame = () => {
                     }
                     bitesTotal++
                     burst(seg.x, seg.y, '#c17bff', 6) // purple chomp at the fall site, no digits — it pays 0
+                    state.fx.push(biteFlash(seg.x, seg.y)) // #3733 — the fall site flashes white: the lunch is SEEN
+                    s.chomp = CHOMP_FRAMES // #3733 — the spider clamps its jaws over the bite
                     // #3726 — the crunch: a low mauling under a wet squelch,
                     // distinct from the shooter's pew and the cap-chew click.
                     audioController.playSweep(220, 60, 0.12, 'square', 0.09)
@@ -688,6 +692,7 @@ const CentipedeGame = () => {
                     if (!c.fast && scorpionStings(s, c)) {
                         c.fast = true
                         stingsTotal++
+                        state.fx.push(stingFlash(c.x, c.y)) // #3733 — warm venom spark: a column sting reads distinct from cap-venom
                         audioController.playTone(980, 0.03, 'sawtooth', 0.045) // the sting hiss
                     }
                 })
@@ -820,20 +825,26 @@ const CentipedeGame = () => {
         // centipede already does (one clock, one garden).
         const drawSpider = (s) => {
             const step = Math.floor(state.frame / 6) % 2 === 0
+            const chomp = s.chomp > 0 // #3733 — legs clamp and fangs drop the tick after a bite
             ctx.strokeStyle = '#b48cff'
             for (let i = 0; i < 4; i++) {
                 const ly = s.y + 3 + i * 2
-                const dx = step ? 5 : 3, dy = step ? -2 : 3
+                const dx = chomp ? 1 : step ? 5 : 3, dy = step ? -2 : 3
                 ctx.beginPath(); ctx.moveTo(s.x + 3, ly); ctx.lineTo(s.x + 3 - dx, ly + dy); ctx.stroke()
                 ctx.beginPath(); ctx.moveTo(s.x + 13, ly); ctx.lineTo(s.x + 13 + dx, ly + dy); ctx.stroke()
             }
             ctx.fillStyle = '#7f5cff' // body
-            ctx.fillRect(s.x + 3, s.y + 2, 10, 9)
+            ctx.fillRect(s.x + 3, s.y + 2, 10, chomp ? 10 : 9) // #3733 — the body hunches over the kill
             ctx.fillStyle = '#b48cff' // head + back highlight
             ctx.fillRect(s.x + 5, s.y + 1, 6, 3)
             ctx.fillStyle = '#ffd23f' // eyes
             ctx.fillRect(s.x + 6, s.y + 5, 1, 1)
             ctx.fillRect(s.x + 9, s.y + 5, 1, 1)
+            if (chomp) {
+                ctx.fillStyle = '#ffffff' // #3733 — fangs
+                ctx.fillRect(s.x + 6, s.y + 12, 1, 2)
+                ctx.fillRect(s.x + 9, s.y + 12, 1, 2)
+            }
         }
         const drawScorpion = (s) => {
             const flip = s.vx < 0
@@ -959,7 +970,16 @@ const CentipedeGame = () => {
             // #3620 kill-pop juice — debris shards and score digits riding
             // above the garden, below the HUD. Digits fade with their life.
             state.fx.forEach((f) => {
-                if (f.text) {
+                if (f.flash) {
+                    // #3733 — bite/sting tell: a cell-flash that pops bright,
+                    // shrinks and fades on its own life. No dice — fixed sizes.
+                    const t = f.life / f.max
+                    ctx.globalAlpha = t > 0.7 ? 0.9 : (t / 0.7) * 0.9
+                    ctx.fillStyle = f.color
+                    const w = Math.round(16 * (0.45 + 0.55 * t))
+                    ctx.fillRect(Math.round(f.x - w / 2), Math.round(f.y - w / 2), w, w)
+                    ctx.globalAlpha = 1
+                } else if (f.text) {
                     ctx.globalAlpha = f.life > 10 ? 1 : f.life / 10
                     ctx.fillStyle = '#ffffff'
                     ctx.font = '10px monospace'
