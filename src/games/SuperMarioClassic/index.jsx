@@ -621,16 +621,28 @@ const SuperMarioGame = () => {
         const drawTile = (t, x, y, c, r) => {
             if (t === GROUND) {
                 ctx.fillStyle = C.ground; ctx.fillRect(x, y, TILE, TILE)
-                ctx.fillStyle = C.groundLight; ctx.fillRect(x, y, TILE, 3)
+                ctx.fillStyle = C.groundLight
+                ctx.fillRect(x, y, TILE, 3)                        // sunlit cap
+                ctx.fillRect(x + 10, y + 5, 2, 1); ctx.fillRect(x + 1, y + 9, 2, 1)
+                ctx.fillRect(x + 5, y + 13, 2, 1)                 // grain speckles
                 ctx.fillStyle = C.groundDark
-                ctx.fillRect(x, y + 3, 1, TILE - 3); ctx.fillRect(x + 7, y + 6, 1, TILE - 6)
-                ctx.fillRect(x + 3, y + 8, 4, 1); ctx.fillRect(x + 11, y + 11, 4, 1)
+                ctx.fillRect(x, y + 7, TILE, 1); ctx.fillRect(x, y + 12, TILE, 1)
+                ctx.fillRect(x, y + TILE - 1, TILE, 1)            // mortar courses
+                const j = 8 + (c % 2) * 4                         // running-bond joints, staggered by column
+                ctx.fillRect(x + j, y + 3, 1, 4); ctx.fillRect(x + ((j + 8) % 16), y + 8, 1, 4)
+                ctx.fillRect(x + j, y + 13, 1, 2)
             } else if (t === BRICK) {
                 ctx.fillStyle = C.brick; ctx.fillRect(x, y, TILE, TILE)
                 ctx.fillStyle = C.brickLine
-                ctx.fillRect(x, y + 7, TILE, 1); ctx.fillRect(x, y + 15, TILE, 1)
-                ctx.fillRect(x + 7, y, 1, 7); ctx.fillRect(x + 3, y + 8, 1, 7); ctx.fillRect(x + 11, y + 8, 1, 7)
-                ctx.fillStyle = C.groundLight; ctx.fillRect(x, y, TILE, 1)
+                for (const my of [0, 4, 8, 12, 15]) ctx.fillRect(x, y + my, TILE, 1)   // bed joints
+                for (let k = 0; k < 4; k++) {                                            // staggered perpends
+                    const jx = (k % 2) ? 0 : 4
+                    const hgt = Math.min(3, 14 - 4 * k)
+                    ctx.fillRect(x + jx, y + 4 * k + 1, 1, hgt)
+                    ctx.fillRect(x + ((jx + 8) % 16), y + 4 * k + 1, 1, hgt)
+                }
+                ctx.fillStyle = C.groundLight                                           // sunlit head of each course
+                for (const hy of [1, 5, 9, 13]) ctx.fillRect(x + 1, y + hy, TILE - 2, 1)
             } else if (t === QUESTION) {
                 const bob = Math.sin(tick * 0.15) > 0 ? 0 : 1
                 ctx.fillStyle = C.block; ctx.fillRect(x, y, TILE, TILE)
@@ -698,13 +710,23 @@ const SuperMarioGame = () => {
         }
         const drawCastle = () => {
             const bx = level.castleCol * TILE, by = 8 * TILE
-            ctx.fillStyle = C.castle
-            ctx.fillRect(bx, by + 16, 64, 64)
-            ctx.fillRect(bx + 8, by, 48, 24)
-            ctx.fillRect(bx + 20, by - 16, 24, 20)
+            const stone = (sx, sy, w, h) => {              // mortar courses + staggered joints
+                ctx.fillStyle = C.castle; ctx.fillRect(sx, sy, w, h)
+                ctx.fillStyle = C.brickLine
+                for (let my = 3; my < h; my += 4) ctx.fillRect(sx, sy + my, w, 1)
+                for (let row = 0; row * 4 < h; row++) {
+                    const jx = (row % 2) ? 0 : 4
+                    for (let mx = jx; mx < w; mx += 8) ctx.fillRect(sx + mx, sy + row * 4 + 1, 1, 3)
+                }
+            }
+            stone(bx, by + 16, 64, 64)
+            stone(bx + 8, by, 48, 24)
+            stone(bx + 20, by - 16, 24, 20)
             // crenellations
-            ctx.fillStyle = C.castle
-            for (let i = 0; i < 4; i++) ctx.fillRect(bx + i * 16, by + 10, 8, 8)
+            for (let i = 0; i < 4; i++) {
+                ctx.fillStyle = C.castle; ctx.fillRect(bx + i * 16, by + 10, 8, 8)
+                ctx.fillStyle = C.brickLine; ctx.fillRect(bx + i * 16, by + 17, 8, 1)
+            }
             // door
             ctx.fillStyle = C.black; ctx.fillRect(bx + 24, by + 56, 16, 24)
             // windows
