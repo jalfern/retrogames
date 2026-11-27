@@ -6,7 +6,7 @@ import WatchButton, { WatchToast, AttractWatchButton } from '../../components/Wa
 import { isWatchKey, isTakeoverKey, playWatchStart, playWatchStop, watchSfxLog, WATCH_ATTRACT_HINT } from '../../utils/watch'
 import { GAMES } from '../../config/games'
 import { attractFrame, DIM } from './attract.js'
-import { makeRun, tickMc, gunnerStep, fireAt, startWave, citiesAlive, attractFerry, SCREEN_WIDTH, SCREEN_HEIGHT, GROUND_Y } from './sim.js'
+import { makeRun, tickMc, gunnerStep, fireAt, startWave, citiesAlive, attractFerry, winner, SCREEN_WIDTH, SCREEN_HEIGHT, GROUND_Y } from './sim.js'
 import { exposeFeedbackState, unexposeFeedbackState, seedFromQuery } from '../../utils/gameContract'
 import { mountDbg, unmountDbg } from '../../utils/DebugKit'
 
@@ -19,6 +19,9 @@ const MissileCommandGame = () => {
     const [watching, setWatching] = React.useState(false)
     const [attractUi, setAttractUi] = React.useState(true)
     const attractUiRef = useRef(true)
+    // #3630 slice 2: React mirror of gs.twoP — drives the DOM chrome (the
+    // watch pill hides in hot-seat, where the CPU seat already owns seat 2).
+    const [twoP, setTwoP] = React.useState(false)
     // #1748 consumer: RotateHint (portrait + wide canvas) lands its card dead
     // center — exactly where this title's attract copy sits. This 4:3 letterbox
     // is the rare attract-pill collision, so the centered block steps aside
@@ -49,8 +52,18 @@ const MissileCommandGame = () => {
                          // compat mousemove a touch leaves behind) must not
                          // instantly release the watcher they just seated
         const keys = { ArrowUp: false, ArrowDown: false, ArrowLeft: false, ArrowRight: false, Space: false }
+        // #3630 slice 2 — seat 2's keyboard (the desktop two-human option,
+        // AGENTS.md multiplayer law: two humans is a keyboard option, never a
+        // second pad). WASD aims the shared crosshair, F fires on P2's wave.
+        const keys2 = { KeyW: false, KeyA: false, KeyS: false, KeyD: false }
+        const P2_CODES = ['KeyW', 'KeyA', 'KeyS', 'KeyD', 'KeyF']
+        const P2_AIM_SPEED = 9
+        let p2Fire = false // edge-latched between keydown and the next tick
+        let joinFlashUntil = 0 // "PLAYER 2 JOINED" card, on the sim clock
 
         const seat = () => {
+            if (gs.twoP) return // #3630 slice 2: watch is solo-only — in hot-seat
+                                // the proven gunner already owns seat 2 outright
             if (gs.state !== 'playing' || gs.over || gs.watch || attractUiRef.current) return
             gs.watch = true
             setWatching(true)
@@ -134,18 +147,36 @@ const MissileCommandGame = () => {
             if (pausedRef.current) return
             if (attractUiRef.current) { startRun(); return }
             if (gs.over) { startRun(); return }
+            if (gs.twoP && gs.turn === 2) return // #3630 slice 2: the mouse
+                // never spends seat 2's ammo — whether a human or the CPU holds
+                // that seat this wave, P1's yoke is asleep until wave 3.
             if (gs.watch) release() // a click means "I'm aiming now" — then it fires
             fireAt(gs, gs.crosshair.x, gs.crosshair.y)
         }
 
         // fresh raid: new seed (?seed=N wins), whole board rebuilt — called on
-        // every human start, key, click or tap (#1473)
-        const startRun = () => {
-            gs = makeRun(seedFromQuery(window.location.search) ?? Math.floor(Math.random() * 1000000))
+        // every human start, key, click or tap (#1473). #3630 slice 2: `mode`
+        // picks the hot-seat (true = two-player alternating, manual §6); null
+        // keeps the mode the last run played, so restarts don't silently drop
+        // a 2P game (Defender #3533 convention).
+        const startRun = (mode = null) => {
+            const is2P = mode === null ? gs.twoP === true : mode === true
+            gs = makeRun(seedFromQuery(window.location.search) ?? Math.floor(Math.random() * 1000000), { twoPlayer: is2P })
             attractUiRef.current = false
             setAttractUi(false)
+            setTwoP(is2P)
             release(false) // watch never lingers — a new raid starts in your hands
             audioController.playSweep(220, 440, 0.15, 'square', 0.1)
+        }
+
+        // #3630 slice 2: seat 2 joins mid-run the moment a P2 key is pressed —
+        // the CPU yields its certified gunner to a human at the keyboard.
+        const joinP2 = () => {
+            if (!gs.twoP || gs.p2cpu === false || gs.over || attractUiRef.current) return
+            gs.p2cpu = false
+            joinFlashUntil = gs.tick + 150
+            audioController.playTone(523, 0.09, 'square', 0.12)
+            audioController.playTone(784, 0.12, 'square', 0.12, 0.1)
         }
 
         const handleKeyDown = (e) => {
@@ -156,6 +187,25 @@ const MissileCommandGame = () => {
                 return
             }
             if (pausedRef.current) return
+            // #3630 slice 2: the mode keys — `2` opens a two-player alternating
+            // game, `1` returns to solo (Defender #3533 convention). Any other
+            // start keeps the mode of the game you just left (startRun(null)).
+            if ((attractUiRef.current || gs.over) && (e.code === 'Digit2' || e.code === 'Digit1')) {
+                e.preventDefault()
+                startRun(e.code === 'Digit2')
+                return
+            }
+            // #3630 slice 2: seat 2's keyboard — WASD aim + F fire. Any press
+            // joins the game mid-run; the keys only act on P2's own waves.
+            if (gs.twoP && P2_CODES.includes(e.code)) {
+                e.preventDefault()
+                joinP2()
+                if (gs.turn === 2 && !gs.p2cpu && !gs.over && !attractUiRef.current) {
+                    if (e.code === 'KeyF') p2Fire = true
+                    else keys2[e.code] = true
+                }
+                return
+            }
             if (isWatchKey(e)) {
                 if (gs.watch) { e.preventDefault(); release() }
                 else if (gs.over) { e.preventDefault(); startRun() } // Y is a key too — it restarts a dead board
@@ -166,11 +216,14 @@ const MissileCommandGame = () => {
             if (attractUiRef.current && (e.code === 'Space' || e.code === 'Enter')) { startRun(); return }
             if (gs.watch && isTakeoverKey(e)) release() // then the key drives for real below
             if (e.code in keys) keys[e.code] = true
-            if (e.code === 'Space') fireAt(gs, gs.crosshair.x, gs.crosshair.y) // Fire
+            // #3630 slice 2: Space is P1's fire — it never spends P2's ammo on
+            // P2's wave (the seat not on duty keeps its hands off the board).
+            if (e.code === 'Space' && !(gs.twoP && gs.turn === 2)) fireAt(gs, gs.crosshair.x, gs.crosshair.y) // Fire
         }
 
         const handleKeyUp = (e) => {
             if (e.code in keys) keys[e.code] = false
+            if (e.code in keys2) keys2[e.code] = false
         }
 
         const resize = () => {
@@ -199,7 +252,32 @@ const MissileCommandGame = () => {
         // ---------- one fixed tick ----------
         const update = () => {
             if (pausedRef.current) return
-            const cmd = attractUiRef.current ? attractCmd() : (gs.watch ? gunnerStep(gs) : null)
+            // #3630 slice 2: seat 2's own actuation — the human aims with WASD
+            // and fires with F on their wave; the CPU seat drives the certified
+            // gunner. Off-duty, the seat stays silent (p2Fire is swallowed).
+            if (gs.twoP && !attractUiRef.current && !gs.over) {
+                if (gs.turn === 2 && !gs.p2cpu) {
+                    if (keys2.KeyW) gs.crosshair.y = Math.max(0, gs.crosshair.y - P2_AIM_SPEED)
+                    if (keys2.KeyS) gs.crosshair.y = Math.min(SCREEN_HEIGHT, gs.crosshair.y + P2_AIM_SPEED)
+                    if (keys2.KeyA) gs.crosshair.x = Math.max(0, gs.crosshair.x - P2_AIM_SPEED)
+                    if (keys2.KeyD) gs.crosshair.x = Math.min(SCREEN_WIDTH, gs.crosshair.x + P2_AIM_SPEED)
+                    if (p2Fire) fireAt(gs, gs.crosshair.x, gs.crosshair.y)
+                }
+                p2Fire = false
+            }
+            // P1/keyboard aim on the tick — the registry has advertised "Arrow
+            // Keys: Aim" since the port, and the pad dispatches arrows, but the
+            // keys were captured and never read. Phones get stick-to-aim now;
+            // in hot-seat the arrows belong to P1 only while P1 is on duty.
+            if (!attractUiRef.current && (!gs.twoP || gs.turn === 1)) {
+                if (keys.ArrowUp) gs.crosshair.y = Math.max(0, gs.crosshair.y - P2_AIM_SPEED)
+                if (keys.ArrowDown) gs.crosshair.y = Math.min(SCREEN_HEIGHT, gs.crosshair.y + P2_AIM_SPEED)
+                if (keys.ArrowLeft) gs.crosshair.x = Math.max(0, gs.crosshair.x - P2_AIM_SPEED)
+                if (keys.ArrowRight) gs.crosshair.x = Math.min(SCREEN_WIDTH, gs.crosshair.x + P2_AIM_SPEED)
+            }
+            const cmd = attractUiRef.current ? attractCmd()
+                : gs.twoP && gs.turn === 2 && gs.p2cpu ? gunnerStep(gs) // the CPU seat
+                : gs.watch ? gunnerStep(gs) : null
             const wasOver = gs.over
             tickMc(gs, cmd)
             // #3638 attract ad: after the tick so its announce event survives
@@ -234,6 +312,18 @@ const MissileCommandGame = () => {
                     audioController.playNoise(0.18, 0.45)
                     audioController.playTone(740, 0.12, 'square', 0.09)
                     audioController.playTone(1180, 0.08, 'square', 0.06)
+                }
+                // #3630 slice 2: the handoff jingle spells who is next — P2
+                // climbs (G→D, the bright right corner), P1 descends (E→C, the
+                // warm left corner). The card on the draw names them again.
+                else if (ev === 'turn') {
+                    if (gs.turn === 2) {
+                        audioController.playTone(392, 0.09, 'square', 0.11)
+                        audioController.playTone(587, 0.12, 'square', 0.11, 0.1)
+                    } else {
+                        audioController.playTone(330, 0.09, 'square', 0.11)
+                        audioController.playTone(262, 0.12, 'square', 0.11, 0.1)
+                    }
                 }
             }
             if (gs.over && !wasOver) release(false) // the raid ends in your hands (silent)
@@ -420,12 +510,28 @@ const MissileCommandGame = () => {
             ctx.moveTo(cx, cy - 10); ctx.lineTo(cx, cy + 10)
             ctx.stroke()
 
-            ctx.fillStyle = '#ff0000'
             ctx.font = '24px monospace'
             ctx.textAlign = 'center'
-            ctx.fillText(`SCORE: ${gs.score}`, SCREEN_WIDTH / 2, 30)
-            ctx.fillStyle = '#0000ff'
-            ctx.fillText(`WAVE: ${gs.wave}`, SCREEN_WIDTH / 2, 60)
+            if (gs.twoP) {
+                // #3630 slice 2: the arcade hot-seat board — both ledgers in
+                // the top corners (manual §6: both scores displayed), and the
+                // on-duty player's line blinks so the hand-off is unmistakable.
+                const blink = Math.floor(gs.tick / 30) % 2 === 0
+                ctx.textAlign = 'left'
+                ctx.fillStyle = gs.turn === 1 && blink ? '#ffff00' : '#ffffff'
+                ctx.fillText(`1 ${gs.score}`, 16, 30)
+                ctx.textAlign = 'right'
+                ctx.fillStyle = gs.turn === 2 && blink ? '#ffff00' : '#ffffff'
+                ctx.fillText(`${gs.score2} 2`, SCREEN_WIDTH - 16, 30)
+                ctx.textAlign = 'center'
+                ctx.fillStyle = '#0000ff'
+                ctx.fillText(`WAVE: ${gs.wave}`, SCREEN_WIDTH / 2, 30)
+            } else {
+                ctx.fillStyle = '#ff0000'
+                ctx.fillText(`SCORE: ${gs.score}`, SCREEN_WIDTH / 2, 30)
+                ctx.fillStyle = '#0000ff'
+                ctx.fillText(`WAVE: ${gs.wave}`, SCREEN_WIDTH / 2, 60)
+            }
 
             if (attractUiRef.current) {
                 attractTick++
@@ -446,12 +552,37 @@ const MissileCommandGame = () => {
                 ctx.fillText(`WAVE COMPLETE`, SCREEN_WIDTH / 2, SCREEN_HEIGHT / 2)
                 ctx.font = '20px monospace'
                 ctx.fillText(`BONUS POINTS`, SCREEN_WIDTH / 2, SCREEN_HEIGHT / 2 + 40)
+                // #3630 slice 2: name the incoming defender — turn has already
+                // flipped with the bonus, so gs.turn IS the next wave's seat.
+                if (gs.twoP) {
+                    ctx.fillStyle = '#00ffff'
+                    ctx.font = '28px monospace'
+                    ctx.fillText(`PLAYER ${gs.turn} — YOUR WAVE`, SCREEN_WIDTH / 2, SCREEN_HEIGHT / 2 + 90)
+                }
             }
 
             if (gs.state === 'gameOver') {
                 ctx.fillStyle = '#ff0000'
                 ctx.font = '60px monospace'
                 ctx.fillText(`THE END`, SCREEN_WIDTH / 2, SCREEN_HEIGHT / 2)
+                // #3630 slice 2: the hot-seat verdict — winner plus both books.
+                if (gs.twoP) {
+                    const w = winner(gs)
+                    ctx.font = '30px monospace'
+                    ctx.fillStyle = '#00ffff'
+                    ctx.fillText(w === 0 ? 'A DRAW' : `PLAYER ${w} WINS`, SCREEN_WIDTH / 2, SCREEN_HEIGHT / 2 + 50)
+                    ctx.font = '20px monospace'
+                    ctx.fillStyle = '#ffffff'
+                    ctx.fillText(`P1 ${gs.score}   P2 ${gs.score2}`, SCREEN_WIDTH / 2, SCREEN_HEIGHT / 2 + 85)
+                }
+            }
+
+            // #3630 slice 2: a joining human gets named on the board once —
+            // the CPU seat just handed over, the player needs to see that.
+            if (gs.twoP && !gs.p2cpu && gs.tick < joinFlashUntil && !attractUiRef.current && !gs.over) {
+                ctx.fillStyle = Math.floor(gs.tick / 10) % 2 === 0 ? '#00ff00' : '#ffffff'
+                ctx.font = '22px monospace'
+                ctx.fillText('PLAYER 2 JOINED — WASD + F', SCREEN_WIDTH / 2, 120)
             }
 
             ctx.restore()
@@ -481,6 +612,8 @@ const MissileCommandGame = () => {
         // production report carries the seed (#1473)
         exposeFeedbackState(() => ({
             tick: gs.tick, score: gs.score, done: gs.state === 'gameOver', seed: gs.seed, wave: gs.wave,
+            // #3630 slice 2: the hot-seat picture — score stays P1's ledger.
+            twoP: gs.twoP, turn: gs.turn, p1: gs.score, p2: gs.score2, p2cpu: gs.p2cpu,
         }))
 
         mountDbg({
@@ -489,11 +622,15 @@ const MissileCommandGame = () => {
                 `score ${gs.score}  wave ${gs.wave}  state ${gs.state}`,
                 `cities ${citiesAlive(gs)}/6  ammo ${gs.silos.map((s) => (s.alive ? s.ammo : 'x')).join(',')}  warheads ${gs.warheads.length}  saucers ${gs.saucers.length}`,
                 `smarts ${gs.warheads.filter((m) => m.smart && !m.dead).length}  seed ${gs.seed}  tick ${gs.tick}  watch ${gs.watch}`,
+                gs.twoP ? `2P  turn P${gs.turn}  p1 ${gs.score}  p2 ${gs.score2}  p2 ${gs.p2cpu ? 'CPU' : 'human'}` : `solo`,
             ],
             actions: [
                 { label: 'Fire at crosshair', run: () => fireAt(gs, gs.crosshair.x, gs.crosshair.y) },
                 { label: 'Skip to wave 6 (saucers)', run: () => { gs.wave = 6; startWave(gs) } },
                 { label: 'Skip to wave 7 (smart bombs)', run: () => { gs.wave = 7; startWave(gs) } },
+                // #3630 slice 2: swap seat 2 between the CPU gunner and the
+                // keyboard human without leaving the panel.
+                { label: 'P2 seat: CPU <-> human', run: () => { if (gs.twoP) gs.p2cpu = !gs.p2cpu } },
                 { label: 'Force game over', run: () => { gs.cities.forEach((c) => { c.alive = false }); gs.over = true; gs.state = 'gameOver' } },
             ],
         })
@@ -518,12 +655,31 @@ const MissileCommandGame = () => {
                     abmSpeeds: gs.abms.map((a) => a.speed),
                     ammo: gs.silos.reduce((a, s) => a + (s.alive ? s.ammo : 0), 0),
                     watching: gs.watch, seed: gs.seed,
+                    // #3630 slice 2: the hot-seat view for the drive script.
+                    twoP: gs.twoP, turn: gs.turn, p1: gs.score, p2: gs.score2, p2cpu: gs.p2cpu,
+                    winner: gs.over ? winner(gs) : null,
+                    state: gs.state,
+                    crosshair: [Math.round(gs.crosshair.x), Math.round(gs.crosshair.y)],
                 }),
+                // the drive flips seat 2 without a join flash: the guard and
+                // actuation code paths read the flag, which is what's proven.
+                p2cpu: (v) => { if (gs.twoP) gs.p2cpu = !!v; return gs.p2cpu },
                 // harness-only ferry lift (same cheat DebugKit offers) so a drive
                 // script doesn't sit through five waves at 60 fps
                 toWave6: () => { gs.wave = 6; startWave(gs); return gs.wave },
                 // ...and the smart-bomb lift (#3630)
                 toWave7: () => { gs.wave = 7; startWave(gs); return gs.wave },
+                // #3630 slice 2: open a hot-seat run like a player pressing 2,
+                // and a harness lift that empties the sky so the wave clears on
+                // the next tick (drives the turn flip without waiting minutes).
+                start2: () => { startRun(true); return gs.seed },
+                endWave: () => {
+                    gs.missilesLeftInWave = 0; gs.spawning = false
+                    gs.warheads.length = 0; gs.blasts.length = 0; gs.abms.length = 0
+                    gs.saucers.length = 0; gs.saucersLeftInWave = 0
+                    gs.smartLeftInWave = 0
+                    return true
+                },
                 // harness fallback for the seat (the pilot presses Y like a player)
                 seat: () => { if (!gs.watch) { seat(); } return gs.watch },
                 release: () => { release(); return gs.watch },
@@ -559,11 +715,26 @@ const MissileCommandGame = () => {
                     <div className="absolute inset-x-0 z-[70] flex flex-col items-center gap-2 pointer-events-none" style={{ bottom: '24%' }}>
                         <div className="text-emerald-200/70 font-mono text-[11px] tracking-widest">{WATCH_ATTRACT_HINT}</div>
                         <AttractWatchButton />
+                        {/* #3630 slice 2: the hot-seat entry — a tap target so a
+                            phone gets two-player-vs-CPU too (AGENTS.md: the CPU
+                            seat is the default; a second pad is not). */}
+                        <button
+                            type="button"
+                            aria-label="Start two-player game versus the CPU"
+                            className="pointer-events-auto mt-1 rounded border border-amber-300/50 px-3 py-1 font-mono text-[11px] tracking-widest text-amber-200/90 active:bg-amber-300/10"
+                            onPointerDown={(e) => {
+                                e.stopPropagation()
+                                window.dispatchEvent(new KeyboardEvent('keydown', { code: 'Digit2', key: '2' }))
+                            }}
+                        >
+                            2P — VS CPU (OR PRESS 2)
+                        </button>
                     </div>
                 )}
-                {/* #1637 b29 — the proven route; any key, click, mouse or tap takes over. */}
+                {/* #1637 b29 — the proven route; any key, click, mouse or tap takes over.
+                    #3630 slice 2: hidden in hot-seat — there the gunner owns seat 2. */}
                 {!attractUi && watching && <WatchToast className="fixed z-50" />}
-                {!attractUi && !paused && (
+                {!attractUi && !paused && !twoP && (
                     <div className="fixed z-50 pointer-events-auto" style={{ top: 'calc(3.5rem + var(--sat, 0px))', right: 'calc(0.75rem + var(--sar, 0px))' }}>
                         <WatchButton on={watching} />
                     </div>

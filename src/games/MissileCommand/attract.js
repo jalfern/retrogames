@@ -12,6 +12,8 @@ export const INFO_MSGS = [
     'CLICK TO FIRE ABMS',
     'SIX CITIES TO DEFEND',
     'SPLASH DAMAGES WARHEADS',
+    // #3630 slice 2: advertise the hot-seat — one wave each, both scores up.
+    'PRESS 2 FOR TWO PLAYER',
 ]
 
 export const PRESS = 'PRESS ANY KEY TO START'

@@ -88,13 +88,26 @@ const CITY_X = [120, 200, 280, 520, 600, 680]
 const SILO_X = [40, 400, 760]
 
 // ------------------------------------------------------------------ world ----
-export function makeRun(seed) {
+// #3630 slice 2 — two-player alternating play (Atari 1981 manual §6, games
+// 18–34): players take the board one wave at a time, both scores are shown,
+// cities and silos are SHARED (a city burned on your wave costs your partner
+// too), and the wave bonus pays the player who played the wave. opts.twoPlayer
+// opens the game; below it every field keeps its solo shape, the flip is
+// dice-free, and gs.score stays player 1's ledger — solo replays byte-identical.
+export function makeRun(seed, opts = {}) {
     const rng = seedRng(seed >>> 0 || 1)
     return {
         seed: seed >>> 0 || 1,
         rand: rng,
         tick: 0,
-        score: 0,
+        score: 0, // player 1's ledger (solo runs live here, verbatim)
+        // #3630 slice 2 — the alternating seat. turn is the player defending
+        // the CURRENT wave; score2 is player 2's ledger; p2cpu marks the seat
+        // the certified gunnerStep drives until a human joins on the keyboard.
+        twoP: opts.twoPlayer === true,
+        turn: 1,
+        score2: 0,
+        p2cpu: opts.p2cpu !== false,
         wave: START_WAVE,
         cities: CITY_X.map((x) => ({ x, y: GROUND_Y, alive: true })),
         silos: SILO_X.map((x) => ({ x, y: GROUND_Y - 20, ammo: 10, alive: true })),
@@ -124,6 +137,17 @@ export function makeRun(seed) {
 }
 
 export const citiesAlive = (gs) => gs.cities.filter((c) => c.alive).length
+
+// #3630 slice 2: every credit belongs to the player whose wave is live
+// (manual §6). In solo play the gate never opens, so gs.score moves exactly
+// as before — the byte pins hold.
+export function addScore(gs, n) {
+    if (gs.twoP && gs.turn === 2) gs.score2 += n
+    else gs.score += n
+}
+
+// The 2P board reads the winner at THE END (0 = draw).
+export const winner = (gs) => (gs.score > gs.score2 ? 1 : gs.score2 > gs.score ? 2 : 0)
 
 export function startWave(gs, opts = {}) {
     gs.missilesLeftInWave = 10 + gs.wave * 2
@@ -157,9 +181,17 @@ function nextWave(gs) {
     let bonus = 0
     gs.cities.forEach((c) => { if (c.alive) bonus += 100 })
     gs.silos.forEach((s) => { if (s.alive) bonus += s.ammo * 50; s.ammo = 10 })
-    gs.score += bonus
+    addScore(gs, bonus)
     gs.waveBreak = WAVE_BREAK_TICKS // world seconds, never setTimeout (#1525)
     gs.events.push('wave')
+    // #3630 slice 2 (manual §6): hand the board to the partner for the next
+    // wave — P1 defends waves 1, 3, 5…; P2 waves 2, 4, 6… The flip consumes
+    // no dice and never runs in solo, so byte parity is untouched. The bonus
+    // above already paid the player who played THIS wave.
+    if (gs.twoP) {
+        gs.turn = gs.turn === 1 ? 2 : 1
+        gs.events.push('turn')
+    }
 }
 
 // The engine's own click law: nearest live silo by |dx| to the aim point.
@@ -476,7 +508,7 @@ export function tickMc(gs, cmd = null) {
                 // bomb" — an outer-battery fireball passes harmlessly through.
                 if (m.smart && !e.center) return
                 m.dead = true
-                gs.score += 25
+                addScore(gs, 25) // #3630 slice 2: the kill pays the seat that took it
                 if (m.smart) {
                     gs.events.push('smartkill')
                     smartWrecks.push([m.x, m.y])
@@ -491,7 +523,7 @@ export function tickMc(gs, cmd = null) {
             const dy = s.y - e.y
             if (Math.sqrt(dx * dx + dy * dy) < e.radius + SAUCER_HIT_R) {
                 s.dead = true
-                gs.score += SAUCER_SCORE
+                addScore(gs, SAUCER_SCORE) // #3630 slice 2: the 125 pays the live seat
                 gs.events.push('saucerkill')
                 saucerWrecks.push([s.x, s.y])
                 // #3638 kill juice — a white flash plus six debris ticks, the

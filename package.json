@@ -219,6 +219,7 @@
     "centipedadrive": "node scripts/centipedadrive.mjs",
     "mcsaucerdrive": "node scripts/mcsaucerdrive.mjs",
     "mcsmartdrive": "node scripts/mcsmartdrive.mjs",
+    "mc2pdrive": "node scripts/mc2pdrive.mjs",
     "defendercheck": "node scripts/defendercheck.mjs",
     "defenderplay": "node scripts/defenderplay.mjs",
     "watchmeasure": "node scripts/watchmeasure.mjs",

@@ -19,7 +19,7 @@
 import { readFileSync } from 'node:fs'
 import { spawnSync } from 'node:child_process'
 import {
-    chooseEnemySpawn, makeRun, tickMc, gunnerStep, citiesAlive, fireAt, startWave,
+    chooseEnemySpawn, makeRun, tickMc, gunnerStep, citiesAlive, fireAt, startWave, winner,
     SCREEN_WIDTH, SAFE_Y, WAVE_BREAK_TICKS, PROVEN_WAVES, attractFerry, ATTRACT_FERRY_EVERY,
     SAUCER_FIRST_WAVE, SAUCER_SCORE,
     SMART_FIRST_WAVE, SMART_SCORE, CENTER_SILO_X, CENTER_ABM_SPEED,
@@ -578,6 +578,123 @@ console.log('smart bombs (#3630): the watch fights back with the center battery'
     ok(shot && shot.wid === 9, 'cities before exotics: the uncovered ICBM owns the shot ahead of the smart bomb', `wid ${shot && shot.wid}`)
 }
 
+// ------------------------------------------- #3630 slice 2: 2P alternating seats ----
+// Manual §6 (games 18–34): players alternate one wave at a time, both scores
+// display, cities and silos are SHARED — a burn on your wave costs your partner
+// too — the between-wave bonus pays whoever played the wave, and THE END lands
+// when the last city falls, higher book wins. Solo touches none of this: the
+// flip consumes no dice and gs.score stays player 1's ledger (both halves are
+// pinned below — the seat law AND the byte parity around it).
+console.log('2P alternating (#3630 slice 2): flip, ledgers, shared board')
+{
+    ok(makeRun(4242).twoP === false && makeRun(4242).turn === 1 && makeRun(4242).score2 === 0,
+        'solo keeps its shape: no second ledger, P1 owns the board')
+
+    // Empty the sky inside the live clear law and the wave closes this tick.
+    const emptySky = (g) => {
+        g.missilesLeftInWave = 0; g.spawning = false
+        g.warheads.length = 0; g.blasts.length = 0; g.abms.length = 0
+        g.saucers.length = 0; g.saucersLeftInWave = 0; g.smartLeftInWave = 0
+        tickMc(g, null)
+    }
+
+    const solo2 = makeRun(4242)
+    emptySky(solo2)
+    ok(solo2.turn === 1 && solo2.score2 === 0 && !solo2.events.includes('turn'),
+        'the flip is twoP-gated: a solo wave closes without a hand-off')
+
+    const g = makeRun(4242, { twoPlayer: true })
+    ok(g.twoP === true && g.turn === 1 && g.p2cpu === true,
+        'a 2P run opens with P1 on wave 1 and the CPU holding seat 2')
+    const turnsAfter = []
+    const wavesAfter = []
+    let resumed = 0
+    for (let w = 0; w < 4; w++) {
+        emptySky(g)
+        turnsAfter.push(g.turn)
+        wavesAfter.push(g.wave)
+        let guard = 0
+        while (g.state === 'waveEnd' && guard++ < WAVE_BREAK_TICKS + 5) tickMc(g, null)
+        if (g.state === 'playing' && g.wave === wavesAfter[w]) resumed++
+    }
+    ok(JSON.stringify(turnsAfter) === JSON.stringify([2, 1, 2, 1]),
+        'the board alternates every wave — P2 takes 2 and 4, P1 hands over after 1 and 3',
+        JSON.stringify(turnsAfter))
+    ok(JSON.stringify(wavesAfter) === JSON.stringify([2, 3, 4, 5]),
+        'the hand-off rides real wave clears', JSON.stringify(wavesAfter))
+    ok(resumed === 4, 'each hand-off resumes after the sim-clock break', `${resumed}/4`)
+
+    // Ledgers: the bonus pays the seat that played; the shared board carries
+    // its damage across the hand-off — the strategy core of the mode.
+    const g2 = makeRun(555, { twoPlayer: true })
+    emptySky(g2)
+    ok(g2.score === 2100 && g2.score2 === 0,
+        'the wave-1 bonus pays P1: 600 cities + 1500 spare shells', `${g2.score}/${g2.score2}`)
+    let guard2 = 0 // bounded: the wave-break mutant must leave this loop, not hang it
+    while (g2.state === 'waveEnd' && guard2++ < WAVE_BREAK_TICKS + 10) tickMc(g2, null)
+    g2.cities[0].alive = false // P2 inherits the hole P1's wave left standing over
+    emptySky(g2)
+    ok(g2.score === 2100 && g2.score2 === 2000,
+        'the wave-2 bonus pays P2 — and pays it SHORT, because the board is shared',
+        `${g2.score}/${g2.score2}`)
+
+    // Kills credit the live seat, warhead and ferry alike.
+    const g3 = makeRun(556, { twoPlayer: true })
+    g3.turn = 2
+    g3.warheads = [{ id: 1, x: 400, y: 300, startX: 400, startY: 0, targetX: 400, targetY: 550, speed: 1.7, color: '#f00', coverUntil: 0 }]
+    g3.blasts = [{ x: 400, y: 300, radius: 10, growing: true, center: false, color: '#fff' }]
+    let guard3 = 0
+    while (g3.warheads.length && guard3++ < 60) tickMc(g3, null)
+    ok(g3.score === 0 && g3.score2 === 25, 'a 25 on P2\'s wave lands in score2', `${g3.score}/${g3.score2}`)
+    g3.saucers = [{ id: 2, x: 400, y: 150, dir: 1, speed: 2, fireTimer: 9999, frame: 0, coverUntil: 0 }]
+    g3.blasts.push({ x: 400, y: 150, radius: 10, growing: true, center: false, color: '#fff' })
+    guard3 = 0
+    while (g3.saucers.length && guard3++ < 60) tickMc(g3, null)
+    ok(g3.score === 0 && g3.score2 === 25 + SAUCER_SCORE,
+        'the ferry\'s 125 pays the live seat too', `${g3.score}/${g3.score2}`)
+
+    const wg = makeRun(9)
+    wg.score = 100
+    ok(winner(wg) === 1 && (wg.score2 = 100) && winner(wg) === 0 && (wg.score2 = 101) && winner(wg) === 2,
+        'winner reads the bigger book, equal books are a draw')
+
+    // Dice parity around the mode: one seed rolls the SAME warheads whether or
+    // not a partner exists — the hot-seat changes seats, not the sky.
+    const seqTrace = (seed, twoPlayer) => {
+        const t = makeRun(seed, { twoPlayer })
+        let h = ''
+        let guard = 0
+        while (guard++ < 5000 && !t.over) {
+            tickMc(t, gunnerStep(t))
+            h += `${t.wave}|${t.warheads.length}|${t.saucers.length}|${t.smartLeftInWave}|${t.cities.filter((c) => c.alive).length};`
+        }
+        return h
+    }
+    const t1 = seqTrace(4242, false)
+    const t2 = seqTrace(4242, true)
+    ok(t1 === t2 && t1.length > 1000,
+        'solo and 2P trace byte-equal on one seed (5000 ticks, gunner aboard)',
+        `${t1.length}/${t2.length}`)
+
+    // The CPU seat is the certified gunner: P2's waves defend the shared board
+    // with zero city damage on every seed, exactly what the sweep proves solo.
+    let worstCities = 6
+    let reachedP2 = 0
+    for (const seed of [11, 22, 33, 44, 55, 66, 77, 88]) {
+        const cg = makeRun(seed, { twoPlayer: true })
+        emptySky(cg) // P1 closes wave 1 untouched; the board hands over
+        if (cg.turn !== 2) continue
+        reachedP2++
+        let guard = 0
+        while (cg.state === 'waveEnd' && guard++ < WAVE_BREAK_TICKS + 5) tickMc(cg, null)
+        guard = 0
+        while (cg.state === 'playing' && guard++ < 6000) tickMc(cg, gunnerStep(cg))
+        worstCities = Math.min(worstCities, citiesAlive(cg))
+    }
+    ok(reachedP2 === 8, 'every seed reaches the P2 wave through a real hand-off', `${reachedP2}/8`)
+    ok(worstCities === 6, 'the CPU seat holds the shared board: 8 seeds, zero cities lost on P2\'s wave', `${worstCities}/6`)
+}
+
 // -------------------------------------------------------------------- the law ----
 console.log('component wiring: pin, report, restart, seat')
 {
@@ -586,8 +703,8 @@ console.log('component wiring: pin, report, restart, seat')
     const seedDraws = src.match(/Math\.random\(\) \* 1000000/g) || []
     ok(dice.length === 2 && seedDraws.length === 2,
         'no die leaves the seeded stream (only the two seed generations)', `${dice.length}/${seedDraws.length}`)
-    ok(/makeRun\(seedFromQuery\(window\.location\.search\) \?\? Math\.floor\(Math\.random\(\) \* 1000000\)\)/.test(src),
-        'startRun regenerates the seed through makeRun and honors ?seed=N')
+    ok(/makeRun\(seedFromQuery\(window\.location\.search\) \?\? Math\.floor\(Math\.random\(\) \* 1000000\), \{ twoPlayer: is2P \}\)/.test(src),
+        'startRun regenerates the seed through makeRun and honors ?seed=N (#3630 slice 2: plus the mode flag)')
     // the PRODUCTION report, specifically — not any seed literal (the DEV probe
     // carries one too; a whole-file grep let a dropped report-seed survive).
     const rep = src.match(/exposeFeedbackState\(\(\) => \(\{[\s\S]*?\}\)\)/)
@@ -602,6 +719,26 @@ console.log('component wiring: pin, report, restart, seat')
     ok(/import\.meta\.env\.DEV/.test(src) && /window\.__mcTest/.test(src), '__mcTest is DEV-only')
     ok(/gs\.over && !wasOver\) release\(false\)/.test(src), 'watch never lingers into GAME OVER (silent)')
     ok(/release\(false\) \/\/ watch never lingers/.test(src), 'a fresh raid starts in your hands')
+    // #3630 slice 2 — the hot-seat wiring the sim section can't see
+    ok(/e\.code === 'Digit2' \|\| e\.code === 'Digit1'/.test(src),
+        'mode keys wired: 1 opens solo, 2 opens the hot-seat')
+    ok(/gs\.twoP && P2_CODES\.includes\(e\.code\)/.test(src),
+        'seat 2 has its own keyboard lane (WASD aim + F fire)')
+    ok(/gs\.p2cpu = false/.test(src), 'a P2 key joins a human into the CPU seat mid-run')
+    ok(/if \(gs\.twoP && gs\.turn === 2\) return/.test(src),
+        'the mouse never spends the off-duty seat\'s ammo')
+    ok(/gs\.twoP && gs\.turn === 2 && gs\.p2cpu \? gunnerStep\(gs\)/.test(src),
+        'the CPU seat drives the certified gunner on P2 waves')
+    ok(/if \(gs\.twoP\) return/.test(src), 'watch is solo-only — seat 2 belongs to the gunner')
+    ok(/if \(keys\.ArrowLeft\) gs\.crosshair\.x = Math\.max/.test(src),
+        'P1 arrows aim the crosshair — the pad stick finally has a load')
+    ok(/twoP: gs\.twoP, turn: gs\.turn, p1: gs\.score, p2: gs\.score2/.test(src),
+        'the production report carries the hot-seat picture')
+    ok(/PLAYER \$\{w\} WINS/.test(src) && /A DRAW/.test(src),
+        'THE END names the hot-seat winner over both books')
+    const simSrc = readFileSync('src/games/MissileCommand/sim.js', 'utf8')
+    ok(/if \(gs\.twoP\) \{\s*gs\.turn = gs\.turn === 1 \? 2 : 1/.test(simSrc),
+        'the flip lives in nextWave and is gated by the mode')
     // the registry advertises the seat (gameHasWatch gates the pill/PauseOverlay)
     const reg = readFileSync('src/config/games.js', 'utf8')
     const mc = reg.match(/path: '\/missilecommand'[\s\S]*?\n    \},/)
@@ -617,8 +754,8 @@ if (process.argv.includes('--mutant')) {
     const G = 'src/config/games.js'
     const MUTANTS = [
         ['human start ignores ?seed (pin removed)', I,
-            `makeRun(seedFromQuery(window.location.search) ?? Math.floor(Math.random() * 1000000))`,
-            `makeRun(Math.floor(Math.random() * 1000000))`],
+            `makeRun(seedFromQuery(window.location.search) ?? Math.floor(Math.random() * 1000000), { twoPlayer: is2P })`,
+            `makeRun(Math.floor(Math.random() * 1000000), { twoPlayer: is2P })`],
         ['production report drops the seed', I,
             `tick: gs.tick, score: gs.score, done: gs.state === 'gameOver', seed: gs.seed, wave: gs.wave,`,
             `tick: gs.tick, score: gs.score, done: gs.state === 'gameOver', wave: gs.wave,`],
@@ -647,8 +784,8 @@ if (process.argv.includes('--mutant')) {
             `if (gs.wave >= SAUCER_FIRST_WAVE) {`,
             `if (gs.wave >= 1) {`],
         ['a burned ferry pays warhead points (125 becomes 25)', S,
-            `gs.score += SAUCER_SCORE`,
-            `gs.score += 25`],
+            `addScore(gs, SAUCER_SCORE) // #3630 slice 2: the 125 pays the live seat`,
+            `addScore(gs, 25) // mutant: the 125 slot shrinks`],
         ['the wave clears regardless of owed ferries (spawned-after-clear ghost)', S,
             `gs.saucers.length === 0 && gs.saucersLeftInWave === 0`,
             `true`],
@@ -690,6 +827,30 @@ if (process.argv.includes('--mutant')) {
         ['the watch sprays outer ammo at smart bombs (3-button doctrine lost)', S,
             `fired = { aimX: p.x, aimY: p.y, wid: w.id, boom: gs.tick + k, silo: centerIdx }`,
             `fired = { aimX: p.x, aimY: p.y, wid: w.id, boom: gs.tick + k, silo: gs.silos.findIndex((s) => s.alive && s.ammo > 0) }`],
+        ['#3630 s2: the turn flip dies (the hot-seat plays alone)', S,
+            `gs.turn = gs.turn === 1 ? 2 : 1`,
+            `gs.turn = 1`],
+        ['#3630 s2: P2 waves pay P1 (the seat routing is gone)', S,
+            `if (gs.twoP && gs.turn === 2) gs.score2 += n`,
+            `if (gs.twoP) gs.score2 += n`],
+        ['#3630 s2: credits never reach score2 (the second ledger is dead)', S,
+            `if (gs.twoP && gs.turn === 2) gs.score2 += n`,
+            `if (false) gs.score2 += n`],
+        ['#3630 s2: the hot-seat opens without being asked (solo shape breaks)', S,
+            `twoP: opts.twoPlayer === true,`,
+            `twoP: true,`],
+        ['#3630 s2: the mouse fires on P2\'s wave (off-duty guard gone)', I,
+            `if (gs.twoP && gs.turn === 2) return // #3630 slice 2: the mouse`,
+            `if (false) return // #3630 slice 2: the mouse`],
+        ['#3630 s2: a P2 key never claims the seat (join dead)', I,
+            `gs.p2cpu = false`,
+            `gs.p2cpu = true`],
+        ['#3630 s2: the CPU seat abdicates (P2 waves fly undefended)', I,
+            `gs.twoP && gs.turn === 2 && gs.p2cpu ? gunnerStep(gs)`,
+            `false ? gunnerStep(gs)`],
+        ['#3630 s2: pad arrow-aim dies (the stick idles again)', I,
+            `if (keys.ArrowLeft) gs.crosshair.x = Math.max(0, gs.crosshair.x - P2_AIM_SPEED)`,
+            `if (false) gs.crosshair.x = Math.max(0, gs.crosshair.x - P2_AIM_SPEED)`],
     ]
     let died = 0
     for (const [name, file, from, to] of MUTANTS) {
