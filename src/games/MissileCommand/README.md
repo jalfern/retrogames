@@ -139,12 +139,46 @@ waves pays 100 per living city and 50 per spare missile, then reloads.
   Seat: Y or the pill; ANY key, click, mouse move or board tap hands the
   crosshair back mid-barrage; watch never lingers into GAME OVER or a new raid.
 
+- **DEEP-WAVE DOCTRINE (#3711) — the knot, the magazine, and the ceiling.**
+  From wave ~9 the raid fields more warheads than the magazine refills (28–32+
+  vs 30) — a measured deficit (`clusterMode`, the mirror of #3638's reserve
+  rule; the gate is silent at waves 1..7, so every shallower proof replays
+  untouched). Two expert habits engage under deficit only:
+  - **The knot.** One explosion downs everything inside it, so when crossing
+    descent lines meet at a point the gunner waits (holds cover to the fire-
+    ready window `KNOT_READY = 60`, arrival inside the ring's strong half) and
+    spends ONE shell at the crossing, promising the ring to every co-kill the
+    envelope proves WITH CUSHION (a grazing claim is one-tick noise between
+    prediction and sim; duds are forbidden; the lapse-retry stays the net).
+    §cluster proves it in a crafted crossing: held, one shell, two kills.
+    Measured honest: knots are RARE at reachable waves — spawn spacing keeps
+    siblings 50–150 px apart at any shared altitude, and the geometry closes
+    to a knot only near wave 18, past the ceiling. The mechanic pays where the
+    geometry exists and costs nothing where it doesn't (36-raid A/B: zero raids
+    lost, cities +3, shells never spent faster).
+  - **Silo-first.** Under deficit the silo streams are answered before the
+    city streams: a dead silo forfeits the shells still loaded in it (~10)
+    exactly when the wave outgrows the magazine — a defended silo IS ammo
+    (wave 9 cities avg 3.00 → 3.33, deepest-wave stalls 6 → 5, 12 seeds).
+  Tested and REJECTED, recorded so nobody re-buys it: "sacrifice one city —
+  let its stream through and defend the rest" measured WORSE at waves 8–12
+  (dead structures retarget the spawn dice, so nothing absorbs the leaks), and
+  a ferry-chain reserve (price future ferries at kill-plus-early-launches) is
+  empty: the shells a ferry-kill saves are the shells the debt already counts,
+  symmetric, blocked at exactly the waves it would need. The deep ceiling is
+  the port's own spawn law, not the driver's style: volume is volume, and the
+  sweep bar stays PROVEN_WAVES = 5 because nothing deeper clears untouched.
+
 ## Verify
 ```
-npm run missilecmdcheck             # 126 checks: raid replay, sweep 24 seeds waves 1-5 clean,
+npm run missilecmdcheck             # 133 checks: raid replay, sweep 24 seeds waves 1-5 clean,
                                   #   doctrine pins (safe altitude, urgency, cover), saucers
                                   #   (byte-exact gate, entry/launch/kill/hold), deep doctrine
-                                  #   A/B waves 6-10, juice, attract ad, smart bombs (speed
+                                  #   A/B waves 6-10, #3711 deep-wave cluster (deficit gate
+                                  #   waves 1-7 negative / 9-12 positive, knot unit: hold +
+                                  #   one shell two kills, silo-first unit, 36-raid A/B
+                                  #   waves 9-11: no raid lost, cities >=, shells >=), juice,
+                                  #   attract ad, smart bombs (speed
                                   #   split, gate, evade, blind-spot kill, center-only kill,
                                   #   wave hold, watch center doctrine), three-button law
                                   #   (#3695: fireBattery names its battery from any sector,
@@ -152,7 +186,7 @@ npm run missilecmdcheck             # 126 checks: raid replay, sweep 24 seeds wa
                                   #   2P alternating (flip seq, bonus attribution, shared
                                   #   board, per-seat credits, dice-parity trace, CPU-seat
                                   #   defense), wiring
-npm run missilecmdcheck -- --mutant # 35 mutants, all must die
+npm run missilecmdcheck -- --mutant # 39 mutants, all must die
 npm run mcbatterydrive            # live browser three-button drive (13 checks): FAST pad
                                   #   declared, KeyB spends ONLY the center magazine, keys
                                   #   1/2/3 launch their battery from a foreign sector and
@@ -190,15 +224,14 @@ npm run attractcheck              # attract screen rule 6
   Engine notes #3695. Human clicks keep the nearest-battery law; per-battery
   field-of-fire arcs (below) would replace both.
 - Cities revive only between games (original revives every 10k points).
-- The gunner is proven to wave 5 (the sweep's bar); ferries and (from wave 7)
-  smart bombs make the deep arithmetic bind earlier (~wave 9–10 pays 28–30
-  warheads plus the ferry salvo's cruises against 30 shells), so there losing
-  cities is volume, not style — the §deep A/B proves the bonus adds nothing to
-  that bill (the reserve rule holds the 125 until the magazine truly has
-  surplus, and the watch never prioritizes the ferry over a city). The watch
-  likewise holds fire on a smart bomb until a blind solution exists, and its
-  smart-bomb branch is inert below wave 7, so the deep doctrine numbers were
-  re-measured with the #3630 arrivals switched off at the source.
+- The gunner is proven clean to wave 5 (the sweep's bar) and the deep waves
+  stay volume losses — #3711 measured the ceiling from three directions (knots,
+  sacrifice, ferry-chain; see Engine notes) and it is the port's own spawn law,
+  not the driver's style: 28–32+ warheads vs 30 shells from wave ~9, and the
+  knot geometry that could beat it only closes near wave 18, past the fall.
+  The slack that DOES exist is banked (knot + silo-first, 12-seed A/B green).
+  What remains honestly open: a human with a trackball may still outplay the
+  watch deep — the harness can only certify what it can drive.
 - Outer batteries fire by nearest-silo |dx| like the human click law — the
   original's field-of-fire arcs per battery are not modelled.
 - In hot-seat the battery keys (#3695) belong to seat 1, same guard as Space; a

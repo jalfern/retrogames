@@ -289,6 +289,48 @@ export function abmArrivalTicks(d, speed = ABM_SPEED) {
     return Math.floor(d / speed) + 1
 }
 
+// #3711 cluster doctrine — the arcade's firing economy. One explosion downs
+// every warhead caught inside it and the original bills each one (25 a head),
+// so when the raid outstrips the magazine the expert waits for the crossing
+// descent lines and spends ONE shell at the knot. The blast envelope is the
+// sim's own grow/shrink (radius 1→40→1, one px per tick):
+export const BLAST_LIFE = 2 * BLAST_RADIUS_MAX - 1 // ticks a blast can still kill, from launch
+// A knot shot is only worth taking when the warheads arrive with the ring in
+// its strong half: detonation at tick k, arrival at j, need j − k <= 60 so
+// the radius at arrival is >= 20 px, not a 1 px dying rim. (The rim is where
+// prediction and sim disagree by a tick; the doctrine forbids duds.)
+export const KNOT_READY = BLAST_RADIUS_MAX + 20
+export const blastRadiusAt = (t) => (t <= BLAST_RADIUS_MAX - 1 ? 1 + t : 2 * BLAST_RADIUS_MAX - 1 - t)
+
+// Mirror of #3638's reserve rule: the reserve asks "is there a surplus for a
+// bonus?"; this asks the harsher twin — "is there a deficit that demands a
+// double-kill?" Demand is everything the magazine must still shoot down this
+// wave: live warheads (smart bombs included) + the ICBM ladder left to spawn
+// + the cruise launches the ferry fleet still owes. Where demand fits the
+// shells, the earliest-intercept doctrine runs untouched — this is why the
+// waves 1..8 proofs keep replaying byte-identical.
+export function clusterMode(gs) {
+    const ammo = gs.silos.reduce((a, s) => a + (s.alive ? s.ammo : 0), 0)
+    const demand = gs.warheads.filter((m) => !m.dead).length + gs.missilesLeftInWave + gs.smartLeftInWave
+    const crossingTicks = (SCREEN_WIDTH + 2 * SAUCER_EDGE) / (SAUCER_SPEED_BASE + gs.wave * 0.08)
+    const cruises = gs.saucersLeftInWave * Math.max(1, Math.round(crossingTicks / 70)) +
+        gs.saucers.reduce((a, s) => a + (s.dead ? 0 : Math.ceil(Math.max(0,
+            (s.dir === 1 ? SCREEN_WIDTH + SAUCER_EDGE - s.x : s.x + SAUCER_EDGE) / s.speed) / 70)), 0)
+    return demand + cruises > ammo
+}
+
+// One straight-line warhead step — the exact formula stepWarhead runs per
+// iteration, exposed so the cluster scan can advance every candidate once per
+// offset instead of re-simulating from scratch (O(t^2)) per query.
+function advanceWarhead(m, x, y) {
+    const dx = m.targetX - x
+    const dy = m.targetY - y
+    const dist = Math.sqrt(dx * dx + dy * dy)
+    if (dist < m.speed) return { x: m.targetX, y: m.targetY, landed: true }
+    const a = Math.atan2(dy, dx)
+    return { x: x + Math.cos(a) * m.speed, y: y + Math.sin(a) * m.speed, landed: false }
+}
+
 // One tick of a smart bomb (#3630). It senses live blasts within SMART_DETECT_R
 // and incoming ABMs within SMART_SENSOR_R (§6 "detect and evade your ABM
 // explosions") — blind shots (aim directly on it, §7 hint 3) are never seen.
@@ -623,9 +665,54 @@ export function attractFerry(gs) {
 export function gunnerStep(gs, opts = {}) {
     if (gs.state !== 'playing') return null
     const live = gs.warheads.filter((m) => !m.dead && !m.smart).sort((a, b) => b.y - a.y)
+    // #3711 deep-wave doctrine, engaged only when the magazine cannot pay 1:1
+    // (clusterMode is the measured deficit — the mirror of #3638's reserve
+    // rule). Where it can, this loop is the untouched earliest-intercept
+    // doctrine, so the waves 1..8 byte claims replay byte-identical.
+    // Two expert habits apply under deficit, both measured, one kept:
+    //  - KNOTS: one ring at the crossing point downs every warhead inside it.
+    //    Rare at reachable waves (spawn spacing keeps siblings 50-150 px
+    //    apart at any shared altitude; it closes to a knot only near wave
+    //    18), but each knot found is a shell saved. Kept.
+    //  - SILO-FIRST: measured at waves 7-9 every seed loses the outer silos
+    //    first — and each dead silo forfeits the shells still loaded in it,
+    //    shrinking the magazine by ~10 exactly when the wave outgrows it.
+    //    Under deficit the gunner answers the silo streams before the city
+    //    streams: a defended silo IS ammunition. (An earlier third habit —
+    //    "sacrifice one city, let its stream through" — was measured and
+    //    REVERTED: dead structures retarget the spawn dice, so nothing
+    //    absorbs leaks; it cost cities at waves 8-12. Volume is volume.)
+    const cluster = !opts.noCluster && clusterMode(gs)
+    const isSiloTarget = (m) => gs.silos.some((s) => s.alive && Math.abs(m.targetX - s.x) < 1)
+    if (cluster) live.sort((a, b) => (isSiloTarget(b) ? 1 : 0) - (isSiloTarget(a) ? 1 : 0) || b.y - a.y)
+    // One future-position table per candidate warhead, built lazily with the
+    // sim's own step formula: exact, because non-smart warheads are straight
+    // lines at constant speed.
+    const futures = cluster ? new Map() : null
+    const positionsOf = (v) => {
+        let arr = futures.get(v)
+        if (arr) return arr
+        arr = [{ x: v.x, y: v.y, landed: false }]
+        let { x, y } = v
+        for (let t = 1; t <= 500; t++) {
+            const n = advanceWarhead(v, x, y)
+            arr.push({ x: n.x, y: n.y, landed: n.landed })
+            x = n.x; y = n.y
+            if (n.landed) break
+        }
+        futures.set(v, arr)
+        return arr
+    }
     for (const w of live) {
-        if (gs.tick < w.coverUntil) continue // a shot is already promised to it
+        if (gs.tick < w.coverUntil) continue // a shot is already promised (or the knot hold, #3711)
+        const open = (v) => gs.tick >= v.coverUntil || v.held === true
+        const others = cluster ? live.filter((v) => v !== w && open(v)) : []
         let fired = null
+        let arrive = 0 // offset tick at which the primary meets its ring
+        let knot = null // [warhead, kill-offset] pairs predicted into the ring
+        let bestF = 1 // best kill count over READY-now points
+        let firstFire = null // earliest ready point — the old doctrine's answer
+        let holdJ = 0, holdX = 0, holdK = 0 // a bigger knot is coming, j ticks out (hold)
         for (let j = 1; j <= 500; j++) {
             const p = stepWarhead(w, j)
             if (p.y > SAFE_Y) break // it only falls further; no safe meet ahead
@@ -636,15 +723,77 @@ export function gunnerStep(gs, opts = {}) {
             // smart gate the center flies 28, and a boom computed at 15
             // detonates early and misses. Below the gate this is ABM_SPEED.
             const k = abmArrivalTicks(d, siloSpeed(gs, silo))
-            if (k <= j) {
+            if (k > j) continue
+            if (!cluster) {
                 // Detonates at tick now+k with radius >= 1; the warhead is at
                 // this exact point at now+j >= now+k — distance 0 < radius.
                 fired = { aimX: p.x, aimY: p.y, wid: w.id, boom: gs.tick + k }
+                arrive = j
                 break
             }
+            if (j - k <= KNOT_READY) {
+                // READY point. Score the ring exactly: every open warhead the
+                // envelope provably sweeps WITH CUSHION (the ring must beat
+                // the warhead's travel by a margin — a grazing claim is
+                // one-tick noise between prediction and sim, and duds are
+                // forbidden). Max kills wins; ties fall to the earliest point,
+                // which is the old doctrine when no knot is ready this tick.
+                let kills = 1
+                let bag = []
+                for (const v of others) {
+                    const arr = positionsOf(v)
+                    const tEnd = Math.min(arr.length - 1, k + BLAST_LIFE - 1)
+                    for (let t = k; t <= tEnd; t++) {
+                        const q = arr[t]
+                        if (q.landed) break // it has already hit its target
+                        if (Math.hypot(q.x - p.x, q.y - p.y) < blastRadiusAt(t - k) - 2) {
+                            kills++
+                            bag.push([v, t])
+                            break
+                        }
+                    }
+                }
+                if (!firstFire) firstFire = { shot: { aimX: p.x, aimY: p.y, wid: w.id, boom: gs.tick + k }, j }
+                if (kills > bestF) {
+                    bestF = kills
+                    fired = { aimX: p.x, aimY: p.y, wid: w.id, boom: gs.tick + k }
+                    arrive = j
+                    knot = bag
+                    if (kills === others.length + 1) break // the whole open sky, one ring
+                }
+            } else if (others.length > 0) {
+                // Not reachable yet — but is a crossing waiting down there?
+                // Same-tick proximity (8 px): the ring cannot be pre-fired,
+                // only held for, so this is the HOLD candidate.
+                let x = 0
+                for (const v of others) {
+                    const arr = positionsOf(v)
+                    if (j < arr.length && !arr[j].landed && Math.hypot(arr[j].x - p.x, arr[j].y - p.y) < 8) x++
+                }
+                if (x > holdX) { holdX = x; holdJ = j; holdK = k }
+            }
         }
+        if (!fired && cluster && holdX >= 1) {
+            // Wait for the knot: cover the primary only until the crossing
+            // enters the fire-ready window (a shell can't loiter — the ring
+            // lives BLAST_LIFE ticks, so the shot becomes possible at
+            // j − k − BLAST_LIFE). If the geometry dies meanwhile (a
+            // co-warhead gets shot by something else, say), the tick-lapse
+            // re-solve falls back to the plain earliest-intercept answer —
+            // a held warhead can never be forgotten.
+            w.held = true
+            w.coverUntil = gs.tick + Math.max(1, holdJ - holdK - KNOT_READY + 2)
+            continue
+        }
+        if (!fired && firstFire) { fired = firstFire.shot; arrive = firstFire.j }
         if (fired) {
-            w.coverUntil = fired.boom + 4
+            w.held = false
+            w.coverUntil = cluster ? gs.tick + arrive + 4 : fired.boom + 4
+            // Promise the ring to everything it predicts to kill. A co-kill
+            // that some earlier blast beats to it simply dies covered; one
+            // that somehow survives re-solves when its cover lapses — the
+            // same net the solo doctrine has always landed on.
+            if (knot) for (const [v, t] of knot) { v.coverUntil = gs.tick + t + 4; v.held = false }
             return fired
         }
         // No safe intercept exists for the lowest warhead — higher ones are
