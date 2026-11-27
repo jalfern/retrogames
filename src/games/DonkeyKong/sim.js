@@ -24,7 +24,16 @@ export const SPEED = 1.5
 export const LADDER_SPEED = 1.2
 export const BARREL_SPEED = 1.2
 export const START_LIVES = 3
-export const WIN_SCORE = 1000
+// #3786 — the score bonus timer (Wikipedia, Donkey Kong §Gameplay: points for
+// "completing each stage according to a steadily decreasing bonus counter";
+// "a life is lost when ... the bonus counter reaches zero"). The arcade fuse:
+// 5000 at the stage's start, stepping down in hundreds. Ours steps in real
+// seconds — one hundred per second, a 50-second run at first light. The old
+// flat WIN_SCORE is gone: saving her banks what the counter still holds.
+export const BONUS_START = 5000
+export const BONUS_DROP = 100
+export const BONUS_TICK = 60
+export const CAPTURE_TICKS = 90 // the grab animation before the life is spent
 // #3761 — obstacle-bonus popups (#50/+100, see §obstacle-bonus). Render-only
 // law: the popups ride the books, they never drive them.
 export const POPUP_LIFE = 48
@@ -252,6 +261,13 @@ export function makeRun(seed, opts = {}) {
         deathTimer: 0,
         winTimer: 0,
         barrelTimer: 180,
+        // #3786 — the arcade fuse: the counter runs the whole lap, banks what
+        // is left when she is saved, and at zero the ape takes her and the
+        // runner pays a life.
+        bonus: BONUS_START,
+        bonusTick: 0,
+        captured: false,
+        captureTimer: 0,
         dkThrowing: false,
         dkThrowTimer: 0,
         // #3598 — the rivet finale state
@@ -301,6 +317,14 @@ function resetPlayer(gs) {
     gs.barrelTimer = 180
     gs.deathTimer = 0
     gs.winTimer = 0
+    // #3786 — every attempt at the board carries a fresh fuse (the arcade's
+    // counter restarts with the screen; whether a death respawn reloaded it is
+    // unverifiable against ROMs in-repo, and our respawn already rebuilds the
+    // screen, so the fuse rides the same law).
+    gs.bonus = BONUS_START
+    gs.bonusTick = 0
+    gs.captured = false
+    gs.captureTimer = 0
     // The screen resets like the arcade's: mallets back on their girders.
     gs.hammer = 0
     gs.swing = 0
@@ -554,7 +578,7 @@ function attractPlan(gs) {
 // human input, watchStep drives instead.
 // ---------------------------------------------------------------------------
 export function tickDonkeyKong(gs, input = null) {
-    const ev = { jump: false, jumpedBarrel: 0, passedBarrel: 0, died: false, respawn: false, won: false, over: false, barrel: false, hammerUp: false, swing: false, hammered: 0, hammerDown: false, climbed: false, hang: false, noClimb: false, reached: false, pull: false, rivet: false, collapse: false, barrelVoices: [] }
+    const ev = { jump: false, jumpedBarrel: 0, passedBarrel: 0, died: false, respawn: false, captured: false, won: false, over: false, barrel: false, hammerUp: false, swing: false, hammered: 0, hammerDown: false, climbed: false, hang: false, noClimb: false, reached: false, pull: false, rivet: false, collapse: false, barrelVoices: [] }
     const p = gs.player
     gs.tickN++
     // #3761 — popups age at the top of the tick, so the tick that pays a
@@ -582,11 +606,35 @@ export function tickDonkeyKong(gs, input = null) {
         return ev
     }
 
+    // #3786 — THE CAPTURE. The counter reached zero: while the board is live
+    // the fuse has already set captured/captureTimer, and here the ape takes
+    // her off the girder — a life spent, then resetPlayer rebuilds the screen
+    // with a fresh fuse (or the run ends at the terminal, like any death).
+    if (gs.captureTimer > 0) {
+        gs.captureTimer--
+        if (gs.captureTimer <= 0) {
+            gs.lives--
+            if (gs.lives <= 0) {
+                gs.over = true
+                ev.over = true
+            } else {
+                resetPlayer(gs)
+                ev.respawn = true
+            }
+        }
+        return ev
+    }
+
     // Win animation
     if (gs.winTimer > 0) {
         gs.winTimer--
         if (gs.winTimer <= 0) {
-            gs.score += WIN_SCORE
+            // #3786 — the arcade pays the counter, not a flat lap fee: saving
+            // her banks whatever the fuse still holds (always >= 100 — zero is
+            // the capture, never a payout), and the banked amount pops at her
+            // perch so a muted phone still sees the price of the rescue.
+            gs.score += gs.bonus
+            gs.popups.push({ x: 112, y: 34, text: `+${gs.bonus}`, age: 0 })
             resetPlayer(gs) // #3598 — rebuilds the board too: fresh rivets, level girders, ape back on his perch
         }
         return ev
@@ -633,6 +681,28 @@ export function tickDonkeyKong(gs, input = null) {
             ev.won = true
         }
         return ev
+    }
+
+    // #3786 — THE FUSE. While the board is live the bonus counter steps down
+    // every BONUS_TICK ticks; the death, win and collapse animations above
+    // return early, so the clock freezes with them. At zero the law fires:
+    // captured, the grab animates, a life pays at its end. The attract demo
+    // owns the wheel but not the stake — the arcade's own demo never burned a
+    // life on the counter, and ours must never strand the title screen on a
+    // game-over fuse.
+    if (!gs.attract) {
+        gs.bonusTick++
+        if (gs.bonusTick >= BONUS_TICK) {
+            gs.bonusTick = 0
+            gs.bonus -= BONUS_DROP
+            if (gs.bonus <= 0) {
+                gs.bonus = 0
+                gs.captured = true
+                gs.captureTimer = CAPTURE_TICKS
+                ev.captured = true
+                return ev
+            }
+        }
     }
 
     // DK throwing animation
@@ -990,6 +1060,10 @@ function cloneWorld(gs) {
         deathTimer: gs.deathTimer,
         winTimer: gs.winTimer,
         barrelTimer: gs.barrelTimer,
+        bonus: gs.bonus,
+        bonusTick: gs.bonusTick,
+        captured: gs.captured,
+        captureTimer: gs.captureTimer,
         dkThrowing: false,
         dkThrowTimer: 0,
         rivets: gs.rivets.map(r => ({ ...r })), // #3598 — rollouts judge the finale
@@ -1248,7 +1322,7 @@ export function watchStep(gs) {
 export function stateHash(gs) {
     const r4 = (n) => Math.round(n * 1e4)
     const p = gs.player
-    let s = `K${gs.tickN}|${gs.score}|${gs.lives}|${gs.over ? 1 : 0}|${gs.deathTimer}|${gs.winTimer}|${gs.barrelTimer}|${gs.rngState}|`
+    let s = `K${gs.tickN}|${gs.score}|${gs.lives}|${gs.over ? 1 : 0}|${gs.deathTimer}|${gs.winTimer}|${gs.barrelTimer}|${gs.bonus}|${gs.captured ? 1 : 0}${gs.captureTimer}|${gs.rngState}|`
     s += `H${gs.hammer}|${gs.swingSeq}|${gs.hammers.map(h => (h.taken ? 1 : 0)).join('')}|`
     s += `R${gs.rivetPhase ? 1 : 0}${gs.rivets.map(r => (r.pulled ? 1 : 0)).join('')}|${gs.pullTimer}|${gs.collapse}|${Math.round(gs.dkFall * 1e4)}|`
     s += `${r4(p.x)},${r4(p.y)},${r4(p.vx)},${r4(p.vy)},${p.grounded ? 1 : 0},${p.climbing ? 1 : 0},${p.dir},${p.jumpedBarrels.size}|${p.passedBarrels.size}|`
