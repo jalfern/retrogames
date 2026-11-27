@@ -60,9 +60,20 @@ Ports: the browser checks read `DEV_PORT` (slot a 5173 / slot b 5178 / QA 5176).
   behaviour beyond head-rest (piling, queue slowdown) has no sourceable spec
   in-repo (atari.com/fandom 403; 2600 manual covers the same rule only), so
   it stays retired, not guessed.
-- The corner pair stands at the right corner only — the left fall column
-  drifts barrels off-screen before any rung reaches it (left-column corner
-  parity: needs the arcade reference check + measured column trace).
+- **CLOSED by #3657 item 2:** left-column parity — the arcade's corner fallers
+  land on the girder below (its end overlaps the join). Measured trace
+  (`scripts/trace-left-corner.mjs`): a barrel leaving girder 2's left end at
+  cx≈14.4 drifts −1.2/tick through the slope-crowned ~31px drop and meets
+  girder 1's line at cx≈−3.2 — our compressed joins were 3.2px too far in,
+  and those barrels fell off the world instead of landing. The catch girders
+  (1 and 3) now extend 4px past screen-left: corner fallers land on the
+  clipped tip and the slope rolls them back into view, and girder 4's column
+  is caught the same way (crossing cx≈−1.6). No extra left rung: a dive roll
+  fires only where a barrel lands or crosses a span mid-air, so a girder-1
+  survivor rolls right and meets the existing corner pair at the 1→0 gap —
+  the same terminal column as every other right-corner faller. kongcheck
+  §left-corner pins the measured crossing (cx≈−3.2 inside the 4px tip) and
+  scans seeds for a barrel ever leaving the world through screen-left.
 - **CLOSED by #3618:** broken ladders climbed part-way — see Half-rungs
   below. (Was: the original let Mario climb part-way some rounds; barrels and
   the player both refused them outright.)

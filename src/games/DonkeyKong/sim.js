@@ -137,12 +137,23 @@ export function buildLevel() {
 
     // Bottom girder (flat) — ground floor, player starts here
     platforms.push({ x: 0, y: 232, w: GW, slope: 0 })
-    // 2nd girder — barrels roll right (slopes down-right), gap on right
-    platforms.push({ x: 0, y: 192, w: GW - 16, slope: SL })
+    // 2nd girder — barrels roll right (slopes down-right), gap on right.
+    // #3657 item 2 — left-corner parity: the arcade's corner fallers land on
+    // the girder below (its end overlaps the join). Measured trace
+    // (scripts/trace-left-corner.mjs): a barrel leaving girder 2's LEFT end
+    // at cx≈14.4 drifts −1.2/tick through the slope-crowned ~31px drop and
+    // meets girder 1's line at cx≈−3.2 — a 3.2px miss that used to carry the
+    // barrel into the void (off the bottom of the world). Extending the catch
+    // girder 4px past screen-left lands it on the clipped tip, and the slope
+    // rolls it back into view. Right ends needed no change: their tips already
+    // reach GW, and #3622's end-of-girder pair rides the right corner.
+    platforms.push({ x: -4, y: 192, w: GW - 12, slope: SL })
     // 3rd girder — barrels roll left (slopes down-left), gap on left
     platforms.push({ x: 16, y: 160, w: GW - 16, slope: -SL })
-    // 4th girder — rolls right, gap on right
-    platforms.push({ x: 0, y: 128, w: GW - 16, slope: SL })
+    // 4th girder — rolls right, gap on right. #3657 item 2 — same join for
+    // girder 4's left-end fallers (measured crossing cx≈−1.6, shorter drop,
+    // shorter drift — 4px of tip catches those too).
+    platforms.push({ x: -4, y: 128, w: GW - 12, slope: SL })
     // 5th girder — rolls left, gap on left
     platforms.push({ x: 16, y: 96, w: GW - 16, slope: -SL })
     // 6th girder (DK's platform) — barrels start here, rolls right
