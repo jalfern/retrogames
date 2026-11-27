@@ -1144,22 +1144,38 @@ const PitfallGame = () => {
             holes.forEach(([hx, hy, hw, hh]) => {
                 ctx.fillRect(hx, hy, hw, hh)
             })
-            // Irregular canopy bottom edge — hanging leaves/vines
+            // Irregular canopy bottom edge — hanging leaves/vines.
+            // bgT breathes (gameTime while playing, attractTick in attract): the fringe
+            // sways with a per-column phase so the canopy reads as foliage alive in the
+            // wind, not static scenery. Draw-time only — the swingable vines are separate
+            // pendulum game objects and their hitboxes are untouched.
+            const bgT = gameTime + attractTick
             for (let cx = 0; cx < SCREEN_WIDTH; cx += 20) {
                 const hang = 8 + Math.abs(Math.sin(cx * 0.07 + roomTreeBits) * 25)
+                const sway = Math.sin(bgT * 0.045 + cx * 0.31 + roomTreeBits * 1.7)
+                const shift = Math.round(sway * 2)
                 // Dark green hangings
                 ctx.fillStyle = '#345C1C'
                 ctx.fillRect(cx, 128, 20, hang + 6)
-                // Brighter green hangings slightly shorter
+                // Clumped-leaf tooth: alternating columns hang a narrow dark point lower
+                if ((cx / 20) % 2 === 0) ctx.fillRect(cx + 7 + shift, 128 + hang + 6, 6, 4)
+                // Brighter green hangings slightly shorter, tips carried by the sway
                 ctx.fillStyle = '#6C9850'
                 ctx.fillRect(cx + 2, 128, 16, hang)
+                ctx.fillRect(cx + 4 + shift, 128 + hang, 12, 3)
             }
-            // Extra hanging vines from canopy for depth
+            // Extra hanging vines from canopy for depth — anchored at the top,
+            // bending toward a swaying tip (a hanging strand leads with its end)
             ctx.fillStyle = '#345C1C'
             for (let vx = 50; vx < SCREEN_WIDTH; vx += 120 + (roomTreeBits * 30)) {
                 const vLen = 20 + (vx * 3 + roomTreeBits * 7) % 30
-                ctx.fillRect(vx, 145, 3, vLen)
-                ctx.fillRect(vx + 1, 145 + vLen - 4, 5, 4)
+                const tip = Math.round(Math.sin(bgT * 0.04 + vx * 0.21 + roomTreeBits) * 3)
+                const seg1 = Math.ceil(vLen / 3)
+                const seg2 = Math.ceil((vLen * 2) / 3) - seg1
+                ctx.fillRect(vx, 145, 3, seg1)
+                ctx.fillRect(vx + Math.round(tip / 3), 145 + seg1, 3, seg2)
+                ctx.fillRect(vx + Math.round((tip * 2) / 3), 145 + seg1 + seg2, 3, vLen - seg1 - seg2)
+                ctx.fillRect(vx + tip + 1, 145 + vLen - 4, 5, 4)
             }
 
             // Trunks — mirrored columns, olive-brown ($12)
@@ -1195,12 +1211,15 @@ const PitfallGame = () => {
             // Ground surface — thin green strip ($D6) with grass detail
             ctx.fillStyle = '#6C9850'
             ctx.fillRect(0, 348, SCREEN_WIDTH, 6)
-            // Grass tufts
+            // Grass tufts — the top blades flicker ±1px in the same breeze
             ctx.fillStyle = '#345C1C'
             for (let gx = 0; gx < SCREEN_WIDTH; gx += 24) {
                 const gh = 2 + (gx * 7 + roomTreeBits * 13) % 4
+                const gsw = Math.round(Math.sin(bgT * 0.06 + gx * 0.17 + roomTreeBits))
                 ctx.fillRect(gx + 4, 348 - gh, 3, gh)
+                ctx.fillRect(gx + 4 + gsw, 348 - gh - 1, 2, 2)
                 ctx.fillRect(gx + 14, 348 - gh + 1, 2, gh - 1)
+                ctx.fillRect(gx + 14 + gsw, 348 - gh, 2, 2)
             }
             // Ground body — olive/khaki ($14 BROWN+2)
             ctx.fillStyle = '#848424'
