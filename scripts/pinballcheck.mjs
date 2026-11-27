@@ -21,7 +21,7 @@ const mutEq = process.argv.find((a) => a.startsWith('--mutate='))
 const MUT = mutEq ? mutEq.split('=')[1] : (MUTI > -1 ? process.argv[MUTI + 1] || null : null)
 if (MUTI > -1 && !MUT) {
     let died = 0
-    const RULES = ['seed', 'economy', 'mirror', 'search', 'kickback', 'skin', 'demo', 'smithzone', 'smithload', 'tiltnudge', 'powerzone', 'solo', 'seam', 'mix', 'packmagnet', 'magspent', 'magclock', 'magstall', 'magrearm', 'chaincone', 'chainslot', 'holoring', 'spinrung', 'spincool', 'spingrade', 'kbSweepR', 'kbSweepL', 'kbSweepSticky', 'kbSweepSquat', 'kbSweepSide', 'kbSweepWhoosh']
+    const RULES = ['seed', 'economy', 'mirror', 'search', 'kickback', 'skin', 'demo', 'smithzone', 'smithload', 'tiltnudge', 'powerzone', 'solo', 'seam', 'mix', 'packmagnet', 'magspent', 'magclock', 'magstall', 'magrearm', 'chaincone', 'chainslot', 'holoring', 'spinrung', 'spincool', 'spingrade', 'kbSweepR', 'kbSweepL', 'kbSweepSticky', 'kbSweepSquat', 'kbSweepSide', 'kbSweepWhoosh', 'kbSweepStub', 'kbSweepDim']
     for (const rule of RULES) {
         const res = spawnSync(process.execPath, [fileURLToPath(import.meta.url), `--mutate=${rule}`], { encoding: 'utf8' })
         // child convention at EOF: exit 0 = the rule broke and the check saw red
@@ -246,6 +246,21 @@ if (MUT) {
             to: 'a.playSweep(980, 980, 0.04, \'square\', 0.09)',
             note: 'kickback drops its grapple clunk — the rescue is just another blip',
         },
+        // #3800 item 3: the rescue shrinks back to a 52 px stub — the classic
+        // ball-save reads the WHOLE lane, drain to outlane top.
+        kbSweepStub: {
+            file: 'src/games/Pinball/index.jsx',
+            from: 'const yBot = KBs.yTo, yTop = KBs.yFrom - 82',
+            to: 'const yBot = KBs.yTo, yTop = KBs.yFrom - 3',
+            note: 'the chase stops at the device again — no whole-lane read (#3800)',
+        },
+        // #3800 item 1: the bed dims back to 0.16 — invisible at phone scale.
+        kbSweepDim: {
+            file: 'src/games/Pinball/index.jsx',
+            from: 'ctx.fillStyle = `rgba(${pal.hotRgb},0.3)`',
+            to: 'ctx.fillStyle = `rgba(${pal.hotRgb},0.16)`',
+            note: 'the swept bed fades below phone legibility (#3800)',
+        },
     }
     const a = ANCHORS[MUT]
     if (!a) { console.error(`unknown mutant '${MUT}' (have: ${Object.keys(ANCHORS).join(', ')})`); process.exit(1) }
@@ -452,6 +467,23 @@ const setBall = (gs, x, y, vx, vy) => { gs.bx = x; gs.by = y; gs.vx = vx; gs.vy 
     const sh = readFileSync(join(dirname(fileURLToPath(import.meta.url)), '..', 'src/games/Pinball/index.jsx'), 'utf8')
     r.check('#3446 shell grades the spinner read — persist from ev.v in play AND attract, blade ghosts present',
         /function spinPersist\(ev\)/.test(sh) && (sh.match(/spinPersist\(ev\)/g) || []).length >= 3 && /bladeA - g \* /.test(sh))
+}
+
+// #3800 items 1+3: the rescue chase must READ at phone scale and sweep the
+// whole lane. Static pins (display lives in the shell, like #3789's): full
+// column width at 0.30 bed alpha, head travel up to `yFrom - 82` (outlane
+// top), a white core ≥4 px with a hot under-glow, and a head dot ≥5 px.
+// Mutants kbSweepStub (short travel) and kbSweepDim (0.16 bed) die here.
+{
+    const sh = readFileSync(join(dirname(fileURLToPath(import.meta.url)), '..', 'src/games/Pinball/index.jsx'), 'utf8')
+    r.check('#3800 chase sweeps the whole lane readable at phone scale — full-column bed at 0.30, travel to yFrom-82, glow+core tail, r5.5 head',
+        /ctx\.fillStyle = `rgba\(\$\{pal\.hotRgb\},0\.3\)`/.test(sh) &&
+        /ctx\.fillRect\(KBs\.x1, yNow, KBs\.x2 - KBs\.x1, yBot - yNow\)/.test(sh) &&
+        /const yBot = KBs\.yTo, yTop = KBs\.yFrom - 82/.test(sh) &&
+        /ctx\.lineWidth = 9\b/.test(sh) && /yNow \+ 68/.test(sh) &&
+        /ctx\.lineWidth = 4\.5\b/.test(sh) && /yNow \+ 56/.test(sh) &&
+        /ctx\.arc\(cxCol, yNow, 5\.5, 0, 7\)/.test(sh),
+        'full-column 0.30 bed, lane-length travel, glow-under + thick core tail, bigger head')
 }
 
 // #3789 item 1: graduated BALL read — the v-law leaves the blade and rides the

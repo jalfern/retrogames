@@ -377,10 +377,12 @@ One law now, sim-carried like the #1588 juice signals:
   rides is the DEVICE (`gs.kbSweepL ? tb.kbL : tb.kb`), so CABINET ONE's
   right save, its left save, and both EMBER RIDER mirrors read identically at
   375 pt without a single per-cabinet coordinate.
-- **The chase**: head travels the save's own column drain → device top over
-  14 of its 18 ticks with a short fading tail, hot glow, lane bed behind the
-  head softly lit (all pure display — rules, dice and `stateHash` never see
-  the signal; a pinned gate proves the hash ignores it).
+- **The chase**: head sweeps the save's WHOLE column drain → outlane top over
+  14 of its 18 ticks; the crossed bed lights at full column width (0.30 hot)
+  and the head drags a glowing under-tail + thick white core with an r5.5 dot
+  (#3800 items 1+3: readable at phone scale, a classic lane-length read — all
+  pure display — rules, dice and `stateHash` never see the signal; a pinned
+  gate proves the hash ignores it).
 - **The voice stays the grapple** (#3468): clunk + snap + latched ring, and a
   static gate now pins that it is NOT the ramp blip and can never regress to
   one.
@@ -388,14 +390,16 @@ One law now, sim-carried like the #1588 juice signals:
 Gated in `pinballcheck` §8c: ten pins (arm side R / arm side L / EMBER mirror
 arm, fire-tick decay accounting, expires-not-sticky, spent save drains without
 a chase, re-arm on new ball, resetBall squats nothing, hash-blindness,
-renderer-keys-off-sim, voice identity) and six named mutants
-(`kbSweepR`, `kbSweepL`, `kbSweepSticky`, `kbSweepSquat`, `kbSweepSide`,
-`kbSweepWhoosh` — all 31 mutants in the file die).
+renderer-keys-off-sim, voice identity), #3800's phone-legibility static pins
+(full-column 0.30 bed, lane-length travel, glow+core tail, r5.5 head) and
+eight named mutants (`kbSweepR`, `kbSweepL`, `kbSweepSticky`, `kbSweepSquat`,
+`kbSweepSide`, `kbSweepWhoosh`, `kbSweepStub`, `kbSweepDim` — all 33 mutants
+in the file die).
 
 ## Verify
 
 ```bash
-npm run pinballcheck          # 342 literal physics/rules/determinism/mirror/skins/demo/smith/smith-UI/garage/mix/pack/flank/chain/save-chase pins, plain Node (+31 mutants incl. packmagnet/magspent/magclock/magstall/magrearm/chaincone/chainslot/kbSweep*)
+npm run pinballcheck          # 355 literal physics/rules/determinism/mirror/skins/demo/smith/smith-UI/garage/mix/pack/flank/chain/save-chase pins, plain Node (+33 mutants incl. packmagnet/magspent/magclock/magstall/magrearm/chaincone/chainslot/kbSweep*)
 npm run pinballplay           # headless-Chrome drive (both cabinets: select, plunger, wrap, magnet, kickback, DMD, pixels, kits incl. driven-demo/chase/announce/memory/NO-SUCH-KIT legs, + #3336 live phone-mix legs, + #3432 flank leg: KICKBACK L / JET LANE SET / combo rearm; announce legs gated on a quiet table, #3452)
 npm run pinballsmith          # headless-Chrome TABLE SMITH drive (#3284 + #3359): ghost→bench, refusals, wipe/name/save, saved cabinet plays the row, TEST homes, reload persistence, garage: slot switch (Digit1/2/3), SAVE into a garage slot, slot-choice persistence, legacy-blob one-shot migration (+#3290: badge-while-unselected, nova-demo honesty, drawn-rim delta, seam nearest-centre, touch tap-guard + tool taps)
 CONTRACT_ONLY=pinball npm run contractcheck   # game-contract driving
