@@ -13,7 +13,7 @@
 
 import { readFileSync, writeFileSync } from 'node:fs'
 import { spawnSync } from 'node:child_process'
-import { MAP, COLS, ROWS, CORNER_PX, makePacman, stepPlayer, tileOpen, cloneMap, stepGhost, scaredSkin, SCARED_FLASH_AT, SCARED_BLINK, POWER_TICKS, makeFruitTracker, stepFruit, FRUIT_TICKS, FRUIT_AT, FRUIT_POS, FRUIT_BLINK, SPEED_STAGES, speedStage, pacSpeedForScore, ghostSlowsAt, FRUIT_TABLE, fruitForRound, energizerTicks, TUNNEL_ROW } from '../src/games/Pacman/move.js'
+import { MAP, COLS, ROWS, CORNER_PX, makePacman, stepPlayer, tileOpen, cloneMap, stepGhost, scaredSkin, SCARED_FLASH_AT, SCARED_BLINK, POWER_TICKS, makeFruitTracker, stepFruit, FRUIT_TICKS, FRUIT_AT, FRUIT_POS, FRUIT_BLINK, SPEED_STAGES, speedStage, pacSpeedForScore, ghostSlowsAt, FRUIT_TABLE, fruitForRound, energizerTicks, TUNNEL_ROW, mazeCleared, briefForRound, CLEAR_FREEZE, BRIEF_TICKS, intermissionFrame, fruitEatTones } from '../src/games/Pacman/move.js'
 import { seedRng, seedFromQuery } from '../src/utils/gameContract.js'
 import { plant, pull } from './lib/mutateguard.mjs'
 
@@ -482,6 +482,72 @@ console.log('progression: score stages, tunnel crawl, round-keyed fruit, energiz
     ok(/speedStage\(gs\.score\)/.test(src), 'the report/debug read the live score stage')
 }
 
+// ------------------------------------- clear, briefs, cues & tell (#3667) ----
+console.log('round clear, intermission briefs, fruit cues & stage tell (#3667)')
+{
+    // mazeCleared: dots AND energizers must go
+    ok(!mazeCleared(cloneMap()), 'a fresh maze is not cleared')
+    const bare = cloneMap()
+    for (let r = 0; r < ROWS; r++) for (let c = 0; c < COLS; c++) if (bare[r][c] === 2) bare[r][c] = 0
+    ok(!mazeCleared(bare), 'one forgotten energizer holds the round open')
+    for (let r = 0; r < ROWS; r++) for (let c = 0; c < COLS; c++) if (bare[r][c] === 3) bare[r][c] = 0
+    ok(mazeCleared(bare), 'dots and energizers all gone — the maze is cleared')
+
+    // the arcade plays the two comic shorts after rounds 1 and 2 — only those
+    ok(briefForRound(1) && briefForRound(2), 'rounds 1 and 2 earn the intermission brief')
+    ok(!briefForRound(3) && !briefForRound(14), 'round 3+ lifts without a brief')
+
+    // scene machine — deterministic, monotone, clamped
+    const f0 = intermissionFrame(0)
+    const fEnd = intermissionFrame(BRIEF_TICKS)
+    ok(f0.phase === 'chase' && f0.hop === 0 && f0.blinkyTilt === 0, 'the short opens on the chase')
+    ok(f0.pacX < f0.blinkyX, 'Blinky outruns Pac at the flag')
+    let mono = true, prevX = -1
+    for (let t = 0; t <= BRIEF_TICKS + 60; t++) {
+        const fr = intermissionFrame(t)
+        if (fr.pacX < prevX - 1e-9) mono = false
+        prevX = fr.pacX
+    }
+    ok(mono, 'Pac never runs backwards across the scene')
+    ok(fEnd.pacX > fEnd.blinkyX, 'Pac finishes ahead of the tripped ghost')
+    ok(JSON.stringify(fEnd) === JSON.stringify(intermissionFrame(BRIEF_TICKS + 777)),
+        'u clamps — the frame past the end equals the end frame')
+    ok(JSON.stringify(intermissionFrame(200)) === JSON.stringify(intermissionFrame(200)),
+        'the scene is dice-free: same tick, same frame')
+    let hopPeak = 0
+    for (let t = 0; t <= BRIEF_TICKS; t++) hopPeak = Math.max(hopPeak, intermissionFrame(t).hop)
+    ok(hopPeak > 0.95, 'Pac is airborne over Blinky — the hop arcs to full', `peak ${hopPeak.toFixed(2)}`)
+    ok(intermissionFrame(Math.round(BRIEF_TICKS * 0.55)).blinkyTilt === 1, 'Blinky is flat on his side mid-leap')
+    ok(intermissionFrame(Math.round(BRIEF_TICKS * 0.8)).blinkyTilt === 0, 'Blinky is up and chasing again by the end')
+
+    // fruit cues: cherry keeps the EXACT old two-tone; value only grows the cue
+    ok(fruitEatTones('cherry').join(',') === '1200,1600', 'the round-1 cherry keeps the classic two-tone (identity)')
+    const ladderKinds = ['cherry', 'strawberry', 'peach', 'galaxian', 'bell', 'key']
+    const counts = ladderKinds.map(k => fruitEatTones(k).length)
+    const tops = ladderKinds.map(k => Math.max(...fruitEatTones(k)))
+    ok(counts.every((v, i) => i === 0 || v >= counts[i - 1]), 'cue length never shrinks as the fruit climbs', counts.join(','))
+    ok(tops.every((v, i) => i === 0 || v > tops[i - 1]), 'the top pitch climbs with the value', tops.join(','))
+    ok(fruitEatTones(undefined).join(',') === fruitEatTones('cherry').join(','), 'an unknown kind falls back to cherry')
+
+    // stepFruit hands the eat hook the KIND (the component drives the arpeggio from it)
+    const trK = makeFruitTracker()
+    for (let i = 1; i <= 70; i++) stepFruit(trK, true, { x: 0, y: 0 }, {}, 9)
+    let kindSeen = null
+    const paidK = stepFruit(trK, false, { x: FRUIT_POS.x, y: FRUIT_POS.y }, { eat: k => { kindSeen = k } }, 9)
+    ok(paidK === 5000 && kindSeen === 'key', 'eating the round-9 key pays 5000 and hands the cue the kind', `${paidK}/${kindSeen}`)
+
+    // component wiring: the live loop runs the phase machine and the cues
+    const src2 = readFileSync('src/games/Pacman/index.jsx', 'utf8')
+    ok(/if \(mazeCleared\(map\)\) \{/.test(src2), 'the live loop notices a clear the tick it happens')
+    ok(/phase = 'freeze'/.test(src2) && /briefForRound\(round\)/.test(src2), 'a clear lifts through freeze, and rounds 1-2 route to the brief')
+    ok(/phase === 'brief' && phaseT >= BRIEF_TICKS/.test(src2) && /intermissionFrame\(phaseT\)/.test(src2),
+        'the brief runs on world ticks and paints the scripted frame')
+    ok(/if \(phase\) \{[\s\S]{0,700}?return\s*\n\s*\}/.test(src2), 'the world does not step while a phase runs')
+    ok(/eat: \(kind\) => \{[\s\S]{0,240}fruitEatTones\(kind\)/.test(src2), 'the live fruit cue is driven by the eaten kind')
+    ok(/if \(stNow > lastStage\) \{\s*\n\s*stageFlash = 30/.test(src2), 'a stage climb pulses the HUD (a tell, not just audio)')
+    ok(/lastStage = 0; stageFlash = 0/.test(src2), 'a human start clears the tell state')
+}
+
 console.log(`\n${passes} passed, ${fails} failed`)
 
 // ----------------------------------------------------------------------- mutants ----
@@ -594,6 +660,21 @@ if (process.argv.includes('--mutate')) {
         ['the round never advances on a cleared maze (#3661)', 'src/games/Pacman/index.jsx',
             `                round++ // #3661: a cleared maze is a new round — new fruit, shorter fright`,
             `                // round held (mutant)`],
+        ['#3667: maze clear ignores energizers', 'src/games/Pacman/move.js',
+            `if (map[r][c] === 2 || map[r][c] === 3) return false`,
+            `if (map[r][c] === 2) return false`],
+        ['#3667: the brief plays after every round', 'src/games/Pacman/move.js',
+            `return round <= BRIEF_AFTER_ROUND`,
+            `return true`],
+        ['#3667: the hop is flattened — Pac never clears Blinky', 'src/games/Pacman/move.js',
+            `if (u >= 0.5 && u < 0.68) hop = Math.sin(((u - 0.5) / 0.18) * Math.PI)`,
+            `if (u >= 0.5 && u < 0.68) hop = 0`],
+        ['#3667: the stage tell fires on any stage move', 'src/games/Pacman/index.jsx',
+            `if (stNow > lastStage) {`,
+            `if (stNow !== lastStage) {`],
+        ['#3667: the fruit cue ignores the kind', 'src/games/Pacman/index.jsx',
+            `fruitEatTones(kind).forEach((f, i) =>`,
+            `fruitEatTones('cherry').forEach((f, i) =>`],
     ]
     let died = 0
     for (const [name, file, from, to] of MUTANTS) {

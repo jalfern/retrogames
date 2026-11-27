@@ -188,8 +188,9 @@ export function stepFruit(tr, ate, pacPos, hooks = {}, round = 1) {
     tr.fruit.timer--
     if (pacPos && Math.round(pacPos.x) === tr.fruit.x && Math.round(pacPos.y) === tr.fruit.y) {
         const paid = tr.fruit.points
+        const kind = tr.fruit.kind
         tr.fruit = null
-        hooks.eat?.()
+        hooks.eat?.(kind) // #3667 item 2: the cue follows the KIND, not one fixed jingle
         return paid
     }
     if (tr.fruit.timer <= 0) tr.fruit = null
@@ -197,6 +198,75 @@ export function stepFruit(tr, ate, pacPos, hooks = {}, round = 1) {
 }
 
 export const cloneMap = () => MAP.map(row => [...row])
+
+// ---------------------------------------------------------------------------
+// FRUIT EAT CUES (#3667 item 2) — the arcade's bonuses ring a rising arpeggio
+// and the big ones ring longer. The round-1 cherry keeps the EXACT old two-tone
+// (identity floor); every higher kind adds notes and climbs higher, so a 5000
+// key can never sound like a 100 cherry. Monotone law (checked in pacmancheck):
+// note count and top pitch never fall as the value rises.
+// ---------------------------------------------------------------------------
+export const FRUIT_TONES = {
+    cherry: [1200, 1600],
+    strawberry: [1200, 1600, 2000],
+    peach: [1300, 1750, 2200, 2650],
+    galaxian: [1400, 1900, 2400, 2900],
+    bell: [1500, 2000, 2500, 3000, 3500],
+    key: [1700, 2200, 2700, 3200, 3700, 4200],
+}
+export function fruitEatTones(kind) {
+    return FRUIT_TONES[kind] || FRUIT_TONES.cherry
+}
+
+// ---------------------------------------------------------------------------
+// ROUND CLEAR + INTERMISSION BRIEF (#3667 item 1) — when the last pellet and
+// energizer go, the town FREEZES (a maze flash, the arcade's between-screen
+// beat), and after rounds 1 and 2 it screens a wordless comic short first:
+// our Pac runs down Blinky, hops the tripped ghost, and coasts off while the
+// chaser rights himself and gives chase again. Everything is scripted by WORLD
+// ticks — dice-free, so the seed stream rides through untouched and `?seed=N`
+// replays include the brief. The actors are our own drawn glyphs; no original
+// artwork is copied.
+// ---------------------------------------------------------------------------
+export const CLEAR_FREEZE = 90                 // maze flash before the lift (~1.5 s)
+export const BRIEF_TICKS = 360                 // one intermission short (~6 s)
+const BRIEF_AFTER_ROUND = 2                    // the shorts sit after r1 and r2 only
+
+export function mazeCleared(map) {
+    for (let r = 0; r < ROWS; r++) {
+        for (let c = 0; c < COLS; c++) {
+            if (map[r][c] === 2 || map[r][c] === 3) return false
+        }
+    }
+    return true
+}
+
+export function briefForRound(round) {
+    return round <= BRIEF_AFTER_ROUND
+}
+
+// Scene frame — pure, deterministic, u clamped to 0..1. All coords are
+// fractions of the draw box (the component maps them to the maze canvas).
+// Beats: chase (Blinky outruns and fades), leap (Pac arcs over the tumbling
+// ghost at hop=1), run (Pac ahead; Blinky up and chasing — an endless gag).
+export function intermissionFrame(t) {
+    const u = Math.min(1, Math.max(0, t / BRIEF_TICKS))
+    let blinkyX
+    if (u < 0.45) blinkyX = 0.18 + (u / 0.45) * 0.46
+    else if (u < 0.68) blinkyX = 0.64
+    else blinkyX = 0.64 + ((u - 0.68) / 0.32) * 0.30
+    const blinkyTilt = u >= 0.45 && u < 0.68 ? 1 : 0
+    let pacX
+    if (u < 0.5) pacX = 0.04 + (u / 0.5) * 0.41
+    else if (u < 0.68) pacX = 0.45 + ((u - 0.5) / 0.18) * 0.27
+    else pacX = 0.72 + ((u - 0.68) / 0.32) * 0.23
+    let hop = 0
+    if (u >= 0.5 && u < 0.68) hop = Math.sin(((u - 0.5) / 0.18) * Math.PI)
+    const phase = u < 0.5 ? 'chase' : u < 0.68 ? 'leap' : 'run'
+    const stars = blinkyTilt === 1 && Math.floor(t / 8) % 2 === 0 // tick-twinkle, no dice
+    return { pacX, hop, blinkyX, blinkyTilt, stars, phase }
+}
+
 
 // The spawn sits on the two-tile gap under the ghost house (the classic
 // position), snapped to a tile centre so the tile+progress invariant holds —

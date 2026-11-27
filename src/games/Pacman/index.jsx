@@ -4,7 +4,7 @@ import PauseOverlay from '../../components/PauseOverlay'
 import VirtualControls from '../../components/VirtualControls'
 import { GAMES } from '../../config/games'
 import { press, release, currentPad } from '../../utils/onePad'
-import { MAP, COLS, ROWS, CELL_SIZE, makePacman, stepPlayer, validMoves, bfsDir, safeMove, stepGhost, scaredSkin, makeFruitTracker, stepFruit, FRUIT_BLINK, fruitForRound, speedStage, energizerTicks } from './move'
+import { MAP, COLS, ROWS, CELL_SIZE, makePacman, stepPlayer, validMoves, bfsDir, safeMove, stepGhost, scaredSkin, makeFruitTracker, stepFruit, FRUIT_BLINK, fruitForRound, speedStage, energizerTicks, mazeCleared, briefForRound, CLEAR_FREEZE, BRIEF_TICKS, intermissionFrame, fruitEatTones } from './move'
 import { attractFrame, DIM } from './attract.js'
 import { exposeFeedbackState, unexposeFeedbackState, seedFromQuery, seedRng } from '../../utils/gameContract'
 import { mountDbg, unmountDbg } from '../../utils/DebugKit'
@@ -55,6 +55,14 @@ const PacmanGame = () => {
         // (the speed ladder rides the score). Human start resets to 1; a
         // cleared maze advances it.
         let round = 1
+        // #3667 item 1: round-clear phases — 'freeze' (maze flash) then, after
+        // rounds 1 and 2, 'brief' (the chase short) before the ladder climbs.
+        let phase = ''
+        let phaseT = 0
+        // #3667 item 3: stage-lift tell — a sweep + HUD pulse when the score
+        // ladder climbs, so the speed-up is legible mid-play
+        let lastStage = 0
+        let stageFlash = 0
 
         // ---------- world + seed (#1473 seed-param, batch 15) ----------
         // Every gameplay die (ghost wander, inky coin flip, attract picks) draws
@@ -100,6 +108,7 @@ const PacmanGame = () => {
 
             resetPositions()
             gameOver = false
+            phase = ''; phaseT = 0
         }
 
         let viewWidth = 0, viewHeight = 0
@@ -122,6 +131,21 @@ const PacmanGame = () => {
         const update = () => {
             tickN++
             if (pausedRef.current) return
+            // #3667 item 1: a round is lifting — the world stops stepping and
+            // only the phase clock runs (WORLD ticks, dice-free: the seed
+            // stream rides through the freeze/brief untouched).
+            if (phase) {
+                phaseT++
+                if (phase === 'freeze' && phaseT >= CLEAR_FREEZE) {
+                    if (briefForRound(round)) { phase = 'brief'; phaseT = 0 }
+                    else { round++; resetLevel(); phase = ''; phaseT = 0 }
+                } else if (phase === 'brief' && phaseT >= BRIEF_TICKS) {
+                    round++ // the short ends — the ladder climbs
+                    resetLevel()
+                    phase = ''; phaseT = 0
+                }
+                return
+            }
             if (gameOver) {
                 if (rand() < 0.05) resetGame();
                 return
@@ -181,14 +205,25 @@ const PacmanGame = () => {
                 }
             }
 
+            // #3667 item 1: LIVE maze clear — the round lifts the moment the
+            // last pellet or energizer goes (pre-#3667 the loop only noticed a
+            // clear through a game over). Dice-free path: no rand draw here.
+            if (mazeCleared(map)) {
+                phase = 'freeze'
+                phaseT = 0
+                audioController.playSweep(300, 900, 0.4, 'triangle', 0.15)
+                return
+            }
+
             // BONUS FRUIT (#1517) — drops at the 70th/170th pellet, lives ~10 s
             // on the world timer; the KIND and its value follow the round
             // (#3661). The attract demo never drops fruit.
             if (!isAttractMode) {
                 gs.score += stepFruit(fruitTr, eaten === 'dot' || eaten === 'power', pacman, {
-                    eat: () => {
-                        audioController.playTone(1200, 0.09, 'square', 0.18)
-                        audioController.playTone(1600, 0.12, 'square', 0.18)
+                    eat: (kind) => {
+                        // #3667 item 2: the arpeggio grows with the value
+                        fruitEatTones(kind).forEach((f, i) =>
+                            audioController.playTone(f, 0.09, 'square', 0.18, i * 0.07))
                     }
                 }, round)
             }
@@ -213,6 +248,19 @@ const PacmanGame = () => {
                     }
                 })
             })
+
+            // #3667 item 3: stage-lift tell — when the score ladder climbs,
+            // one rising sweep plus a HUD pulse (the speed change itself is
+            // stepPlayer/stepGhost law; this only makes it visible+audible).
+            const stNow = speedStage(gs.score)
+            if (stNow !== lastStage) {
+                if (stNow > lastStage) {
+                    stageFlash = 30
+                    audioController.playSweep(500 + stNow * 120, 1100 + stNow * 180, 0.25, 'triangle', 0.12)
+                }
+                lastStage = stNow
+            }
+            if (stageFlash > 0) stageFlash--
         }
 
         // Pre-compute wall contour loops once (recalculated on level reset)
@@ -331,7 +379,7 @@ const PacmanGame = () => {
             wallContours = contours
         }
 
-        const drawWalls = (ctx) => {
+        const drawWalls = (ctx, stroke) => {
             if (!wallContours) computeContours()
 
             const S = CELL_SIZE
@@ -365,7 +413,7 @@ const PacmanGame = () => {
             ctx.lineJoin = 'round'
 
             // Pass 1: Blue wall outline
-            ctx.strokeStyle = '#2121ff'
+            ctx.strokeStyle = stroke || '#2121ff'
             ctx.lineWidth = 3
             traceContours()
             ctx.stroke()
@@ -527,6 +575,51 @@ const PacmanGame = () => {
             ctx.fill()
         }
 
+        // #3667 item 1: the intermission short — OUR Pac runs down OUR Blinky
+        // on an open road, hops the tripped ghost and coasts off while he gets
+        // up and chases again. Frame data is intermissionFrame(phaseT): pure,
+        // tick-scripted, dice-free. Original art — our own glyphs, no original
+        // sprites; the gag is wordless except one caption.
+        const drawBrief = (ctx, w, h) => {
+            ctx.fillStyle = '#04061c'
+            ctx.fillRect(0, 0, w, h)
+            const roadY = h * 0.54
+            ctx.fillStyle = '#101a33'
+            ctx.fillRect(0, roadY - 30, w, 60)
+            ctx.fillStyle = '#42527a'
+            for (let dx = 8; dx < w; dx += 36) ctx.fillRect(dx, roadY + 26, 18, 2)
+            const f = intermissionFrame(phaseT)
+            const bx = f.blinkyX * w
+            // shadow + Pac first so the ghost reads on top during the leap-back
+            ctx.fillStyle = `rgba(255,255,255,${0.10 + 0.12 * (1 - f.hop)})`
+            ctx.beginPath()
+            ctx.ellipse(f.pacX * w, roadY - 4, 9 + f.hop * 5, 2.5, 0, 0, Math.PI * 2)
+            ctx.fill()
+            ctx.fillStyle = '#ffff00'
+            const mo = 0.18 + 0.22 * Math.abs(Math.sin(phaseT / 5))
+            ctx.beginPath()
+            ctx.arc(f.pacX * w, roadY - 14 - f.hop * 30, CELL_SIZE / 2 + 6, mo, Math.PI * 2 - mo)
+            ctx.lineTo(f.pacX * w, roadY - 14 - f.hop * 30)
+            ctx.fill()
+            ctx.save()
+            ctx.translate(bx, roadY - 10 - (f.blinkyTilt ? 3 : 0))
+            if (f.blinkyTilt) ctx.rotate(Math.PI / 2.4) // tripped — tumbling sideways
+            ctx.scale(2.4, 2.4)
+            drawGhost(ctx, -CELL_SIZE / 2, -CELL_SIZE / 2, '#ff0000', 'chase', { x: 1, y: 0 }, 0)
+            ctx.restore()
+            if (f.stars) { // tick-twinkled dazed stars, dice-free
+                ctx.fillStyle = '#ffd54a'
+                for (const [ox, oy] of [[-14, -22], [12, -28], [0, -34]]) {
+                    ctx.fillRect(bx + ox - 1, roadY + oy - 3, 2, 7)
+                    ctx.fillRect(bx + ox - 3, roadY + oy - 1, 7, 2)
+                }
+            }
+            ctx.fillStyle = '#9aa4b2'
+            ctx.font = '12px monospace'
+            ctx.textAlign = 'center'
+            ctx.fillText(`ROUND ${round} CLEARED — ROUND ${round + 1} IS FASTER`, w / 2, h - 22)
+        }
+
         const draw = () => {
             ctx.fillStyle = '#000000'
             ctx.fillRect(0, 0, viewWidth, viewHeight)
@@ -539,7 +632,10 @@ const PacmanGame = () => {
             ctx.translate((viewWidth - mapWidth * scale) / 2, (viewHeight - mapHeight * scale) / 2)
             ctx.scale(scale, scale)
 
-            drawWalls(ctx)
+            if (phase === 'brief') {
+                drawBrief(ctx, mapWidth, mapHeight)
+            } else {
+            drawWalls(ctx, phase === 'freeze' && Math.floor(phaseT / 15) % 2 === 0 ? '#e8ecff' : null)
 
             // Dots
             ctx.fillStyle = '#ffffff'
@@ -592,6 +688,7 @@ const PacmanGame = () => {
                 const gy = (g.y + (g.nextDir?.y || 0) * g.progress) * CELL_SIZE
                 drawGhost(ctx, gx, gy, g.color, g.state, g.nextDir || g.dir, pacman.powerTimer)
             })
+            } // end !brief
 
             if (gameOver) {
                 ctx.fillStyle = '#ff0000'
@@ -600,7 +697,7 @@ const PacmanGame = () => {
                 ctx.fillText("GAME OVER", COLS * CELL_SIZE / 2, ROWS * CELL_SIZE / 2)
             }
 
-            if (isAttractMode) {
+            if (isAttractMode && !phase) {
                 attractTick++
                 ctx.fillStyle = DIM
                 ctx.fillRect(0, 0, COLS * CELL_SIZE, ROWS * CELL_SIZE)
@@ -641,8 +738,8 @@ const PacmanGame = () => {
             const hudBottom = hudY + mapHeight * scale + 14
             const hudLeft = (viewWidth - mapWidth * scale) / 2
             ctx.textAlign = 'left'
-            ctx.fillStyle = '#9aa4b2'
-            ctx.font = '12px monospace'
+            ctx.fillStyle = stageFlash > 0 ? '#ffe14a' : '#9aa4b2'
+            ctx.font = `${stageFlash > 0 ? 14 : 12}px monospace`
             ctx.fillText(`ROUND ${round}`, hudLeft, hudBottom + 4)
             drawFruit(ctx, hudLeft + 78, hudBottom, fruitForRound(round).kind)
         }
@@ -677,6 +774,8 @@ const PacmanGame = () => {
                 seed = seedFromQuery(window.location.search) ?? Math.floor(Math.random() * 1000000)
                 rand = seedRng(seed)
                 round = 1 // #3661: a human start begins the ladder at round 1
+                phase = ''; phaseT = 0 // #3667: never start mid-brief
+                lastStage = 0; stageFlash = 0
                 resetLevel()
                 gs.score = 0
                 lives = 3
@@ -720,6 +819,7 @@ const PacmanGame = () => {
                     pac: { x: pacman.x, y: pacman.y, p: pacman.progress, speed: pacman.speed },
                     power: pacman.poweredUp ? pacman.powerTimer : 0,
                     fruit: fruitTr.fruit ? { x: fruitTr.fruit.x, y: fruitTr.fruit.y, kind: fruitTr.fruit.kind || 'cherry' } : null,
+                    phase: phase, phaseT: phaseT, // #3667: the round-lift machine, visible to QA
                     ghosts: ghosts.map(g => ({ type: g.type, x: g.x, y: g.y, state: g.state })),
                 }),
             }
@@ -741,6 +841,8 @@ const PacmanGame = () => {
                 { label: 'Next round', run: () => { round++ } },
                 { label: 'Round → 14', run: () => { round = 14 } },
                 { label: 'Score → 5000', run: () => { gs.score = 5000 } },
+                // #3667: ride the clear → freeze → brief → round++ machine without eating 240 dots
+                { label: 'Clear maze', run: () => { for (let r = 0; r < ROWS; r++) for (let c = 0; c < COLS; c++) if (map[r][c] === 2 || map[r][c] === 3) map[r][c] = 0 } },
             ],
         })
 
