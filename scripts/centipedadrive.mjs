@@ -93,7 +93,7 @@ const drive = () => page.evaluate(async (n) => {
     }
     const st = window.__game.state()
     return [st.tick - t0, st.score, st.lives, st.segments, st.heads, st.mushrooms,
-        seenSpider, seenScorpion, seenFlea, seenPoison, rained, minShrooms, st.playerX, st.playerY, seenPops, maxPops, maxWave, maxRearSpd].join('|')
+        seenSpider, seenScorpion, seenFlea, seenPoison, rained, minShrooms, st.playerX, st.playerY, seenPops, maxPops, maxWave, maxRearSpd, st.bites, st.stings].join('|')
 }, ROLLOUT)
 const r1 = await drive()
 const r2 = await drive()
@@ -185,6 +185,53 @@ rep.check('§revive: 5 points per regenerated mushroom, no phantom score', !!rev
     JSON.stringify(revive))
 rep.check('§revive: the zapper came back alive with lives spent honestly', !!revive && revive.lives === 2 && revive.done === false,
     JSON.stringify(revive))
+await page.keyboard.press('?') // un-pause
+await new Promise((r) => setTimeout(r, 120))
+
+// ---- #3726 §bite: the menagerie bites the column, in the live browser ----
+// Stage a spider standing on a body segment and a scorpion crossing one (DEV
+// hooks set the menagerie down; the LIVE laws do the rest), then audit the
+// contract state: a segment is devoured (chain split, head grown), the bug
+// pays nothing, and the sting turns a segment red-fast.
+await page.keyboard.press('?') // park the rAF loop — one driver
+await new Promise((r) => setTimeout(r, 120))
+const bite = await page.evaluate(() => {
+    window.__game.reset(4242)
+    const q = () => window.__game.state()
+    // Wait for the column to descend into the spider's roaming band, then
+    // stage. (The band guard lives in the hook; this loop just knocks.)
+    let stagedSpider = false
+    for (let i = 0; i < 4000 && !stagedSpider; i++) {
+        window.__game.step({}, 1)
+        stagedSpider = window.__cTest.devour()
+    }
+    if (!stagedSpider) return { stagedSpider: false, note: 'column never entered the band' }
+    const pre = q()
+    window.__game.step({}, 10)
+    const postSpider = q()
+    const stagedScorpion = window.__cTest.stingSeg()
+    window.__game.step({}, 10)
+    const postScorpion = q()
+    return { stagedSpider, stagedScorpion,
+        segPre: pre.segments, segPost: postSpider.segments,
+        headsPre: pre.heads, headsPost: postSpider.heads,
+        bitesDelta: postSpider.bites - pre.bites,
+        scorePre: pre.score, scorePost: postSpider.score,
+        stingsDelta: postScorpion.stings - postSpider.stings, fastPost: postScorpion.fast,
+        alive: postScorpion.done === false }
+})
+rep.check('§bite: the spider devours column segments in-browser (chain loses exactly what it bit)',
+    !!bite && bite.stagedSpider && bite.bitesDelta >= 1 && bite.segPre - bite.segPost === bite.bitesDelta,
+    JSON.stringify(bite))
+rep.check('§bite: the chain behind the bite grows a head (heads not lost)',
+    !!bite && bite.headsPost >= bite.headsPre, `heads ${bite && bite.headsPre} -> ${bite && bite.headsPost}`)
+rep.check('§bite: bug lunch pays zero — score untouched through the bite',
+    !!bite && bite.scorePost === bite.scorePre, `score ${bite && bite.scorePre} -> ${bite && bite.scorePost}`)
+rep.check('§bite: the scorpion races a stung segment in-browser',
+    !!bite && bite.stagedScorpion && bite.stingsDelta >= 1 && bite.fastPost >= 1,
+    JSON.stringify(bite))
+rep.check('§bite: the staged world stays alive — bugs fight each other, not cheap deaths',
+    !!bite && bite.alive, JSON.stringify(bite))
 await page.keyboard.press('?') // un-pause
 await new Promise((r) => setTimeout(r, 120))
 

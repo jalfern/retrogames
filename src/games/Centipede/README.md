@@ -108,10 +108,22 @@ identical seeded drives answer identically including what was seen en route.
   three-note wave jingle, three-layer death. All synthesized at runtime via
   `audioController`; the exact machine waveforms are UNVERIFIED — this is our
   arcade-close rendering, not a claim about the original's output.
-- The menagerie passes *through* the centipede column (the arcade's exact
-  bug-vs-bug collisions are unwitnessed); cadences, spider bounce grammar
-  and the poisoned-segment speed law are this repo's pinned spec, not
-  claims about the machine.
+- **CLOSED by #3726**: The menagerie no longer passes *through* the centipede
+  column. The spider devours segments on contact (same 12 px reach as its
+  bullets): eaten ≠ shot — the lunch is gone, no mushroom planted where it
+  fell, and only the shooter's kill pays (bug-kills bank 0) — while the chain
+  splits by the existing cut law (segment behind grows a head, rear takes the
+  #3631 boost), one chew per tick. The scorpion stings the column: segments
+  its body touches (its 10 px venom reach) turn red and race, obeying the same
+  poisoned-segment speed law the caps already keep. Both dice-free
+  (`spiderDevours`/`scorpionStings` in `sim.js`), so `?seed=N` replays stay
+  bit-exact; `centipedechek` §bite gates the law, `centipedadrive` proves it
+  live via the DEV `devour`/`stingSeg` staging hooks; mutants: the eater
+  ignores the column, bug-kills pay, the sting never races, the chew mows.
+- **DISCLAIMER**: cadences, spider bounce grammar and the poisoned-segment
+  speed law are this repo's pinned spec, not claims about the machine — the
+  arcade's exact bug-vs-bug frames remain unwitnessed; the shipped reaches
+  (`SPIDER_BITE`/`STING_REACH`) and the one-bite-per-tick cadence are ours.
 - Kill-pop debris (#3620) is our own juice grammar — fixed radial bursts and
   score digits, render-only; the arcade's exact destruction animation frames
   are UNVERIFIED.

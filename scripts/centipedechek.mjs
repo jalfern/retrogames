@@ -12,7 +12,7 @@
 
 import { readFileSync } from 'node:fs'
 import { spawnSync } from 'node:child_process'
-import { mushroomField, scoreForSegment, MUSHROOM_POINTS, CELL_SIZE, START_LIVES, SPIDER_POINTS, SCORPION_POINTS, FLEA_POINTS, SPIDER_EVERY, SCORPION_EVERY, FLEA_COOLDOWN, poisonMushroom, bulletEscapes, waveSpeed, splitSpd, SPEED_CAP, munchCue, MUNCH_FLOOR, MUNCH_CEIL, MUNCH_MIN_EVERY, MUNCH_MAX_EVERY, reviveGarden, REVIVE_POINTS } from '../src/games/Centipede/sim.js'
+import { mushroomField, scoreForSegment, MUSHROOM_POINTS, CELL_SIZE, START_LIVES, SPIDER_POINTS, SCORPION_POINTS, FLEA_POINTS, SPIDER_EVERY, SCORPION_EVERY, FLEA_COOLDOWN, poisonMushroom, bulletEscapes, waveSpeed, splitSpd, SPEED_CAP, munchCue, MUNCH_FLOOR, MUNCH_CEIL, MUNCH_MIN_EVERY, MUNCH_MAX_EVERY, reviveGarden, REVIVE_POINTS, SPIDER_BITE, STING_REACH, spiderDevours, scorpionStings } from '../src/games/Centipede/sim.js'
 import { seedRng, seedFromQuery } from '../src/utils/gameContract.js'
 import { plant, pull } from './lib/mutateguard.mjs'
 
@@ -112,7 +112,8 @@ console.log('#3631 wave speed ladder: waves race, cuts accelerate')
     ok(waveSpeed(7) === waveSpeed(7), 'the ladder is dice-free — pure function of the wave')
     const src = readFileSync('src/games/Centipede/index.jsx', 'utf8')
     ok(/const spd = waveSpeed\(wave\)/.test(src), 'spawns seat the current wave pace')
-    ok(/for \(let j = hitSeg; j < state\.centipedes\.length; j\+\+\)/.test(src) && /state\.centipedes\[j\]\.spd = splitSpd\(state\.centipedes\[j\]\.spd\)/.test(src),
+    const rearLoop = src.match(/for \(let j = hitSeg; j < state\.centipedes\.length; j\+\+\) \{\s*state\.centipedes\[j\]\.spd = splitSpd\(state\.centipedes\[j\]\.spd\);?\s*\}/)
+    ok(!!rearLoop,
         'the rear sub-chain behind every cut takes the boost')
     ok(/c\.x \+= \(c\.fast \? 2 : 1\) \* \(c\.spd \|\| 1\) \* c\.vx/.test(src),
         'movement carries the chain speed under the venom double')
@@ -331,6 +332,48 @@ console.log('#3664 §revive: the garden heals with the zapper')
     ok(/if \(import\.meta\.env\.DEV\) \{\s*\n\s*window\.__cTest/.test(src), '__cTest is DEV-only')
 }
 
+// ------------------------------------- #3726 §bite: the menagerie bites ----
+// The arcade's exact bug-vs-bug frames are unwitnessed; these gates pin OUR
+// two laws (README + sim.js): the spider devours segments (chain splits by
+// the cut law, lunch leaves no mushroom, bug-kills pay 0), and the scorpion
+// races the segments it touches with the same venom law it puts on caps.
+console.log('#3726 §bite: the garden\u2019s bugs bite the column')
+{
+    ok(SPIDER_BITE === 12, 'the eater bites at the bullet reach (12 px)')
+    ok(STING_REACH === 10, 'the sting lands at the venom reach (10 px)')
+    ok(spiderDevours({ x: 100, y: 100 }, { x: 104, y: 104 }), 'the spider devours a segment it stands on')
+    ok(!spiderDevours({ x: 100, y: 100 }, { x: 112, y: 100 }), 'no bite at the exact reach — contact means inside')
+    ok(!spiderDevours({ x: 100, y: 100 }, { x: 100, y: 113 }), 'vertical reach matches horizontal')
+    ok(scorpionStings({ x: 200, y: 60 }, { x: 205, y: 64 }), 'the scorpion stings a touched segment')
+    ok(!scorpionStings({ x: 200, y: 60 }, { x: 210, y: 60 }), 'no sting at the exact quicksilver reach')
+    const t1 = seedRng(31), t2 = seedRng(31)
+    const f1 = mushroomField(t1, 480, 640)
+    mushroomField(t2, 480, 640)
+    for (const m of f1) { spiderDevours({ x: m.x, y: m.y }, m); scorpionStings({ x: m.x, y: m.y }, m) }
+    ok(t1() === t2(), 'the bite laws draw no dice — ?seed=N replays stay bit-exact')
+    const src = readFileSync('src/games/Centipede/index.jsx', 'utf8')
+    const bite = src.match(/for \(let i = state\.centipedes\.length - 1; i >= 0; i--\) \{[\s\S]*?\n                \}/)
+    ok(!!bite, 'the spider-chew loop is wired')
+    if (bite) {
+        ok(/spiderDevours\(s, state\.centipedes\[i\]\)/.test(bite[0]), 'the live spider asks the sim law')
+        ok(/const seg = state\.centipedes\.splice\(i, 1\)\[0\]/.test(bite[0]), 'devoured segments leave the board')
+        ok(!/mushrooms\.push/.test(bite[0]), 'bug lunch leaves no mushroom — eaten ≠ shot')
+        ok(!/state\.score/.test(bite[0]), 'bug-kills pay zero — only the shooter scores')
+        ok(/state\.centipedes\[i\]\.head = true/.test(bite[0]), 'the chain behind the bite grows a head')
+        ok(/splitSpd\(state\.centipedes\[j\]\.spd\)/.test(bite[0]), 'the rear takes the #3631 split boost')
+        ok(/break \/\/ one bite per tick/.test(bite[0]), 'one chew per tick — the spider does not mow')
+        ok(/bitesTotal\+\+/.test(bite[0]), 'the run witnesses its bites')
+    }
+    ok(/if \(!c\.fast && scorpionStings\(s, c\)\) \{/.test(src), 'the live scorpion stings the column via the sim law')
+    ok(/c\.fast = true\n\s+stingsTotal\+\+/.test(src), 'stung segments race and are counted')
+    ok(/bites: bitesTotal/.test(src) && /stings: stingsTotal/.test(src), 'the QA probe watches bites and stings')
+    ok(/fast: state\.centipedes\.filter\(\(c\) => c\.fast\)\.length/.test(src), 'the probe counts red segments live')
+    ok((src.match(/bitesTotal = 0 \/\/ #3726/g) || []).length === 2 &&
+        (src.match(/stingsTotal = 0 \/\/ #3726/g) || []).length === 2,
+        'both run-reset paths zero the witnesses (startRun + contract reset)')
+    ok(/devour: \(\) =>/.test(src) && /stingSeg: \(\) =>/.test(src), 'DEV staging hooks exist for the drive')
+}
+
 // ------------------------------------------------------------------ mutants ----
 if (process.argv.includes('--mutant')) {
     console.log('mutants (each MUST die)')
@@ -450,6 +493,33 @@ if (process.argv.includes('--mutant')) {
         ['#3664: poison outlives the zapper (only chips heal)', S,
             `m.poison = false`,
             `if (0) m.poison = false`],
+        // #3726 — the bite laws are laws too.
+        ['the eater ignores the column (ghosts through)', I,
+            `if (!spiderDevours(s, state.centipedes[i])) continue`,
+            `if (true) continue`],
+        ['bug lunch plants a mushroom (eaten vs shot blurred)', I,
+            `const seg = state.centipedes.splice(i, 1)[0]`,
+            `const seg = state.centipedes.splice(i, 1)[0]; state.mushrooms.push({ x: seg.x, y: seg.y, health: 3 })`],
+        ['bug-kills pay the shooter\u2019s table', I,
+            `bitesTotal++`,
+            `state.score += MUSHROOM_POINTS; bitesTotal++`],
+        ['the bite never grows a head', I,
+            `state.centipedes[i].head = true`,
+            `void i`],
+        ['the chew mows the whole column', I,
+            `break // one bite per tick`,
+            `void i`],
+        ['the sting never races (venom cosmetic on the column)', I,
+            `if (!c.fast && scorpionStings(s, c)) {`,
+            `if (false && scorpionStings(s, c)) {`],
+        ['the bite never accelerates the rear', I,
+            `if (state.centipedes[i]) {
+                        state.centipedes[i].head = true
+                        for (let j = i; j < state.centipedes.length; j++) {
+                            state.centipedes[j].spd = splitSpd(state.centipedes[j].spd)
+                        }
+                    }`,
+            `if (state.centipedes[i]) state.centipedes[i].head = true`],
     ]
     let died = 0
     for (const [name, file, from, to] of MUTANTS) {

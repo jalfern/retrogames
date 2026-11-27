@@ -5,7 +5,7 @@ import VirtualControls from '../../components/VirtualControls'
 import { GAMES } from '../../config/games'
 import { attractFrame, DIM } from './attract.js'
 import { exposeGame, unexposeGame, exposeFeedbackState, unexposeFeedbackState, seedFromQuery, seedRng } from '../../utils/gameContract'
-import { CELL_SIZE, START_LIVES, INVULN_TICKS, scoreForSegment, MUSHROOM_POINTS, mushroomField, SPIDER_POINTS, SCORPION_POINTS, FLEA_POINTS, SPIDER_EVERY, SCORPION_EVERY, FLEA_COOLDOWN, poisonMushroom, bulletEscapes, waveSpeed, splitSpd, munchCue, reviveGarden, REVIVE_POINTS } from './sim.js'
+import { CELL_SIZE, START_LIVES, INVULN_TICKS, scoreForSegment, MUSHROOM_POINTS, mushroomField, SPIDER_POINTS, SCORPION_POINTS, FLEA_POINTS, SPIDER_EVERY, SCORPION_EVERY, FLEA_COOLDOWN, poisonMushroom, bulletEscapes, waveSpeed, splitSpd, munchCue, reviveGarden, REVIVE_POINTS, spiderDevours, scorpionStings } from './sim.js'
 
 // CENTIPEDE (#1473 batch 16) — the Feb port's score was dead, one touch was
 // instant hard-reset, cut bodies never grew heads, and the mushroom field
@@ -69,6 +69,8 @@ const CentipedeGame = () => {
         let respawnAt = -1       // tick the zapper returns, -1 = alive
         let invulnUntil = 0
         let revivedTotal = 0     // #3664 — mushrooms healed since run start (score attribution)
+        let bitesTotal = 0       // #3726 — segments the spider devoured this run (witness)
+        let stingsTotal = 0      // #3726 — segments the scorpion raced this run (witness)
         let spiderAt = SPIDER_EVERY     // tick the next spider enters
         let munchAt = 0                // #3632 — the swarm's chewing clack clock
         let munchAlt = false           // two-syllable click-et-a texture
@@ -192,6 +194,8 @@ const CentipedeGame = () => {
             state.score = 0
             lives = START_LIVES
             revivedTotal = 0 // #3664
+            bitesTotal = 0 // #3726
+            stingsTotal = 0 // #3726
             over = false
             isAttractMode = false
             init()
@@ -632,6 +636,30 @@ const CentipedeGame = () => {
                 const before = state.mushrooms.length
                 state.mushrooms = state.mushrooms.filter((m) => !(Math.abs(m.x - s.x) < 12 && Math.abs(m.y - s.y) < 12))
                 if (state.mushrooms.length < before) audioController.playFilteredNoise(0.07, 0.1, 900)
+                // #3726 — the eater takes bites out of the column too. Eaten
+                // is NOT shot: the lunch is gone (no mushroom planted where it
+                // fell) and only the shooter's kill pays, so a bug-kill banks
+                // nothing. The chain splits by the existing cut law (#3631):
+                // the segment behind the gap grows a head and the rear sub-
+                // chain takes the split boost. One chew per tick — the spider
+                // chews, it doesn't mow.
+                for (let i = state.centipedes.length - 1; i >= 0; i--) {
+                    if (!spiderDevours(s, state.centipedes[i])) continue
+                    const seg = state.centipedes.splice(i, 1)[0]
+                    if (state.centipedes[i]) {
+                        state.centipedes[i].head = true
+                        for (let j = i; j < state.centipedes.length; j++) {
+                            state.centipedes[j].spd = splitSpd(state.centipedes[j].spd)
+                        }
+                    }
+                    bitesTotal++
+                    burst(seg.x, seg.y, '#c17bff', 6) // purple chomp at the fall site, no digits — it pays 0
+                    // #3726 — the crunch: a low mauling under a wet squelch,
+                    // distinct from the shooter's pew and the cap-chew click.
+                    audioController.playSweep(220, 60, 0.12, 'square', 0.09)
+                    audioController.playFilteredNoise(0.08, 0.12, 500)
+                    break // one bite per tick
+                }
                 if (playerAlive() && tickN >= invulnUntil && Math.abs(s.x - state.player.x) < 12 && Math.abs(s.y - state.player.y) < 12) killPlayer()
             }
 
@@ -651,6 +679,16 @@ const CentipedeGame = () => {
                         // plain blip (each cap is only sizzled once — no spam).
                         audioController.playTone(820, 0.03, 'sawtooth', 0.045)
                         audioController.playTone(1230, 0.035, 'sawtooth', 0.035, 0.02)
+                    }
+                })
+                // #3726 — the quicksilver stings the column too: a segment its
+                // body touches turns red and races, obeying the same venom law
+                // the caps already do (the poisoned-segment speed rule).
+                state.centipedes.forEach((c) => {
+                    if (!c.fast && scorpionStings(s, c)) {
+                        c.fast = true
+                        stingsTotal++
+                        audioController.playTone(980, 0.03, 'sawtooth', 0.045) // the sting hiss
                     }
                 })
                 if (playerAlive() && tickN >= invulnUntil && Math.abs(s.x - state.player.x) < 12 && Math.abs(s.y - state.player.y) < 12) killPlayer()
@@ -1009,6 +1047,8 @@ const CentipedeGame = () => {
                 state.score = 0
                 lives = START_LIVES
                 revivedTotal = 0 // #3664
+                bitesTotal = 0 // #3726
+                stingsTotal = 0 // #3726
                 over = false
                 isAttractMode = false
                 keys.ArrowLeft = keys.ArrowRight = keys.ArrowUp = keys.ArrowDown = keys.Space = false
@@ -1037,6 +1077,9 @@ const CentipedeGame = () => {
                 pops: state.fx.length, // #3620 — QA can catch a kill-pop mid-flight
                 wave, // #3631 — speed ladder rung
                 rearSpd: Math.round(100 * state.centipedes.reduce((m, c) => Math.max(m, c.spd || 1), 1)) / 100,
+                bites: bitesTotal, // #3726 — spider devours this run
+                stings: stingsTotal, // #3726 — scorpion stings this run
+                fast: state.centipedes.filter((c) => c.fast).length, // #3726 — red segments live
                 playerX: Math.round(state.player.x),
                 playerY: Math.round(state.player.y),
             }),
@@ -1059,6 +1102,8 @@ const CentipedeGame = () => {
                     damaged: state.mushrooms.filter((m) => m.health < 3).length,
                     mushrooms: state.mushrooms.length,
                     revived: revivedTotal,
+                    bites: bitesTotal, // #3726 — devoured segments this run
+                    stings: stingsTotal, // #3726 — stung segments this run
                     alive: playerAlive(),
                 }),
                 hurt: () => { if (!over && playerAlive()) killPlayer() },
@@ -1070,6 +1115,24 @@ const CentipedeGame = () => {
                     const m = state.mushrooms.find((x) => !x.poison && x.health === 3)
                     if (!m) return false
                     m.health = 1
+                    return true
+                },
+                // #3726 — stage a bite/sting on demand: set the man down on a
+                // column segment INSIDE its own roaming band (the next tick's
+                // law does the rest — no sim bypass), so the harness proves the
+                // live laws, not just the pure ones. Upper half of the band, so
+                // the audit window never overlaps the zapper's strip.
+                devour: () => {
+                    const sTop = Math.round(state.height * 0.3)
+                    const seg = state.centipedes.find((c) => !c.head && c.y >= sTop && c.y <= state.height - 200)
+                    if (!seg) return false
+                    state.spider = { x: seg.x, y: seg.y, vx: 0, vy: 0, health: 3, seekAt: tickN + 100000 }
+                    return true
+                },
+                stingSeg: () => {
+                    const seg = state.centipedes.find((c) => !c.fast && c.y >= 60 && c.y <= state.height - 180)
+                    if (!seg) return false
+                    state.scorpion = { x: seg.x, y: seg.y, vx: 4, vy: 0, wobble: 0 }
                     return true
                 },
             }
