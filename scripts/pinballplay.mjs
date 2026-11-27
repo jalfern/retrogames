@@ -583,23 +583,37 @@ try {
     }, [chX, yFrom, yTo])
     await quiet()
     const chaseCtrl = await sampleChase(556, 600)
+    // The chase lives ~167 ms at the bright end (kbSweep ≥ 8, head alpha ≥ 0.7).
+    // A CDP-driven poll can close inside that window on a loaded box (the same
+    // round-trip lesson #3760's drive paid), so sampling runs INSIDE the page on
+    // every rAF and the harness only polls the accumulator it leaves behind.
+    await page.evaluate(([cx]) => {
+        const can = document.querySelector('canvas')
+        window.__chase = { max: 0, sweepMax: -1 }
+        const tick = () => {
+            const s = window.__pinballTest && window.__pinballTest.state()
+            if (s && s.kbSweep >= 8 && s.kbSweepL === 1) {
+                const t = Math.min(1, (18 - s.kbSweep) / 14)
+                const yNow = 604 + (549 - 604) * t
+                const px = can.getContext('2d')
+                    .getImageData(cx - 3, Math.round(yNow + 8), 7, Math.max(1, Math.min(604, yNow + 44) - Math.round(yNow + 8))).data
+                let lit = 0
+                for (let i = 0; i < px.length; i += 4) if (px[i] > 150 && px[i + 1] > 150 && px[i + 2] > 150) lit++
+                if (lit > window.__chase.max) window.__chase.max = lit
+                if (s.kbSweep > window.__chase.sweepMax) window.__chase.sweepMax = s.kbSweep
+            }
+            window.__chaseRaf = requestAnimationFrame(tick)
+        }
+        window.__chaseRaf = requestAnimationFrame(tick)
+    }, [chX])
     await page.evaluate(() => window.__pinballTest.kbDrop('L'))
     let chaseLit = -1, chaseSweep = -1
-    for (let i = 0; i < 50; i++) {
-        const cs = await page.evaluate((cx) => {
-            const s = window.__pinballTest.state()
-            if (!(s.kbSweep >= 8 && s.kbSweepL === 1)) return null
-            const t = Math.min(1, (18 - s.kbSweep) / 14)
-            const yNow = 604 + (549 - 604) * t
-            const px = document.querySelector('canvas').getContext('2d')
-                .getImageData(cx - 3, Math.round(yNow + 8), 7, Math.max(1, Math.min(604, yNow + 44) - Math.round(yNow + 8))).data
-            let lit = 0
-            for (let i = 0; i < px.length; i += 4) if (px[i] > 150 && px[i + 1] > 150 && px[i + 2] > 150) lit++
-            return { lit, sweep: s.kbSweep }
-        }, chX)
-        if (cs) { chaseSweep = cs.sweep; if (cs.lit > chaseLit) chaseLit = cs.lit; if (cs.lit >= 8) break }
-        await wait(16)
+    for (let i = 0; i < 80; i++) {
+        await wait(50)
+        const cs = await page.evaluate(() => window.__chase)
+        if (cs) { chaseLit = cs.max; chaseSweep = cs.sweepMax; if (cs.max >= 8 && cs.sweepMax >= 8) break }
     }
+    await page.evaluate(() => { cancelAnimationFrame(window.__chaseRaf) })
     ok('#3766 the re-armed save chases live: white head+tail pixels ride the column while kbSweep runs',
         chaseLit >= 8 && chaseSweep >= 8, `lit=${chaseLit} sweep=${chaseSweep} ctrl=${chaseCtrl}`)
 
