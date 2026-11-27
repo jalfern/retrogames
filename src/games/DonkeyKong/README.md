@@ -35,18 +35,21 @@ npm run contractcheck        # the exposeGame contract (in contractGames)
 Ports: the browser checks read `DEV_PORT` (slot a 5173 / slot b 5178 / QA 5176).
 
 ## Honest gaps (vs the arcade original)
-- Rivet finale shipped (#3598): reaching Pauline's girder arms the pull phase
-  and the collapse-rebuild lap now plays. The arcade's second screen — the
-  dedicated 25 m rivet stage with 8 rivets, section-by-section girder drops,
-  crush boxes and the exact score tables — is still UNVERIFIED in-repo and
-  lives here as a finale on the same screen (4 rivets, tilt-fall of the two
-  top girders, +100/pull, +1000 lap bank).
+- **CLOSED by #3598, phantom-retired in #3618:** the arcade screen loops —
+  there is no dedicated second stage to port. The rivet finale (#3598) IS the
+  arcade structure (pull, crash, lap banks, board rebuilds); the table of a
+  25 m second screen with 8 rivets and section-by-section drops was never
+  sourceable in-repo, so it stays shipped history, not a spec. The prose
+  below is kept for the record.
 - Oil drum is decor; the arcade's flame kills. No score bonus timers, no
   50/100-point distinction for walking past vs jumping over barrels' edges.
 - Barrels never fall onto ladders they didn't board (onLadder is per-barrel;
-  a barrel meeting a ladder mid-air keeps rolling).
-- Broken ladders only flicker (the original let Mario climb part-way some
-  rounds); barrels and the player both refuse them outright.
+  a barrel meeting a ladder mid-air keeps rolling). Needs fall-gap ladder
+  geometry first — filed as #3622 after a Node trace logged zero airborne
+  ladder-column crossings on the shipped layout.
+- **CLOSED by #3618:** broken ladders climbed part-way — see Half-rungs
+  below. (Was: the original let Mario climb part-way some rounds; barrels and
+  the player both refused them outright.)
 
 ## Hammer (#2018 — the attract promise kept)
 Two mallets ride the right-hand ends of the ground floor and DK's girder
@@ -63,3 +66,20 @@ driver stays hands-free — kongcheck pins it (seat-hands-free rule), and the
 Durability is swings-not-ticks: the widely-cited arcade rule; the swing-only
 limit also gives a player who grabs badly (by a ladder) an honest escape —
 wail five times and jump/climb again.
+
+## Half-rungs (#3618 — the broken ladders became the original's trap)
+A broken ladder keeps its lower span. `buildLevel` gives every broken ladder a
+`breakY` at `BREAK_FRACS` × span (level order — deterministic, the level still
+carries no dice); sound ladders get `breakY === yTop`, so the climb rule is
+uniform. Mount a broken ladder's foot with UP and you climb to the break line
+and HANG: the last rung holds (`ev.hang`, one thud), the span above is gone,
+drawn as snapped uprights and a missing rung-field. DOWN climbs back down and
+steps you onto the girder. The top never delivers — bait stays bait.
+Doctrine: the WATCH seat and attract demo never trust a broken rung. Only
+input tagged `human` (the shell's key path) may mount one — rollout candidates
+and greedy arrive untagged, so every seeded seat rollout, every replay hash
+and the 24-seed floors ride byte-identical. Take the wheel while a runner
+hangs on broken rungs and the sim steps him off onto the girder below —
+the route never clings to what it cannot prove. `kongcheck` §half-rungs pins
+all of it (geometry, hang, descend, seat refusal, seat step-off, per-ladder
+break lines); the drive exercises it with real arrows.

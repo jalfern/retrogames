@@ -152,6 +152,7 @@ const DonkeyKongGame = () => {
             // #2018: the event set was missing DK's throw and the rungs.
             if (ev.barrel) audioController.playTone(160, 0.06, 'triangle')
             if (ev.climbed) audioController.playTone(300, 0.05, 'square')
+            if (ev.hang) audioController.playTone(170, 0.06, 'square') // #3618 the last rung catches the hand
             // #3147: the climb refused — a soft ``no'' tick + a chevron,
             // throttled so holding the key doesn't machine-gun.
             if (ev.noClimb && noClimbCooldown <= 0) {
@@ -190,6 +191,10 @@ const DonkeyKongGame = () => {
             up: keys.ArrowUp,
             down: keys.ArrowDown,
             jump: keys.Space,
+            // #3618: the human signature. Only tagged input may mount a broken
+            // half-ladder — the WATCH seat's candidates arrive untagged and the
+            // doctrine "the seat never trusts a broken rung" stays in the sim.
+            human: true,
         })
 
         // =============================================
@@ -252,14 +257,22 @@ const DonkeyKongGame = () => {
 
         const drawLadder = (l) => {
             ctx.fillStyle = COL_LADDER
-            const h = l.yBot - l.yTop
+            // #3618 half-rungs: a broken ladder is drawn as what it is — the
+            // span survives from its base to breakY, the rungs above are gone,
+            // two snapped upright stubs mark where they broke.
+            const topY = l.broken ? l.breakY : l.yTop
             // Uprights
-            ctx.fillRect(l.x - 4, l.yTop, 1.5, h)
-            ctx.fillRect(l.x + 3, l.yTop, 1.5, h)
+            ctx.fillRect(l.x - 4, topY, 1.5, l.yBot - topY)
+            ctx.fillRect(l.x + 3, topY, 1.5, l.yBot - topY)
+            if (l.broken) {
+                ctx.fillRect(l.x - 4, l.breakY - 3, 1.5, 3)
+                ctx.fillRect(l.x + 3, l.breakY - 2, 1.5, 2)
+            }
             // Rungs
-            for (let ry = l.yTop + 4; ry < l.yBot; ry += 6) {
+            for (let ry = topY + 4; ry < l.yBot; ry += 6) {
                 ctx.fillRect(l.x - 4, ry, 8.5, 1.5)
             }
+            if (l.broken) ctx.fillRect(l.x - 4, l.breakY, 8.5, 1.5) // the last rung
         }
 
         const drawHammerItem = (h) => {
@@ -680,6 +693,10 @@ const DonkeyKongGame = () => {
                     climbing: gs.player.climbing, barrels: gs.barrels.length,
                     attract: gs.attract, over: gs.over,
                     hammer: gs.hammer, swingSeq: gs.swingSeq,
+                    // #3618 half-rung state for the drive harness
+                    hang: gs.player.hanging,
+                    brk: gs.player.climbLadder && gs.player.climbLadder.broken
+                        ? Math.round(gs.player.climbLadder.breakY) : null,
                 }),
                 start: startRun,
                 // #1637 b26 parity — seat the route without a keyboard (the

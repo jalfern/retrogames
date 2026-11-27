@@ -81,7 +81,12 @@ export function platformIndex(gs, ex, ey, eh) {
 
 // Level data — sloped girders like the original. Each platform:
 // { x, y, w, slope } (slope = py change per px, positive = slopes right-down);
-// ladders: { x, yTop, yBot, broken } (broken ones never mount, only flicker).
+// ladders: { x, yTop, yBot, broken, breakY }. Since #3618 a broken ladder is
+// a HALF-ladder: rungs survive from its base up to breakY, the span above is
+// gone. breakY on a sound ladder equals yTop (whole ladder — the climb rule is
+// uniform). The fracs ride level order, deterministic, dice untouched.
+export const BREAK_FRACS = [0.5, 0.35, 0.45, 0.3] // per broken ladder, level order
+
 export function buildLevel() {
     const platforms = []
     const ladders = []
@@ -108,7 +113,12 @@ export function buildLevel() {
         const bp = platforms[botPlatIdx]
         const yTop = getPlatformY(tp, x) + 8  // below top platform surface
         const yBot = getPlatformY(bp, x)      // at bottom platform surface
-        ladders.push({ x, yTop, yBot, broken })
+        // #3618 half-rungs: the break line sits at BREAK_FRACS of the span,
+        // counted in ladder-build order — no dice, byte-stable like the rest
+        // of the level.
+        const bk = ladders.filter(l => l.broken).length
+        const breakY = broken ? yTop + (yBot - yTop) * BREAK_FRACS[bk] : yTop
+        ladders.push({ x, yTop, yBot, broken, breakY })
     }
 
     // Floor 0 (ground) ↔ Floor 1
@@ -181,6 +191,8 @@ export function makeRun(seed, opts = {}) {
             x: 24, y: 216, w: 11, h: 16,
             vx: 0, vy: 0,
             grounded: false, climbing: false,
+            climbLadder: null, // #3618 the ladder being climbed (half-rung clamp)
+            hanging: false,    // #3618 stopped at a broken ladder's break line
             dir: 1, frame: 0, walkFrame: 0, climbFrame: 0,
             jumpedBarrels: new Set(),
         },
@@ -196,6 +208,8 @@ function resetPlayer(gs) {
     p.vy = 0
     p.grounded = false
     p.climbing = false
+    p.climbLadder = null // #3618
+    p.hanging = false    // #3618
     p.dir = 1
     p.frame = 0
     p.jumpedBarrels = new Set()
@@ -384,7 +398,7 @@ function attractPlan(gs) {
 // human input, watchStep drives instead.
 // ---------------------------------------------------------------------------
 export function tickDonkeyKong(gs, input = null) {
-    const ev = { jump: false, jumpedBarrel: 0, died: false, respawn: false, won: false, over: false, barrel: false, hammerUp: false, swing: false, hammered: 0, hammerDown: false, climbed: false, noClimb: false, reached: false, pull: false, rivet: false, collapse: false }
+    const ev = { jump: false, jumpedBarrel: 0, died: false, respawn: false, won: false, over: false, barrel: false, hammerUp: false, swing: false, hammered: 0, hammerDown: false, climbed: false, hang: false, noClimb: false, reached: false, pull: false, rivet: false, collapse: false }
     const p = gs.player
     gs.tickN++
     if (gs.swing > 0) gs.swing--
@@ -425,6 +439,8 @@ export function tickDonkeyKong(gs, input = null) {
             ev.collapse = true
             gs.barrels = []           // the crash shakes the deck clean
             p.climbing = false        // no hanging on a ladder that just fell
+            p.climbLadder = null      // #3618 half-rung state goes with it
+            p.hanging = false
         }
         gs.collapse++
         gs.dkFall = Math.min(DK_FALL_STOP, gs.dkFall + 0.5 + gs.collapse * 0.05)
@@ -526,16 +542,35 @@ export function tickDonkeyKong(gs, input = null) {
         wantJump = false // no jumping the tower with a mallet in hand
     }
 
-    // ---- LADDER LOGIC ----
+    // ---- LADDER LOGIC (#3618 — broken ladders are half-ladders) ----
+    // A broken ladder keeps the rungs from its base up to breakY: a runner who
+    // reaches it with direct hands climbs to the break line and HANGS there —
+    // never past it, and down only as far as he came. The attract demo and the
+    // WATCH seat never trust a broken rung: only input tagged `human` (the
+    // shell's key path) may mount one — rollout candidates and greedy arrive
+    // untagged, so every seeded seat rollout rides byte-identical dice through
+    // the same refusals it always had. If the seat takes the wheel while a
+    // runner hangs on a broken ladder, doctrine says step off: he drops to the
+    // girder below, never clings to rungs the route cannot prove.
+    const human = !!(input && input.human)
     const nearLadder = gs.ladders.find(l => {
-        if (l.broken) return false
         const cx = p.x + p.w / 2
-        return Math.abs(cx - l.x) < 8 &&
-            p.y + p.h > l.yTop &&
-            p.y + p.h <= l.yBot + 4
+        if (Math.abs(cx - l.x) >= 8) return false
+        return l.broken
+            ? p.y + p.h >= l.breakY - 0.5 && p.y + p.h <= l.yBot + 4
+            : p.y + p.h > l.yTop && p.y + p.h <= l.yBot + 4
     })
+    const holdable = !!nearLadder &&
+        (!nearLadder.broken || (human && wantClimbUp))
 
-    if (!p.climbing && wantClimb && !nearLadder) ev.noClimb = true
+    if (!p.climbing && wantClimb && !holdable) ev.noClimb = true
+
+    if (p.climbing && p.climbLadder && p.climbLadder.broken && !human) {
+        p.climbing = false
+        p.climbLadder = null
+        p.hanging = false
+        p.vy = 0
+    }
 
     if (p.climbing) {
         if (wantClimbUp) {
@@ -548,9 +583,21 @@ export function tickDonkeyKong(gs, input = null) {
         p.vx = 0
         p.vy = 0
 
+        // #3618 half-rungs: the last rung is the break line. Hold, don't pass.
+        const cl = p.climbLadder
+        if (cl && cl.broken && p.y + p.h < cl.breakY) {
+            p.y = cl.breakY - p.h
+            if (!p.hanging) ev.hang = true
+            p.hanging = true
+        } else if (p.hanging) {
+            p.hanging = false
+        }
+
         // Check if reached top or bottom of ladder
         if (!nearLadder) {
             p.climbing = false
+            p.climbLadder = null
+            p.hanging = false
             // Snap to nearest platform
             const plat = findPlatform(gs.platforms, p.x + p.w / 2, p.y, p.h)
             if (plat) {
@@ -560,9 +607,10 @@ export function tickDonkeyKong(gs, input = null) {
         }
     } else {
         // Try to mount ladder
-        if (nearLadder && (wantClimbUp || wantClimbDown)) {
+        if (nearLadder && (wantClimbUp || wantClimbDown) && holdable) {
             p.x = nearLadder.x - p.w / 2
             p.climbing = true
+            p.climbLadder = nearLadder
             p.vy = 0
             p.vx = 0
             ev.climbed = true

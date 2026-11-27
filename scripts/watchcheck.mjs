@@ -3249,7 +3249,7 @@ for (const [name, f] of Object.entries(B4_SRC)) {
     rep.check('DONKEY KONG: doctrine gate — jump candidates only compete near a barrel (no kangarooing the tower)',
         /const cands = barrelThreat\(gs\) \? \[\.\.\.WALK_CANDS, \.\.\.JUMP_CANDS\] : WALK_CANDS/.test(ks))
     rep.check('DONKEY KONG: progress is height-monotone (mid-ladder credit can never outrank a finished exit)',
-        /232 - footY/.test(ks) && /if \(p\.climbing\) return h \* 10 \+ 8/.test(ks))
+        /232 - footY/.test(ks) && /let base = h \* 10/.test(ks) && /if \(p\.climbing\) base \+= 8/.test(ks))
     rep.check('DONKEY KONG: the candidate is HELD before greedy takes over (1-tick ties never shape the climb)',
         /const HOLD = \d+/.test(ks) && /t < HOLD \? cand : greedy\(c\)/.test(ks))
     rep.check('DONKEY KONG: Y seats with blips; any driving key takes over',

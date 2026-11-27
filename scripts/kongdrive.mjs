@@ -39,6 +39,39 @@ await page.keyboard.up('ArrowLeft')
 const a3 = await p()
 rep.check('held ArrowLeft drives it back', a3.x < a2.x - 10, `${a2.x} -> ${a3.x}`)
 
+// #3618 half-rungs with real arrows: walk to the broken ladder foot (x=120),
+// climb part-way, hang at the break line, never pass it, step back off.
+await page.keyboard.down('ArrowRight')
+for (let k = 0; k < 40; k++) {
+    await sleep(100)
+    const s = await p()
+    if (s.x >= 112) break
+}
+await page.keyboard.up('ArrowRight')
+await page.keyboard.down('ArrowUp')
+let hung = null
+for (let k = 0; k < 40; k++) {
+    await sleep(100)
+    const s = await p()
+    if (s.hang) { hung = s; break }
+}
+rep.check('human climbs a broken ladder and hangs at the break line (#3618)',
+    !!hung && hung.climbing && hung.brk !== null && Math.abs(hung.y + 16 - hung.brk) <= 2,
+    hung ? `y=${hung.y} brk=${hung.brk}` : 'never hung')
+await sleep(500) // keep pushing UP at the break
+const hung2 = await p()
+rep.check('the break line holds — held UP never passes it', hung2.hang && hung2.y === hung.y, `${hung.y} -> ${hung2.y}`)
+await page.keyboard.up('ArrowUp')
+await page.keyboard.down('ArrowDown')
+let off = null
+for (let k = 0; k < 40; k++) {
+    await sleep(100)
+    const s = await p()
+    if (!s.climbing && s.y >= 214) { off = s; break }
+}
+rep.check('climbing back down steps off onto the girder', !!off, off ? `y=${off.y}` : 'still stuck')
+await page.keyboard.up('ArrowDown')
+
 // the seat plays the whole arcade loop: climb, pull all four, watch the crash,
 // and bank the lap — real ticks through the shipped shell.
 await page.keyboard.press('KeyY')
