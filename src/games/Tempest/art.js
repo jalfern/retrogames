@@ -64,14 +64,35 @@ export function drawTube(ctx, g, tick, opts = {}) {
     const a = opts.alpha === undefined ? 1 : opts.alpha
     ctx.lineWidth = 1
 
-    // radial edges
+    // radial edges, faded with depth (#3617): dim at the far end, brighter as
+    // they near the rim. Uniform-bright edges flatten the tube into a spider
+    // web — the cabinet's whole read is perspective, so the falloff carries it.
     ctx.strokeStyle = hue
-    ctx.globalAlpha = 0.5 * a
+    const SEG_T = [0, 0.34, 0.68, 1]
+    const SEG_A = [0.15, 0.32, 0.56]
     for (let i = 0; i < n; i += step) {
-        const a0 = ringPt(g, i, 0)
-        const a1 = ringPt(g, i, 1)
-        ctx.beginPath(); ctx.moveTo(a0.x, a0.y); ctx.lineTo(a1.x, a1.y); ctx.stroke()
+        for (let k = 0; k < 3; k++) {
+            const p0 = ringPt(g, i, SEG_T[k])
+            const p1 = ringPt(g, i, SEG_T[k + 1])
+            ctx.globalAlpha = SEG_A[k] * a
+            ctx.beginPath(); ctx.moveTo(p0.x, p0.y); ctx.lineTo(p1.x, p1.y); ctx.stroke()
+        }
     }
+    ctx.globalAlpha = a
+
+    // depth hoops (#3617): two faint rings between the far ring and the rim —
+    // the perspective cue that makes the faces read as a receding tunnel
+    for (const [t, ha, lw] of [[0.34, 0.18, 0.8], [0.68, 0.3, 1]]) {
+        ctx.globalAlpha = ha * a
+        ctx.lineWidth = lw
+        ctx.beginPath()
+        for (let i = 0; i <= n; i++) {
+            const p = ringPt(g, i, t)
+            if (i === 0) ctx.moveTo(p.x, p.y); else ctx.lineTo(p.x, p.y)
+        }
+        ctx.stroke()
+    }
+    ctx.lineWidth = 1
     ctx.globalAlpha = a
 
     // deep-center glow: the far end breathes with the rim pulse

@@ -301,7 +301,7 @@ section('THE WIN + SLACK')
 section('ART — depth variants, hinged flipper, trails, glow (#298)')
 {
     const recCtx = () => {
-        const rec = { strokes: 0, lines: [], widths: [], grad: 0, style: [] }
+        const rec = { strokes: 0, lines: [], widths: [], grad: 0, style: [], alphas: [] }
         let ox = 0, oy = 0, sx = 1, sy = 1
         const ctx = new Proxy({ lineWidth: 1, globalAlpha: 1 }, {
             get(t, k) {
@@ -317,6 +317,7 @@ section('ART — depth variants, hinged flipper, trails, glow (#298)')
             set(t, k, v) {
                 if (k === 'lineWidth') rec.widths.push(v)
                 if (k === 'strokeStyle') rec.style.push(v)
+                if (k === 'globalAlpha') rec.alphas.push(v)
                 t[k] = v
                 return true
             },
@@ -355,6 +356,23 @@ section('ART — depth variants, hinged flipper, trails, glow (#298)')
         ok('far center breathes: tube draws a radial glow gradient', plain.rec.grad >= 1, `grad calls ${plain.rec.grad}`)
         const ovr = recCtx(); drawTube(ovr.ctx, { faces: 16, ridge: 0, level: 2, p: 0 }, 40, { hue: '#abcdef', alpha: 0.5 })
         ok('drawTube honours a hue override (wave cross-fade ready)', ovr.rec.style[0] === '#abcdef', `first stroke ${ovr.rec.style[0]}`)
+    }
+    {
+        // #3617 — the tube must READ as deep: edges dim far→near, hoops in between
+        const g16 = { faces: 16, ridge: 0, level: 1, p: 0 }
+        const t16 = recCtx(); drawTube(t16.ctx, g16, 40)
+        const lo = Math.min(...t16.rec.alphas), hi = Math.max(...t16.rec.alphas)
+        ok('edges fade with depth: darkest far segment <=0.2, rim stays >=0.5 (#3617)', lo <= 0.2 && hi >= 0.5, `alpha ${lo}..${hi}`)
+        const rOf = (x, y) => Math.hypot(x - CX, y - CY)
+        const RNp = rOf(posAt(g16, 0, 1).x, posAt(g16, 0, 1).y)
+        const RFp = rOf(posAt(g16, 0, 0).x, posAt(g16, 0, 0).y)
+        const subs = []; let cur = null
+        for (const [k, x, y] of t16.rec.lines) {
+            if (k === 'm') { if (cur) subs.push(cur); cur = [rOf(x, y)] } else if (cur) cur.push(rOf(x, y))
+        }
+        if (cur) subs.push(cur)
+        const hoops = subs.filter((r) => r.length >= 8 && Math.max(...r) - Math.min(...r) < 3 && Math.max(...r) < RNp - 40 && Math.min(...r) > RFp + 40)
+        ok('two depth hoops carve the tunnel between far ring and rim (#3617)', hoops.length === 2, `hoops ${hoops.length}`)
     }
     {
         const hot = recCtx(); drawZaps(hot.ctx, { faces: 16, ridge: 0, level: 1, p: 0 }, [{ A: 3, life: 12 }])
