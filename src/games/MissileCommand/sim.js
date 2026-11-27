@@ -119,7 +119,9 @@ export function makeRun(seed, opts = {}) {
         saucerTimer: 0,
         debris: [], // #3638 kill sparks — cosmetic, never gates a wave clear
         flash: null, // #3638 white kill-flash ticks
+        resist: [], // #3698 cyan outer-immunity shimmers — cosmetic, never gates anything
         attractFerries: 0, // scripted ferry counter for the attract ad (#3638)
+        attractSmarts: 0, // #3698 scripted smart-bomb counter for the attract ad
         smartLeftInWave: 0, // evasive warheads (#3630), empty below SMART_FIRST_WAVE
         smartTimer: 0,
         smartWave: false, // #3630: the wave-scoped battery-speed rule — startWave flips it from the gate; harnesses that grade other doctrine clear it
@@ -558,7 +560,24 @@ export function tickMc(gs, cmd = null) {
                 // #3630 hard counter-rule (Wikipedia, verbatim): "only these
                 // [center battery] missiles can effectively destroy a smart
                 // bomb" — an outer-battery fireball passes harmlessly through.
-                if (m.smart && !e.center) return
+                if (m.smart && !e.center) {
+                    // #3698 item 2: sell the rule, don't leave it a bug — the
+                    // bomb resists the immune pass with a cyan shimmer at the
+                    // contact point, once per blast-bomb pair. Purely cosmetic:
+                    // no dice, no events, no score, no RNG read, no movement —
+                    // the byte pins and the noSmart isolation are untouched.
+                    // Only a LIVING bomb resists: a bomb already dead from its
+                    // own ground-burst must not shimmer (cyan means immunity,
+                    // and a detonating bomb was not immune — it just landed).
+                    if (!m.dead) {
+                        if (!e.resisted) e.resisted = {}
+                        if (!e.resisted[m.id]) {
+                            e.resisted[m.id] = true
+                            gs.resist.push({ x: m.x, y: m.y, t: 10 })
+                        }
+                    }
+                    return
+                }
                 m.dead = true
                 addScore(gs, 25) // #3630 slice 2: the kill pays the seat that took it
                 // #3707 crowd-kill audio: the arcade billed 25 at once for every
@@ -625,6 +644,10 @@ export function tickMc(gs, cmd = null) {
         gs.debris.forEach((d) => { d.x += d.vx; d.y += d.vy; d.vy += 0.08; d.life-- })
         gs.debris = gs.debris.filter((d) => d.life > 0)
     }
+    if (gs.resist.length > 0) {
+        gs.resist.forEach((r) => { r.t-- })
+        gs.resist = gs.resist.filter((r) => r.t > 0)
+    }
     // Wreck fireballs spawn after the pass so a kill's blast starts its own
     // grow-shrink life next tick (no mid-iteration reentry into gs.blasts).
     for (const [wx, wy] of saucerWrecks) spawnBlast(gs, wx, wy)
@@ -654,6 +677,44 @@ export function attractFerry(gs) {
             frame: 0,
         })
         gs.events.push('saucer')
+    }
+}
+
+// ------------------------------------------------------ attract smart bomb ----
+// #3698 item 3: the attract screen advertises the ferry (#3638) but not the
+// wave-7 threat. Scripted by tick, NOT dice — the 540-tick period offset by
+// 270 can never land on the ferry's 360 grid, so the two sightings alternate
+// and the advertised sky never carries two features at once. The bomb falls at
+// its own pace and reads the pilot's blasts (SMART_DETECT_R catches them all),
+// so the ad shows its whole personality: it sidesteps fireballs, an outer
+// fireball passes through it (#3698's shimmer marks the immunity), and a fast
+// center blast that lands close enough still pays the real 25.
+export const ATTRACT_SMART_EVERY = 540
+export function attractSmart(gs) {
+    if (gs.state !== 'playing' || gs.warheads.some((m) => m.attract)) return
+    if (gs.tick > 0 && gs.tick % ATTRACT_SMART_EVERY === ATTRACT_SMART_EVERY / 2) {
+        const cities = gs.cities.filter((c) => c.alive)
+        const targets = cities.length > 0 ? cities : gs.silos.filter((s) => s.alive)
+        if (targets.length === 0) return
+        const n = gs.attractSmarts
+        gs.attractSmarts++
+        const sx = SCREEN_WIDTH / 2 + (n % 2 === 0 ? -1 : 1) * (110 + (n % 3) * 90)
+        const t = targets[n % targets.length]
+        gs.warheads.push({
+            id: gs.nextId++,
+            x: sx, y: 0, startX: sx, startY: 0,
+            targetX: t.x, targetY: t.y,
+            speed: 1.6,
+            color: '#ff0000',
+            coverUntil: 0,
+            smart: true,
+            attract: true, // the ad sighting — distinct from the wave's seeded bombs
+            evTicks: 0,
+            evadeX: 0,
+            evadeY: 0,
+            trail: [],
+        })
+        gs.events.push('smart')
     }
 }
 

@@ -16,6 +16,9 @@ export const INFO_MSGS = [
     'KEYS 1 2 3 FIRE EACH BATTERY',
     // #3630 slice 2: advertise the hot-seat — one wave each, both scores up.
     'PRESS 2 FOR TWO PLAYER',
+    // #3698 item 3: the wave-7 threat gets its own ad line — the scripted
+    // sighting below teaches the bend, this one names it.
+    'SMART BOMBS EVADE BLASTS',
 ]
 
 export const PRESS = 'PRESS ANY KEY TO START'
