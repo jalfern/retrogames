@@ -1,71 +1,75 @@
-# STATE — forge board snapshot (slot b, 2026-11-27 — ROGUE cart life-dice SHIPPED `7d74c29`)
+# STATE — forge board snapshot (slot a, 2026-11-27 — MISSILE COMMAND three-button law SHIPPED `6012c2f`)
 
-## This session (slot b)
-- TARGET #3695 REFUSED at claim (slot a live, claim 8 min earlier). Normal
-  ladder: steer 0 · `next` #1712 waiting-jon (skip #605) · game-queue empty ·
-  feedback-borrow blocked (QA studio + mini live) → flagship stage spent →
-  idle-kick answered `KICK CENTIPEDE 0 weak`.
-- **Proved that kick a #3672-family phantom:** Centipede gap-0 is struck
-  through (`~~…~~ #3620`) carrying a `**#BLOCKED**` variant the filter regex
-  misses, and its two remaining bullets are unwitnessed/pinned-spec disclaimer
-  notes. Hand-recomputed shelf: Pacman honest 0 (two struck + a Chrome/harness
-  note), Frogger 0 (both gaps live as items 4–5 of QA's #3692), Pong 0
-  (`**DISCLAIMER:**`-with-colon variant), Pinball 0 (`**OPEN (#3336 item 2)**`
-  + jonq #3335 hold). **ROGUE honest 2 — highest.** Filed + claimed **#3697**.
-- **SHIPPED #3697 → PR #3700 (`7d74c29`).** Fetched BSD Rogue 3.6 (RRP
-  mirror) — the issue's own "class-based gain rolls / int-cha-wis spread"
-  premise is DEAD: `rogue.h struct stats` = strength only, BSD Rogue has no
-  class system (classes enter the lineage via Hack/NetHack). Documented per
-  the #3664 doctrine and shipped what the source proves: `checkLevel` walks
-  the whole ladder (100xp at lvl 1 → lvl 5, one Welcome naming the landing
-  rung), gain = Δ REAL d10s; `e_levels` verbatim incl. the **40920 misprint**,
-  top rung 20 (port capped at 11); healing = roll(lvl,4), extra healing =
-  roll(lvl,8), both with the cart's `hp = ++max_hp` overflow quirk (were flat
-  rng(3,10)/rng(4,10)/rng(10,20)).
-- Proof: roguecheck **192/0** (+10 pins), mutant walk→single-`if` dies exactly
-  3 checks (restore green), roguedrive **29/29** real Chrome 0 page errors,
-  lint fps/mario/ai/rogue + build green, prod bundle `index-CU3C8cJ4.js`
-  carries the 40920 marker.
-- Filed **#3702** `QA — ROGUE: raise potion, poison clock, two-voice quaff,
-  jump juice` (feedback): P_RAISE potion (widens generation, deferred here),
-  poison is a duration clock in the cart (port bites instantly), identified
-  potions should speak the cart effect line, level-up jingle/welcome can scale
-  with Δ, chg_str/max_str ceiling law.
+## This session (slot a)
+- TARGET #3676 REFUSED at claim (slot b live, 25 min) — b's FROGGER duel merged
+  `30ca7c3`/PR #3684 and b closed it out itself. Normal ladder: steer 0 · `next`
+  #1712 waiting-jon (skip #605) · game-queue empty · feedback-borrow blocked (QA
+  mini + studio live) → flagship stage spent → honest never-dry pick.
+- **Weakest-stage audit:** `idle-kick` answered `KICK MISSILE COMMAND 0 weak`
+  (score 7 = 5 unowned README gaps + 2 QA issues naming it; held dirs Frogger,
+  Sonar — MC freed when #3630 closed with #3682). MC's five gaps verified: zero
+  `~~`-phantoms (Centipede/Pac-Man still inflate — #3670 owns that filter).
+- **Gap 0 disposition (the kick target):** arcade game-number table (games 18–34
+  dial values) is fidelity-**BLOCKED** — structure sourced (manual §6), per-number
+  values live only in the original's service chart, outside the network boundary;
+  README now marks it BLOCKED with reason so future kicks decline, not re-audit.
+  Full derivation on #3695.
+- **SHIPPED gap 1 → filed+claimed #3695 → PR #3699 (`6012c2f`): the arcade
+  three-button law, exposed.** Wikipedia §Gameplay verbatim ("one of three buttons
+  … from the appropriate battery"). Keys `1`/`2`/`3` fire LEFT/CENTER/RIGHT at the
+  live crosshair from ANY sector — key 2 = the fast battery everywhere, the expert's
+  smart-bomb answer (manual §6). Phones: pad B wears **FAST** (registry pad,
+  dispatches `KeyB`; attract 2 keeps meaning two-player). Duds stay duds (dead or
+  empty named battery spends nothing, never reroutes). Hot-seat: battery keys obey
+  the Space duty guard. HUD teaches 1/2/3 per battery + cyan FAST tell on center
+  while smart bombs are live; attract line added. Mouse keeps the nearest-battery
+  law, Space keeps crosshair fire — solo/hot-seat proofs byte-identical.
+- Proof: missilecmdcheck **126/0** (§threobutton 14 + 5 wiring pins), `--mutant`
+  **35/35 dead** (+3: key-falls-back-to-click / spends-neighbour / dead-reroutes),
+  new alias **mcbatterydrive 13/13** real Chrome (KeyB spends center-only; key 2
+  from LEFT sector flies 400 at 28 px/tick at the gate; mouse still nearest; duty
+  guard 30→30; 0 page errors), eslint + lint:mario/fps/ai + build green.
+  New `__mcTest.probe` fields: `origins`, `silosAmmo`, `smartWave`.
+- Filed **#3707** `QA — MISSILE COMMAND: three-button polish pass` (feedback):
+  human-P2 battery buttons, bonus-city 10k rule, phone legibility of the key
+  numbers, per-battery launch audio, gap-4 arcs **needs re-sourcing before any
+  build** (README's arc claim contradicts the free-aim sources), battery launch
+  flash teaching.
+- Drive-script lesson (kept honest): a `hasTouch` page context machine-gunned
+  shells through the pad's tap-to-start machinery (11 shells on one tap);
+  after three probes the drive presses the dispatched KEY and pins the pad
+  declaration by regex — vpadcheck owns button→code wiring shelf-wide.
 
 ## BOARD facts at close
-- main GREEN at `7d74c29`. Slot a still building #3695 (live since 08:49Z).
-  game-queue empty. building-qa: #3647 (DEMO ORRERY); #3665 cleared mid-run.
-- The idle-kick phantoms all still live: `~~` strikethrough (#3672 itself),
-  the `**#BLOCKED**` hash-variant, `**DISCLAIMER:**`-with-colon, and
-  `**OPEN (#n)**` annotations — four titles needed hand-correction this
-  session before the pick was honest. The #3672 fix (lane:forge, open,
-  unowned) would save every free slot that work each session.
-- Open `next`: #1712 (PLAICRAFT S2, waiting-jon). AWAITING jonq: #3335
-  (QA, due Nov 27 14:14Z), #3516 (Arkanoid art, Nov 28).
+- main GREEN at `a8442f2`. building: **#3706** (ASTEROIDS kiting — another lane).
+  building-qa: #3702 (ROGUE polish). game-queue: empty. Rule-4 satisfied
+  (game code merged, #3699).
+- After my merge, lanes landed frogger bonus-frog (#3704) and the ORRERY demo
+  (#3701); slot b close-out f4c221f says ROGUE life-dice shipped (`7d74c29`).
+- Open `next`: #1712 (PLAICRAFT S2, waiting-jon). AWAITING jonq: #3335 (QA,
+  due Nov 27 14:14Z), #3516 (Arkanoid art, Nov 28). None mine — no new asks;
+  every call this session was measured or doctrine-documented.
 
 ## PLAYABLE on main right now
-- ROGUE — one good kill can take you four levels at once (a d10 per rung);
-  healing at hero level is a fistful of d8s, and a full bar overflows to
-  +1 max, exactly like the cart: https://jalfern.com/retrogames/rogue
-- FROGGER — press `2` for the alternating duel; PAC-MAN arcade progression.
-  MISSILE COMMAND 3-button law lands tonight if slot a finishes #3695.
+- MISSILE COMMAND — `1 2 3` fire each battery from anywhere, key 2 (or the phone
+  FAST button) is the fast center answer to smart bombs, the board teaches the
+  keys and glows FAST when it matters: https://jalfern.com/retrogames/missilecommand
+- FROGGER duel + bonus frog (#3684/#3692). ROGUE life dice (#3700). PAC-MAN
+  ladder (#3661). ORRERY demo (#3701).
 
 ## Open questions (links only — #605)
-- #3335, #3516, #3244, #2971, #1712 — all AWAITING, none mine this session
-  (every call was measured against fetched source; nothing of taste to ask).
+- #3335, #3516, #3244, #2971, #1712 (all AWAITING; none mine this session).
 
 ## Next claims (for whoever is free)
-1. game-queue empty; fresh feedback #3702 (ROGUE polish) is QA's while its
-   lanes run. #3672 remains the cleanest small harness job on the board —
-   fix the four filter variants above and idle-kick stops mis-kicking twice a
-   day (this session's Centipede + the morning's Missile Command phantom).
-2. ROGUE's last honest gap: lamp/oil light-source clock (#3697 shipped gap 0
-   only) — next never-dry pick unless something outranks it.
-3. #3695's remaining stages stay slot a's (context lives there).
+1. game-queue empty; #3707 (MC polish) and #3667 (PAC-MAN polish) are QA's unless
+   a lane goes reverse per #1258; #3706 is held.
+2. MC gap 2 (bonus city at 10k, auto-deploy reserve) is rule-sized builder work
+   when #3707 gets triaged — Wikipedia §Gameplay carries the rule verbatim.
+3. #3670 (`~~` phantom filter) still a clean small harness fix between games.
 
 ## Slot state at handoff
-- Slot-b dev server :5178 stopped via `scripts/devstop.sh` at close.
-- Worktree ~/Dev/retrogames-forge-rogue-gains DONE (#3700 merged;
-  node_modules is a symlink into the main checkout — safe to prune).
-- Main checkout detached at origin/main; STATE.md parks with
-  `statepark.mjs park b`; docs PR carries it to main.
+- Slot-a dev server :5173 stopped via `scripts/devstop.sh` at close.
+- Worktree ~/Dev/retrogames-forge-mc-3button DONE (#3699 merged; safe to prune —
+  node_modules is a symlink into the main checkout).
+- Main checkout detached at origin/main; this STATE parks with
+  `statepark.mjs park a`; the docs PR carries it to main.
