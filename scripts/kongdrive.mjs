@@ -166,5 +166,44 @@ rep.check('death screen + any key -> new run', !a5.attract && !a5.over, `attract
     rep.check('the grab spends the life and rebuilds with a fresh fuse', healed, JSON.stringify(await p()))
 }
 
+// #3796 — the fire oil in the browser: a live flame burns the runner and the
+// drum lights on its clock. (The wall-clock section above already handed the
+// rAF loop back; the kill rig is scripted, so re-release before the clock
+// half.)
+{
+    const fk = await page.evaluate(() => window.__dkTest.firekill())
+    rep.check('a flame touching the runner burns a life live (freeze armed)',
+        fk.died === 1 && fk.deathTimer >= 60, JSON.stringify(fk)) // rAF is released: the freeze reads a few ticks in
+    // Give the board margin (earlier sections spent lives) and let the seat
+    // drive with the flame loose — the climb is measured before any respawn
+    // can reset the board.
+    await page.evaluate(() => window.__dkTest.topLives())
+    let healed = false
+    const heal0 = Date.now()
+    while (!healed && Date.now() - heal0 < 6000) {
+        const q = await p()
+        healed = q.y === 216 && q.x === 24 && q.fire === 0 && !q.over
+        if (!healed) await sleep(200)
+    }
+    await page.evaluate(() => window.__dkTest.seat())
+    await page.evaluate(() => window.__dkTest.lightFire())
+    let lit = false
+    const lit0 = Date.now()
+    while (!lit && Date.now() - lit0 < 4000) {
+        lit = (await p()).fire >= 1
+        if (!lit) await sleep(200)
+    }
+    rep.check('the drum lights a fireball on the live board', lit, JSON.stringify(await p()))
+    let rode = false
+    const climb0 = Date.now()
+    while (!rode && Date.now() - climb0 < 15000) {
+        const q = await p()
+        rode = (q.flames || []).some(f => f[2] === 1) // any flame riding a ladder
+        if (q.over) break
+        if (!rode) await sleep(300)
+    }
+    rep.check('the fireball climbs a ladder on the live board (seat dodges it, no crash)', rode, JSON.stringify((await p()).flames))
+}
+
 rep.check('zero page errors across the drive', errors === 0, `${errors}`)
 rep.exit(browser)

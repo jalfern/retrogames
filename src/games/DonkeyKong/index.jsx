@@ -875,6 +875,7 @@ const DonkeyKongGame = () => {
                     bonus: gs.bonus,
                     cap: gs.captured ? 1 : 0, // #3786 — grab armed witness
                     fire: gs.fireballs.length, // #3796 — flames on the tower
+                    flames: gs.fireballs.map(f => [Math.round(f.x), Math.round(f.y), f.onLadder ? 1 : 0]), // #3796 patrol readout
                     lap: gs.lap, // #3796 — escalation witness
                     // #3618 half-rung state for the drive harness
                     hang: gs.player.hanging,
@@ -908,6 +909,7 @@ const DonkeyKongGame = () => {
                 // honest death for the drive (idling on the start corner is not
                 // reliably lethal here — barrels roll away from it).
                 kill: () => { gs.deathTimer = 90; gs.lives = 1 },
+                topLives: () => { gs.lives = 3 }, // #3796 — dev margin for the fire drive
                 // #3786 — burn the fuse to one step from zero so the drive can
                 // watch the capture law fire inside two seconds, no 50-second wait.
                 burnFuse: () => { gs.bonus = 100; gs.bonusTick = 0 },

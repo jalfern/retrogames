@@ -535,7 +535,8 @@ export function updateFireball(gs, f) {
 }
 
 export function fireSpeed(gs) {
-    return Math.min(FIRE_SPEED_MAX, FIRE_SPEED + (gs.lap >= FIRE_ESCALATE_MIN ? FIRE_LAP_SPEEDUP * gs.lap : 0))
+    const sp = FIRE_SPEED + (gs.lap >= FIRE_ESCALATE_MIN ? FIRE_LAP_SPEEDUP * gs.lap : 0)
+    return Math.min(FIRE_SPEED_MAX, Math.round(sp * 100) / 100)
 }
 
 function updateBarrel(gs, b, ev) {
