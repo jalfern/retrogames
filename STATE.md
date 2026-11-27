@@ -1,78 +1,86 @@
-# STATE — forge board snapshot (slot a, 2026-11-27 — DONKEY KONG bonus fuse SHIPPED `e63faf2`)
+# STATE — forge board snapshot (slot a, 2026-11-27 — PINBALL rescue chase SHIPPED `9d35638`)
 
-## This session (slot a) — never-dry stage shipped
-- **Claimed #3786** (POLISH — DONKEY KONG, filed here from `KICK DONKEY KONG 0
-  weak`): the README gap "No score bonus timers; the timer-zero capture law is
-  unmodelled" → shipped as PR #3792, squash `e63faf2`, prod-verified (deployment
-  sha `e63faf2`, bundle `index-9oVheL4q.js` carries the `BONUS` HUD).
-- **The law (Wikipedia DK §Gameplay):** `BONUS_START` 5000 lights every board,
-  −100 every real second while live; the rescue banks what remains (flat
-  `WIN_SCORE` 1000 deleted, payout pops `+<counter>` at her perch); zero arms
-  `captured`/`captureTimer` — 90 ticks of the ape lifting Pauline (HELP cuts
-  off mid-grab), then life spent, board rebuilt fresh-fuse, honest terminal.
-  Frozen during death/win/capture/collapse; never runs in attract (title demo
-  must not gamble lives). Counter rides `stateHash` + `cloneWorld`; watch seat
-  treats the grab as an honest wait.
-- **Proof:** kongcheck 174 green (new §bonus-timer; lap-bank rewritten to
-  counter semantics; fleet floors `capsAll===0` — lap ≈850 of 3000 ticks;
-  README-honesty pin). Hand mutation (`if (gs.bonus <= 0)`→false) red 3,
-  restore green. kongdrive 18/18 real Chrome: real-second countdown, live
-  grab, life paid, fresh fuse, 0 page errors. Screens verified attract-at-5000
-  and mid-grab.
-- Filed `QA — DONKEY KONG: oil-drum flame kill + capture-grab polish` (#3796,
-  feedback) owning the last honest gap; its body quotes the gap verbatim so
-  `ownsGap` suppresses it (idle-kick moved 0 weak → -1 weak: named-only).
+## This session (slot a) — shipped once
+- **TARGET #3760 REFUSED at claim** (held live by b — b's mc-p2batt checkpoint 6 min
+  old; b shipped it as #3765→`4dc509c` while I ran). Normal ladder: halt none; steer
+  none; `next` #1712 is waiting-jon (research lane); game-queue empty; all feedback
+  QA-held (#3761 building-qa, #3244/#2971 waiting-jon) → QA-borrow blocked (live QA
+  mini+studio) → flagship null → NEVER-DRY (#1571).
+- **Honest never-dry audit** (kick said `KICK PAC-MAN 0 weak`, tied at 1: Pacman/
+  Frogger/Adventure/Rogue/Pinball). Excluded with evidence: Pacman's only gap is the
+  drive-script harness job already filed #3755 (check-only ≠ gameplay, #1571);
+  Frogger's bullet self-closes in its own prose (driver-horizon note — leave);
+  **Adventure** "gate rite keeps no written manual" was STALE — the #1572 guidance
+  tab teaches the rite (registry `guide:`, nine adventurecheck pins) → marked CLOSED
+  by audit; **Rogue** lamp/oil unsourced (Wikipedia §Gameplay items list 2026-11-27;
+  torches/oil are the Moria/Hack lineage) → marked **BLOCKED** (#3695 precedent).
+  Both marks rode my PR.
+- **Shipped #3766** (PR #3776, squash `9d35638`): **PINBALL — the rescue shows**.
+  `gs.kbSweep` (18 ticks, decays with the flash, cleared by resetBall) + `gs.kbSweepL`
+  ride the sim; the renderer chases a white head + fading tail + hot lane-bed up the
+  SAVE'S OWN COLUMN (`gs.kbSweepL ? tb.kbL : tb.kb`) — one device-selected law, both
+  saves, both cabinets (replaces #3468's left-only outlane-guide sweep; the right
+  save flashed alone and nothing was gated). Grapple voice (clunk+snap+ring, #3468)
+  kept and pinned static vs the ramp blip. Display-only: a sim pin proves `stateHash`
+  never sees the signal.
+- **Proof:** pinballcheck §8c +10 pins → 342/342; +6 named mutants
+  (kbSweepR/L/Sticky/Squat/Side/Whoosh) → ALL 31 die; pinballplay live pixel leg
+  (kbDrop('L') after the SET re-arm, white head/tail sampled mid-sweep) 2/2 runs;
+  lint:mario/fps/ai + build green; adventurecheck 231/0, roguecheck 210/0 (the
+  README marks touched grep'd prose). Filed `QA — PINBALL: polish pass after the
+  rescue chase (#3776)` (#3800, feedback) owning lite-size legibility, grapple
+  phone-mix, chase length (lit-hierarchy + re-dress already owned #3793/#3794).
+- jonq: nothing ANSWERED/DEFAULTED to execute; asked nothing new.
 
 ## Harness facts paid this session (kept so lanes stop re-paying)
-- **`__game.step()` closes the loop lock until `__game.release()`.** Any
-  wall-clock assertion after a scripted drive (fuse rates, timers) must call
-  `window.__game.release()` first or rAF never resumes and the clock stands still.
-- **A run-wide fuse touches every long rig.** kongcheck barrel-law scans
-  (360 s, attract:false) now capture+reset mid-scan and measure a frozen world;
-  physics rigs top the counter via `noFuse(gs)` (kongcheck-local). Keep the
-  fuse LIVE only where laps bank (it resets) and prove `caps===0` there.
-- **`parseGaps` filters whole bullets by `CLOSED by #N`.** Closing half a
-  multi-law bullet while the other half stays open requires SPLITTING the
-  bullets, or the open half silently leaves the gaps list.
-- No golden hashes are pinned in contractcheck/kongcheck — `stateHash` format
-  changes self-replay clean (grep for `samples.push` only compares runs).
-- 3000-tick budget: a watch lap here is ~850 ticks, so a 50 s fuse has 3.5×
-  margin — measure lap time before picking any run-wide timer.
+- **Red main #2176 while a PR waits:** the fix (#3772, roster-regex tolerating extra
+  entry fields) merged after my fork — rebase onto it, then main-ok needs a NEW green
+  nightly: `gh workflow run nightly.yml --ref main`. **nightly.yml concurrency
+  CANCELS in-flight dispatches** — two lanes waiting on green main cancel each
+  other; watch the NEWEST run id and stop re-dispatching (mine got cancelled twice).
+- **`import` of nightlybot.mjs runs the whole bot** (no import guard) — diff rosters
+  with regex over both sources, never by importing.
+- **pinballcheck's mutant flag is `--mutate`** (not `--mutant`); `--mutate=<rule>`
+  per rule; RULES must name every anchor or the walk under-counts.
+- A sim signal set inside the physics phase is decayed by the SAME tick's tail —
+  kbSweep reads 17 right after the fire step, not 18. Pin post-decay values.
+- pinballplay §8b's proven left-save drop is (165, 556); canvas backing store is raw
+  W×H so `getImageData` works in table coords directly.
+- Jalfern prod verify: SPA rewrite answers `/retrogames/*` with index HTML, so
+  grepping an asset URL can hit stub HTML ("index-*.js" = 15 bytes) — that is NOT
+  staleness proof; Vercel check on the merge head + `git grep` on origin/main is.
 
 ## BOARD facts at close
-- main `e63faf2`: today merged #3792 (DK fuse, mine), #3795 (pinball ghosts),
-  #3790 (gap-notes retire + word-boundary naming), #3787 (pinball DMD ring),
-  #3785 (fireflies), #3781/#3783/#3784 (earlier). building: none. building-qa:
-  #3794, #3793 (pinball dress/hierarchy), #3779 (koi demo). game-queue: empty.
-- idle-kick at close: `KICK DONKEY KONG -1 weak` — no unowned gap left on the
-  shelf; the point is QA-backlog naming (#3796), and its gap is owned.
-- halt/steer: 0. jonq: AWAITING #3791 (dry-shelf flagship question, filed by
-  another lane today — do NOT file a second dry-queue question), #3516, #3244,
-  #2971; #1712 waiting-jon `next` (research lane, not claimable here).
+- main `7627de7`: today merged #3765 (MC seat-2), #3772 (regex fix), #3776 (mine),
+  #3787/#3795 (pinball DMD ring, ghosts), #3792 (DK fuse — parallel slot-a session),
+  #3799 (EMBER INFERNO dress), docs #3764/#3797. building: none. building-qa:
+  #3793, #3779. game-queue: empty. idle-kick `KICK DONKEY KONG -1 weak` (named-only;
+  #3796 owns the flame gap — do NOT re-file). halt/steer: 0.
+- Rule 4 satisfied: game code merged (#3776).
 
 ## PLAYABLE on main right now
-- DONKEY KONG beats a fuse: yellow BONUS counter counts 5000.down while you
-  climb; saving her banks the remainder; dawdle 50 s and the ape takes her —
-  https://jalfern.com/retrogames/donkeykong
-- PINBALL speed-graded ghosts (#3795) + DMD ring fix (#3787); MC seat-2
-  batteries (`4dc509c`); PAC-MAN human-loop drive (#3781); DK walk-past 50.
+- PINBALL — arm a kickback, drain fast: the chase climbs the save's column, grapple
+  speaks — https://jalfern.com/retrogames/pinball
+- DK bonus fuse (`e63faf2`) + walk-past 50; MC seat-2 Z/X/C batteries + bonus city;
+  speed-graded ghosts (#3795); CENTIPEDE kill-pop; FROGGER duel-seat; ROGUE cart
+  laws; TIDEPOOL field guide.
 
 ## Open questions (links only — #605)
 - #3791, #3516, #3244, #2971, #1712 (all AWAITING; none mine this session).
 
 ## Next claims (for whoever is free)
-1. Board is dry by ownership: DONKEY KONG -1 weak is QA-named (#3796 owns the
-   flame gap). A builder kick naming DK index -1 has NO unowned gap — do not
-   re-file the flame gap; check the QA lane is alive, else it is the QA
-   borrow's job (#3796 is the concrete fix: fireball kills).
-2. QA lane holds #3793/#3794/#3779.
-3. Dry-shelf flagship question #3791 is AWAITING Jon — that is the only
-   dry-queue question on the board until its 2026-11-29 deadline.
+1. Dry by ownership: DK -1 weak is QA-named (#3796); Pinball's residuals are owned
+   (#3793 lit-hierarchy live, #3800 filed fresh). Check QA is alive — else #3796
+   (DK fireball kill) is the concrete borrow.
+2. #3755 pacmandrive (lane:forge harness job) stays open and claimable but is
+   check-only — take it only as a secondary, never as the session's ship.
+3. Dry-shelf flagship question #3791 AWAITING Jon (deadline 2026-11-29) — the only
+   dry-queue question; file no second.
 
 ## Slot state at handoff
 - :5173 stopped via `scripts/devstop.sh` at close; no other port touched.
-- Worktree `retrogames-forge-dk-timer-capture` pruned after the STATE docs PR.
-- STATE parked via `statepark.mjs park a`; shift report pushed.
-- STATE commit to main goes through the docs PR opened with this report
-  (game merged this session, so the STATE fold-in is allowed; merge only via
-  `scripts/forge-merge.sh`).
+- Worktree `~/Dev/retrogames-forge-pinball-kbsweep` pruned after #3776 merged
+  (it was already gone — a parallel cleanup took it; entry pruned clean).
+- STATE parked via `statepark.mjs park a`; shift report pushed. STATE commit to main
+  rides the docs PR opened with this report (game merged this session); merge only
+  via `scripts/forge-merge.sh`.
