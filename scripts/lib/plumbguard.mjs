@@ -26,11 +26,13 @@ function git(args, cwd) {
     return execFileSync('git', args, { cwd, encoding: 'utf8' });
 }
 
-// Porcelain entries except STATE.md. Returns [{ xy, paths }]; rename/copy entries
-// keep both sides so restoring either side still names the real files.
+// Porcelain entries except STATE.md (-uall: untracked dirs must expand to the
+// real files — collapsed `?? src/` would park whole source trees sight-unseen).
+// Returns [{ xy, paths }]; rename/copy entries keep both sides so restoring
+// either side still names the real files.
 function foreignDirt(cwd) {
     let out;
-    try { out = git(['status', '--porcelain'], cwd); }
+    try { out = git(['status', '--porcelain', '-uall'], cwd); }
     catch { return null; } // not a checkout — caller decides
     const dirt = [];
     for (const line of out.split('\n')) {
@@ -78,9 +80,14 @@ export function park(root) {
     if (!dirt.length) { console.log(`plumbguard: ${root} clean — nothing to park`); return 0; }
     const stamp = new Date().toISOString().replace(/[-:]/g, '').replace(/\..+/, '');
     const dest = path.join(process.env.CORPSE_DIR || '/tmp/forge', `corpse-${stamp}-${process.pid}`);
-    fs.mkdirSync(dest, { recursive: true });
-    fs.writeFileSync(path.join(dest, 'status-at-discovery.txt'), git(['status', '--porcelain'], root));
-    try { fs.writeFileSync(path.join(dest, 'foreign-dirt.patch'), git(['diff'], root)); } catch { /* nothing tracked-diffable */ }
+    try {
+        fs.mkdirSync(dest, { recursive: true });
+        fs.writeFileSync(path.join(dest, 'status-at-discovery.txt'), git(['status', '--porcelain'], root));
+        try { fs.writeFileSync(path.join(dest, 'foreign-dirt.patch'), git(['diff'], root)); } catch { /* nothing tracked-diffable */ }
+    } catch (e) {
+        console.error(`plumbguard: cannot open park dir ${dest}: ${e.message.split('\n')[0]} — dirt stays put, refuse to merge over it (#3735)`);
+        return 2;
+    }
     let restored = true;
     const tracked = [];
     for (const d of dirt) {
@@ -90,7 +97,13 @@ export function park(root) {
             try {
                 if (fs.existsSync(src)) {
                     fs.mkdirSync(path.dirname(dst), { recursive: true });
-                    fs.renameSync(src, dst); // move: preserved AND removed at once
+                    if (fs.statSync(src).isDirectory()) {
+                        fs.cpSync(src, dst, { recursive: true });
+                        fs.rmSync(src, { recursive: true, force: true });
+                    } else {
+                        fs.copyFileSync(src, dst); // copy+unlink: rename dies cross-device
+                        fs.unlinkSync(src);
+                    }
                 } // deleted tracked files: nothing to copy; the diff records the loss
             } catch (e) {
                 restored = false;

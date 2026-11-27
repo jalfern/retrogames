@@ -180,6 +180,7 @@ function buildSandbox(tag, { dirtySquat = false, merge = 'trap', withSquat = tru
     fs.copyFileSync(path.join(SRC, 'scripts', 'main-ok.sh'), path.join(plumb, 'scripts', 'main-ok.sh'));
     fs.copyFileSync(path.join(SRC, 'scripts', 'forge-merge.sh'), path.join(plumb, 'scripts', 'forge-merge.sh'));
     fs.copyFileSync(path.join(SRC, 'scripts', 'lib', 'mergeclean.mjs'), path.join(plumb, 'scripts', 'lib', 'mergeclean.mjs'));
+    fs.copyFileSync(path.join(SRC, 'scripts', 'lib', 'plumbguard.mjs'), path.join(plumb, 'scripts', 'lib', 'plumbguard.mjs'));
     git(['add', '-A'], plumb, env); git(['commit', '-qm', 'seed'], plumb, env);
     git(['push', '-q', 'origin', 'main'], plumb, env);
     const base = git(['rev-parse', 'HEAD'], plumb, env).stdout.trim();
@@ -213,6 +214,10 @@ const remoteHeads = s => git(['ls-remote', '--heads', 'origin'], s.plumb, s.env)
 // /bin/zsh is the sandbox's shell (the scripts under proof carry #!/bin/zsh).
 // GitHub runners have none — same skip-green pattern watchrespawncheck (#2278)
 // documents: this proof is Studio-side law and rides the Studio nightly.
+// #3735: scenarios live in main() so plumbingcheck can import the sandbox
+// builder + fake gh above without replaying this suite as a side effect.
+export { GITCFG, FAKE_GH, buildSandbox };
+function main() {
 if (spawnSync('/bin/zsh', ['--version'], { encoding: 'utf8' }).status !== 0) {
     console.log('SKIP — /bin/zsh missing (GitHub runners): #3013 replay is proven where zsh lives (the Studio nightly), not faked here')
     process.exit(0)
@@ -378,3 +383,5 @@ say('J — the API fallback cannot smuggle a red through (#3269): a failure conc
 
 say(`mergecheck: ${pass} ok, ${fail} fail`);
 process.exit(fail ? 1 : 0);
+}
+if (process.argv[1] && fileURLToPath(import.meta.url) === fs.realpathSync(process.argv[1])) main();
