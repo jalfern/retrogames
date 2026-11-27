@@ -50,20 +50,6 @@ Ports: the browser checks read `DEV_PORT` (slot a 5173 / slot b 5178 / QA 5176).
   so the bonus is readable on a muted phone.
 - Oil drum is decor; the arcade's flame kills (spec unverifiable against ROMs
   in-repo). No score bonus timers; the timer-zero capture law is unmodelled.
-
-## Scoring honesty (#3761)
-
-Every point value here (jump arc 100, walk-past 50, rivet 100, lap 1000) is
-OUR house scoreboard law, pinned by kongcheck — NOT the arcade's ledger. The
-1981 §Scoring values could not be verified from sources this lane reaches:
-Wikipedia (current + 2023 revisions) lists the scoring CATEGORIES with no
-values; the DK fandom, the wiki.gg mirror, StrategyWiki and the operation-
-manual PDF (no text layer this harness can read) all refused or failed —
-full outputs on #3761. Community folklore prices hammer hits far above our
-100, so until ROM-grade material is cited in-repo: do NOT re-price on
-folklore, and never sell a number here as "the arcade's". The one scoring
-fact Wikipedia does carry: bonus life at 7,000 (unmodelled — we start with
-three lives and no bonus life; honest gap, #3761 item 3's family).
 - **CLOSED by #3622:** barrels meet ladders mid-air — see Corner pair below.
   (Was: a barrel meeting a ladder mid-air kept rolling; the edge-check could
   never set `falling=true` — gravity beats it to `vy>0` — so no airborne
@@ -192,3 +178,17 @@ the runner and attract demo refuse it (marked `barrelOnly`); the outside rung
 is purely the barrels' road down. R1 is a genuine corner shortcut the runner
 may take. `kongcheck` §corner pair pins geometry, mid-air take, once-per-
 barrel-per-ladder, dangling-foot retake and the runner refusal.
+
+## Scoring honesty (#3761)
+
+Every point value here (jump arc 100, walk-past 50, rivet 100, lap 1000) is
+OUR house scoreboard law, pinned by kongcheck — NOT the arcade's ledger. The
+1981 §Scoring values could not be verified from sources this lane reaches:
+Wikipedia (current + 2023 revisions) lists the scoring CATEGORIES with no
+values; the DK fandom, the wiki.gg mirror, StrategyWiki and the operation-
+manual PDF (no text layer this harness can read) all refused or failed —
+full outputs on #3761. Community folklore prices hammer hits far above our
+100, so until ROM-grade material is cited in-repo: do NOT re-price on
+folklore, and never sell a number here as "the arcade's". The one scoring
+fact Wikipedia does carry: bonus life at 7,000 (unmodelled — we start with
+three lives and no bonus life; honest gap, #3761 item 3's family).
