@@ -46,11 +46,15 @@
   const L = { cx: 0, cy: 0, rx: 0, ry: 0, wobblePh: [Math.PI / 2, Math.PI / 2, Math.PI / 2] };
   function layout() {
     const portrait = H > W;
+    // Camera: pool grows toward the viewer so creatures read large inside the frame.
+    // Decor (pebbles/weeds) scales with the same zoom; creatures get a further bump.
+    const ZOOM = portrait ? 1.18 : 1.12;
     L.cx = W / 2;
     L.cy = portrait ? H * 0.47 : H / 2;
-    L.rx = portrait ? W * 0.46 : W * 0.46;
-    L.ry = portrait ? H * 0.44 : H * 0.44;
-    L.zs = Math.max(0.72, Math.min(1.45, L.rx / 340));
+    L.rx = W * 0.46 * ZOOM;
+    L.ry = H * 0.44 * ZOOM;
+    L.zs = ZOOM * 1.55;   // creatures: ~thumb-width crabs
+    L.zd = ZOOM * 1.18;   // decor: pebbles, weeds
   }
   function blobRadiusAt(theta, seedBump) {
     const ph = L.wobblePh;
@@ -115,22 +119,34 @@
   let poolBase = null;  // offscreen sand + pebbles + weed base
   let causticsTex = null;
   function makeCausticsTexture() {
-    const w = 260, h = 260;
+    const w = 300, h = 300;
     causticsTex = document.createElement('canvas');
     causticsTex.width = w; causticsTex.height = h;
     const c = causticsTex.getContext('2d');
     const img = c.createImageData(w, h);
     const d = img.data;
+    // organic web of highlights, not straight bands: hash-based value noise
+    const hash = (ix, iy) => {
+      const n = Math.sin(ix * 127.1 + iy * 311.7) * 43758.5453;
+      return n - Math.floor(n);
+    };
+    const fade = t => t * t * (3 - 2 * t);
+    const vnoise = (x, y) => {
+      const ix = Math.floor(x), iy = Math.floor(y);
+      const fx = x - ix, fy = y - iy;
+      const a = hash(ix, iy), b = hash(ix + 1, iy), cc = hash(ix, iy + 1), dd = hash(ix + 1, iy + 1);
+      const ux = fade(fx), uy = fade(fy);
+      return a + (b - a) * ux + (cc - a) * uy + (a - b - cc + dd) * ux * uy;
+    };
+    const octave = (x, y) => vnoise(x, y) + 0.5 * vnoise(x * 2.31 + 3.7, y * 2.31 + 1.3) + 0.28 * vnoise(x * 4.77 + 8.2, y * 4.77 + 5.9);
     for (let y = 0; y < h; y++) {
       for (let x = 0; x < w; x++) {
-        const fx = Math.sin(2 * Math.PI * (3 * x / w) + Math.sin(2 * Math.PI * (2 * y / h) + 0.8) * 2.5) * 0.45
-                + Math.sin(2 * Math.PI * (4 * y / h) + Math.cos(2 * Math.PI * (2 * x / w) + 1.7) * 2.1) * 0.35
-                + Math.sin(2 * Math.PI * (2 * (x + y) / w) + Math.sin(2 * Math.PI * (1 * x / w)) * 3.0) * 0.20;
-        const v = Math.max(0, Math.min(1, (fx + 1) / 2));
-        // sharpen crest lines, denser strokes
-        const crest = Math.pow(Math.max(0, v - 0.38) / 0.62, 1.35);
+        const v = octave(x / w * 13.0, y / h * 13.0) / 1.78;  // crest field
+        // ridged: bright crest lines sit on irregular cell edges
+        const ridge = 1 - Math.abs(2 * v - 1);
+        const crest = Math.pow(Math.max(0, ridge - 0.46) / 0.54, 2.4);
         const i = (y * w + x) * 4;
-        d[i] = 235; d[i + 1] = 246; d[i + 2] = 250; d[i + 3] = Math.floor(crest * 255);
+        d[i] = 235; d[i + 1] = 246; d[i + 2] = 250; d[i + 3] = Math.floor(Math.min(1, crest) * 255);
       }
     }
     c.putImageData(img, 0, 0);
@@ -237,11 +253,34 @@
       c.fillStyle = g;
       c.beginPath(); c.arc(x, y, r, 0, Math.PI * 2); c.fill();
     }
-    // sky reflection band along the top edge of the pool
-    const skyBand = c.createLinearGradient(0, H * 0.04, 0, H * 0.48);
-    skyBand.addColorStop(0, 'rgba(224,242,246,0.22)');
-    skyBand.addColorStop(1, 'rgba(224,242,246,0)');
-    c.fillStyle = skyBand;
+    // watercolour wash: soft irregular splotches in the sand, so the plate sits on paper
+    const rWash = mulberry(9099);
+    const washPalette = ['#d9c284', '#bfa068', '#8f7a55', '#9db088', '#d2b678', '#8e8c60'];
+    for (let i = 0; i < 16; i++) {
+      const a = rWash() * Math.PI * 2;
+      const rr = 0.15 + rWash() * 0.6;
+      const x = L.cx + Math.cos(a) * L.rx * rr;
+      const y = L.cy + Math.sin(a) * L.ry * rr;
+      const rad = (0.10 + rWash() * 0.16) * Math.min(W, H);
+      const col = washPalette[Math.floor(rWash() * washPalette.length)];
+      const g = c.createRadialGradient(x, y, 0, x, y, rad);
+      g.addColorStop(0, col + '2e');
+      g.addColorStop(1, col + '00');
+      c.fillStyle = g;
+      c.beginPath(); c.arc(x, y, rad, 0, Math.PI * 2); c.fill();
+    }
+    // organic rim-following shallow shading: soft layers hug the pool edge, never a straight band
+    for (const [lw, al] of [[56, 0.10], [34, 0.09], [18, 0.11]]) {
+      blobPath(c, 0);
+      c.strokeStyle = `rgba(66,106,90,${al})`;
+      c.lineWidth = lw;
+      c.stroke();
+    }
+    // warm sun light pooling on the lower-right rim (field-guide plate feel)
+    const sunLight = c.createRadialGradient(L.cx + L.rx * 0.45, L.cy + L.ry * 0.62, 0, L.cx + L.rx * 0.45, L.cy + L.ry * 0.62, L.ry * 0.85);
+    sunLight.addColorStop(0, 'rgba(238,214,150,0.13)');
+    sunLight.addColorStop(1, 'rgba(238,214,150,0)');
+    c.fillStyle = sunLight;
     c.fillRect(0, 0, W, H);
     // deeper pockets under the ledges
     for (const p of pockets) {
@@ -267,7 +306,7 @@
         y = L.cy + Math.sin(a) * L.ry * rr;
         tries++;
       } while (tries < 20 && !pointInPool(x, y, 0.12));
-      const s = (3.5 + r4() * 8) * L.zs;
+      const s = (3.5 + r4() * 8) * L.zd;
       const tone = r4();
       c.fillStyle = tone < 0.33 ? '#7d6e58' : tone < 0.66 ? '#655a49' : '#6b6470';
       c.strokeStyle = 'rgba(22,19,14,0.72)';
@@ -668,27 +707,38 @@
     c.clip();
     c.globalCompositeOperation = 'screen';
     const pat = c.createPattern(causticsTex, 'repeat');
-    const sx = (t * 11) % 260;
-    const sy = (t * 6.5) % 260;
+    // drifting crests: two layers at different rates for depth
+    const sx = (t * 9) % 300;
+    const sy = (t * 5.5) % 300;
     c.translate(-sx, -sy);
-    c.globalAlpha = 0.40;
+    c.globalAlpha = 0.32;
     c.fillStyle = pat;
-    c.fillRect(0, 0, W + 260, H + 260);
+    c.fillRect(0, 0, W + 300, H + 300);
     c.globalAlpha = 0.10;
-    c.translate(sx * 0.3 - Math.floor(W / 2), sy * 0.3 - Math.floor(H / 2));
-    c.fillRect(0, 0, W + 260, H + 260);
+    c.translate(sx * 0.35 + Math.sin(t * 0.21) * 40 - Math.floor(W / 2),
+                sy * 0.35 + Math.cos(t * 0.17) * 30 - Math.floor(H / 2));
+    c.fillRect(0, 0, W + 300, H + 300);
     c.restore();
   }
   function drawSheen(c, t) {
-    // sky reflection: soft moving sheen across the water surface
+    // sky reflection: soft irregular glow drifting over the surface — organic, never a straight band
     c.save();
     blobPath(c, 0);
     c.clip();
-    const sheen = c.createLinearGradient(0, H * 0.15, 0, H * 0.95);
-    const glow = 0.10 + 0.05 * Math.sin(t * 0.8);
-    sheen.addColorStop(0, `rgba(214,232,240,${glow})`);
-    sheen.addColorStop(0.5, `rgba(190,220,225,${glow * 0.35})`);
-    sheen.addColorStop(1, `rgba(150,200,205,${glow * 0.22})`);
+    // broad ambient sky wash, very light
+    const amb = c.createRadialGradient(L.cx, L.cy - L.ry * 0.35, 0, L.cx, L.cy - L.ry * 0.35, L.ry * 1.35);
+    amb.addColorStop(0, `rgba(222,236,241,${0.065 + 0.02 * Math.sin(t * 0.6)})`);
+    amb.addColorStop(1, 'rgba(222,236,241,0)');
+    c.fillStyle = amb;
+    c.fillRect(0, 0, W, H);
+    // sun-glare lobe: one soft caustic-adjacent bright region, slowly wandering
+    const gx = L.cx + Math.sin(t * 0.19 + 1.2) * L.rx * 0.34;
+    const gy = L.cy - L.ry * 0.30 + Math.cos(t * 0.23 + 0.4) * L.ry * 0.18;
+    const glow = 0.14 + 0.05 * Math.sin(t * 0.9);
+    const sheen = c.createRadialGradient(gx, gy, 0, gx, gy, L.ry * 0.85);
+    sheen.addColorStop(0, `rgba(228,240,243,${glow})`);
+    sheen.addColorStop(0.55, `rgba(206,226,230,${glow * 0.45})`);
+    sheen.addColorStop(1, 'rgba(190,215,220,0)');
     c.fillStyle = sheen;
     c.fillRect(0, 0, W, H);
     c.restore();
@@ -716,7 +766,7 @@
       const rr = 0.68 + r() * 0.22;
       const x = L.cx + Math.cos(a) * L.rx * rr;
       const y = L.cy + Math.sin(a) * L.ry * rr;
-      const h = (20 + r() * 26) * L.zs;
+      const h = (20 + r() * 26) * L.zd;
       const sway = Math.sin(t * 1.3 + i * 1.7) * 0.14;
       c.strokeStyle = i % 2 ? 'rgba(46,94,58,0.9)' : 'rgba(56,112,66,0.9)';
       c.lineWidth = 2.2;
@@ -1025,34 +1075,59 @@
   function drawWave(c) {
     if (!wave.active) return;
     const t = wave.t;
+    // organic ragged leading sheet sweeping across the pool
+    const frontY = L.cy - L.ry + (t * 1.35) * (L.ry * 2.35);
+    const waveAlpha = t < 0.15 ? t / 0.15 : (t > 0.8 ? (1 - t) / 0.2 : 1);
+    const edgeY = x => frontY
+      + Math.sin(x * 0.045 + t * 7) * 7
+      + Math.sin(x * 0.11 + t * 4.3) * 3
+      + Math.sin(x * 0.021 + t * 3.1) * 9
+      + Math.sin(x * 0.017 + 2.2 + t * 5.2) * 5;
     c.save();
     blobPath(c, 0);
     c.clip();
-    // leading sheet sweeps from the top of the pool down
-    const frontY = L.cy - L.ry + (t * 1.35) * (L.ry * 2.35);
-    const waveAlpha = t < 0.15 ? t / 0.15 : (t > 0.8 ? (1 - t) / 0.2 : 1);
-    const bandTop = Math.max(0, frontY - L.ry * 1.5);
-    const grad = c.createLinearGradient(0, bandTop, 0, frontY);
-    grad.addColorStop(0, `rgba(120,180,186,0)`);
-    grad.addColorStop(1, `rgba(96,162,170,${0.34 * waveAlpha})`);
+    // teal wash trailing the sheet: fades ahead of the line, never a hard edge
+    const grad = c.createLinearGradient(0, Math.max(0, frontY - L.ry * 1.5), 0, frontY + L.ry * 0.55);
+    grad.addColorStop(0, 'rgba(120,180,186,0)');
+    grad.addColorStop(0.68, `rgba(96,162,170,${0.18 * waveAlpha})`);
+    grad.addColorStop(1, `rgba(96,162,170,${0.02 * waveAlpha})`);
     c.fillStyle = grad;
-    c.fillRect(0, 0, W, frontY);
-    // foam leading edge
-    c.strokeStyle = `rgba(240,248,238,${0.75 * waveAlpha})`;
-    c.lineWidth = 4;
-    c.lineCap = 'round';
-    c.beginPath();
-    for (let x = 0; x <= W; x += 14) {
-      const y = frontY + Math.sin(x * 0.045 + t * 7) * 7 + Math.sin(x * 0.11 + t * 4.3) * 3;
-      if (x === 0) c.moveTo(x, y); else c.lineTo(x, y);
+    c.fillRect(0, 0, W, frontY + L.ry * 0.55);
+    // inching into the foam: two semi-transparent skins + bright ragged core
+    for (const [lw, al] of [[15, 0.20], [7, 0.38], [2.6, 0.85]]) {
+      c.beginPath();
+      for (let x = -10; x <= W + 10; x += 5) {
+        const y = edgeY(x) + Math.sin(x * 0.7 + t * 9.2) * 1.6;
+        if (x <= -10) c.moveTo(x, y); else c.lineTo(x, y);
+      }
+      c.strokeStyle = `rgba(242,250,240,${al * waveAlpha})`;
+      c.lineWidth = lw;
+      c.lineCap = 'round';
+      c.stroke();
     }
-    c.stroke();
-    // sand stir: tiny specks riding the front
+    // foam flecks scattered along the sheet and slightly ahead — an irregular froth line
     const r = mulberry(999);
-    c.fillStyle = `rgba(228,214,168,${0.55 * waveAlpha})`;
-    for (let i = 0; i < 34; i++) {
+    c.fillStyle = `rgba(246,250,238,${0.62 * waveAlpha})`;
+    for (let i = 0; i < 44; i++) {
       const x = r() * W;
-      const yy = frontY + Math.sin(x * 0.045 + t * 7) * 7 + (r() - 0.6) * 26;
+      const taper = Math.min(1, Math.min(x, W - x) / (W * 0.14));
+      if (r() > taper) continue;
+      const ahead = r() < 0.42 ? -6 - r() * 12 : (r() - 0.5) * 14;
+      const yy = edgeY(x) + ahead;
+      const rr = 0.6 + r() * 1.9;
+      c.beginPath(); c.arc(x, yy, rr, 0, Math.PI * 2); c.fill();
+      // faint crest tail behind each fleck
+      if (r() > 0.62) {
+        c.fillStyle = `rgba(238,246,232,${0.18 * waveAlpha})`;
+        c.beginPath(); c.arc(x + (r() - 0.5) * 10, yy + rr + 3 + r() * 7, rr * 0.6, 0, Math.PI * 2); c.fill();
+        c.fillStyle = `rgba(246,250,238,${0.62 * waveAlpha})`;
+      }
+    }
+    // sand stir: tiny specks riding the front
+    c.fillStyle = `rgba(228,214,168,${0.45 * waveAlpha})`;
+    for (let i = 0; i < 30; i++) {
+      const x = r() * W;
+      const yy = edgeY(x) + (r() - 0.6) * 24;
       c.fillRect(x, yy, 1.6, 1.2);
     }
     c.restore();
