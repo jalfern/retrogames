@@ -1181,6 +1181,12 @@ if (process.argv.includes('--mutant')) {
         ['#3711: silo-first is gone (dead magazines under deficit)', S,
             `if (cluster) live.sort((a, b) => (isSiloTarget(b) ? 1 : 0) - (isSiloTarget(a) ? 1 : 0) || b.y - a.y)`,
             `if (cluster) live.sort((a, b) => b.y - a.y)`],
+        ['#3698: the immune pass stops marking (shimmer never fires)', S,
+            `gs.resist.push({ x: m.x, y: m.y, t: 10 })`,
+            `if (gs.resist) { /* shimmer never marks */ }`],
+        ['#3698: the attract smart ad never flies (the wave-7 threat is never taught)', S,
+            `if (gs.tick > 0 && gs.tick % ATTRACT_SMART_EVERY === ATTRACT_SMART_EVERY / 2) {`,
+            `if (false && gs.tick > 0) {`],
     ]
     let died = 0
     for (const [name, file, from, to] of MUTANTS) {
