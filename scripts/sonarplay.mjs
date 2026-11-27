@@ -420,6 +420,86 @@ for (let i = 0; i < 900; i++) {
         `peak=${ringPeak} plain=${ringPlain}`)
 }
 
+// ---- #3713 item 4: lit open water carries hash grain (pixels) -----------
+// Water used to be ONE flat rgba fill — the poster-board read the parent art
+// pass flagged against the grained rock. Gate: any WATER cell (truth openAt,
+// harness eyes only, like eels/pearlCells) 3–8 rings from the diver that is
+// lit-and-settled — memAge (knowledge, the knownAt family) in 9..50 ticks:
+// past the frontier stroke, past the ring trail, past the fresh shell, and
+// bright enough that two specks cannot round onto one byte; before the fade —
+// and clear of the vent, pearls and contact marks. Its 12×12
+// interior must show ≥3 distinct green levels: the per-cell tonal base plus
+// its two silt specks. A flat fill shows ONE. State-independent by design: a
+// mid-suite cell may ride ANY ping's memory, so an upstream eel or a crowded
+// board cannot starve it — if none is settled yet, one honest ping and the
+// page-side poll wait for the front to cross and settle a dark candidate.
+{
+    let grainOk = false, grainSeen = 0, grainCell = '-', recoveries = 0
+    const levels = (x, y) => page.evaluate(([x, y]) => {
+        const c = document.querySelector('canvas[data-sonar-stage]')
+        const d = c.getContext('2d').getImageData(x * 16 + 2, y * 16 + 2, 12, 12).data
+        const s = new Set()
+        for (let i = 1; i < d.length; i += 4) s.add(d[i])         // green channel
+        return s.size
+    }, [x, y])
+    const scan = s0 => page.evaluate(([p, marks, pearls, vent]) => {
+        const settled = [], dark = []
+        for (let dy = -8; dy <= 8; dy++) for (let dx = -8; dx <= 8; dx++) {
+            const cheb = Math.max(Math.abs(dx), Math.abs(dy))
+            if (cheb < 3 || cheb > 8) continue
+            const x = p.x + dx, y = p.y + dy
+            if (x < 1 || y < 1 || x > 47 || y > 25) continue
+            if (!window.__sonarTest.openAt(x, y)) continue
+            if (Math.abs(x - vent[0]) <= 1 && Math.abs(y - vent[1]) <= 1) continue
+            if (marks.some(m => m.x === x && m.y === y)) continue
+            if (pearls.some(q => q.x === x && q.y === y)) continue
+            const age = window.__sonarTest.memAge(x, y)
+            if (age >= 9 && age <= 50) settled.push({ x, y })
+            else if (age < 0) dark.push([x, y])
+        }
+        return { settled, dark }
+    }, [s0.player, s0.contactMarks, s0.pearlCells, [s0.vent.x, s0.vent.y]])
+    const sample = async cell => {
+        const lv = await levels(cell.x, cell.y)
+        if (lv > grainSeen) { grainSeen = lv; grainCell = `${cell.x},${cell.y}@a${await page.evaluate(c => window.__sonarTest.memAge(c.x, c.y), cell)}` }
+        if (lv >= 3) grainOk = true
+    }
+    for (let attempt = 0; attempt < 12 && !grainOk; attempt++) {
+        const s0 = await probe()
+        if (s0.screen !== 'play') {
+            if (++recoveries > 4) break
+            await tap('KeyT'); await wait(1100); attempt--
+            continue
+        }
+        const sc = await scan(s0)
+        for (const cell of sc.settled.slice(0, 3)) { await sample(cell); if (grainOk) break }
+        if (grainOk || !sc.dark.length || s0.cooldown > 1) {     // nothing to light (yet) — new vantage
+            if (!grainOk) {
+                const h = await hint()
+                if (h && h !== 'PING') await swim(h)
+                await wait(150)
+            }
+            continue
+        }
+        await tap('Space')                                        // one honest ping…
+        const lit = await page.evaluate(cells => new Promise(res => {   // …wait for a front to CROSS and settle
+            const t0 = performance.now()
+            const poll = () => {
+                for (const [x, y] of cells) {
+                    const a = window.__sonarTest.memAge(x, y)
+                    if (a >= 9 && a <= 50) return res({ x, y })
+                }
+                if (performance.now() - t0 > 2200) return res(null)
+                setTimeout(poll, 60)
+            }
+            poll()
+        }), sc.dark)
+        if (!lit) continue
+        await sample(lit)
+    }
+    r.check('lit open water carries hash grain (pixels)', grainOk, `levels=${grainSeen} @ ${grainCell}`)
+}
+
 // ---- #2594 pearl memory, in pixels + real keys: bright when heard, a dim
 // glint when remembered, bright again on re-hearing. Organic ghosting: after
 // one real SPACE ping the diver simply WAITS (the core dodge), so no wavefront

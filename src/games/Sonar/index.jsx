@@ -269,8 +269,27 @@ const SonarGame = () => {
                     ctx.fillRect(px + 1 + Math.floor(sp2 * (TS - 5)), py + 1 + Math.floor(sp3 * (TS - 4)), 3, 2)
                     ctx.fillRect(px + 1 + Math.floor(sp3 * (TS - 4)), py + 2 + Math.floor(sp2 * (TS - 6)), 2, 2)
                 } else {
-                    ctx.fillStyle = `rgba(20,${60 + Math.floor(inten * 60 + fr * 30)},${90 + Math.floor(inten * 70 + fr * 40)},${(0.16 + inten * 0.4 + fr * 0.15).toFixed(3)})`
+                    // #3713 item 4: open water was ONE flat fill — beside the grained
+                    // rock faces it read like poster board. Same speck family as the
+                    // rock branch: a per-cell tonal drift (every cell sits on its own
+                    // patch of seabed), two dim silt specks while the cell is known,
+                    // and a bright drift fleck that rides ONLY the fresh shell — the
+                    // wavefront carries a little glitter through the water, gone once
+                    // the memory settles. Knowledge-only: positions are per-cell
+                    // constants, brightness reads mem age (inten/fr), never truth.
+                    const sp = speck(x, y)
+                    const sp2 = speck(y + 11, x + 7)
+                    const sp3 = speck(x * 7 + 3, y * 2 + 1)
+                    ctx.fillStyle = `rgba(20,${60 + Math.floor(inten * 60 + fr * 30 - sp * 8)},${90 + Math.floor(inten * 70 + fr * 40 - sp * 10)},${(0.16 + inten * 0.4 + fr * 0.15).toFixed(3)})`
                     ctx.fillRect(px + 1, py + 1, TS - 2, TS - 2)
+                    ctx.fillStyle = `rgba(0,6,14,${(0.14 + sp * 0.12).toFixed(3)})`
+                    ctx.fillRect(px + 2 + Math.floor(sp2 * (TS - 7)), py + 2 + Math.floor(sp3 * (TS - 7)), 3, 2)
+                    ctx.fillStyle = `rgba(0,11,20,${(0.14 + sp * 0.12).toFixed(3)})`
+                    ctx.fillRect(px + 2 + Math.floor(sp3 * (TS - 6)), py + 3 + Math.floor(sp2 * (TS - 8)), 2, 2)
+                    if (fr > 0) {
+                        ctx.fillStyle = `rgba(80,170,210,${(fr * 0.2 + sp * 0.05).toFixed(3)})`
+                        ctx.fillRect(px + 3 + Math.floor(sp2 * (TS - 8)), py + 4 + Math.floor(sp3 * (TS - 9)), 2, 1)
+                    }
                 }
                 if (age <= 1) {                                    // the frontier itself
                     ctx.strokeStyle = 'rgba(140,230,255,0.9)'; ctx.lineWidth = 2
@@ -562,6 +581,14 @@ const SonarGame = () => {
                     }
                 },
                 knownAt: (x, y) => known(gs, idx(x, y)),
+                // truth for the harness's eyes only, like `eels`/`pearlCells`: the
+                // #3713 grain gate must pick WATER cells (the flat-fill bug is a
+                // water-branch bug; rock must not prove it).
+                openAt: (x, y) => gs.grid[idx(x, y)] !== ROCK,
+                // knowledge (mem arrival age in ticks, −1 never-lit) — same family
+                // as knownAt; the #3713 grain gate needs *when* a cell lit to
+                // sample it settled (past stroke/fresh-shell/trail, before fade).
+                memAge: (x, y) => (gs.mem[idx(x, y)] < 0 ? -1 : gs.tick - gs.mem[idx(x, y)]),
                 // #2383: every intended haptic pulse, "tick:ms" — motors stay
                 // silent under the harness (window.__game); the intent is logged
                 // so sonarplay can still prove the rule fired.

@@ -45,7 +45,7 @@ npm run sonarcheck            # 255 checks: gen, wavefront honesty, determinism,
                               # vent signal fresh/ghost/dark boundaries (#2367),
                               # attract showcase (#2383), vent-win crossings
 DEV_PORT=<p> npm run watchcheck -- --only sonar   # 182: seat pilot + source pins
-DEV_PORT=<p> npm run sonarplay                    # real keys + pixels (#2365/#2367/#2383)
+DEV_PORT=<p> npm run sonarplay                    # real keys + pixels (#2365/#2367/#2383/#3713)
 ```
 
 ## The pearl's echo (#2601)
@@ -69,6 +69,23 @@ the fade edge) plus a re-hearing revival, and a `ventRipple:false` mutant dies
 by name. Each live ping also strokes a faint expanding ring (with three trailing
 echoes) from its source — the ring→distance mapping the #2365 heat cue leans on,
 now visible; it draws from `gs.pings`, cells still light solely by BFS arrival.
+
+## Water grain (#3713)
+Water used to be one flat rgba fill per cell — beside the grained rock faces it
+read like poster board (docs/ART.md bar 3). The fill now carries the same speck
+family rock uses: a per-cell tonal drift (every lit cell sits on its own patch
+of seabed, ±8 blue/green, riding the fade), two dim silt specks at hash offsets
+while the cell is known, and a bright drift fleck gated to `fr` alone — so the
+wavefront carries a little glitter through open water and it is gone once the
+memory settles. Knowledge-only as ever: positions are per-cell constants, tones
+read `mem` age, never truth. Kept under the pixel baselines it shares a canvas
+with: the grain's red top stays far below the cold-mark floor (r ≥ 85), the silt
+darkens `plain` where the ring-spike gate measures, and ghost pearl cells are
+knowledge-dark so the branch never draws there. `sonarplay` pins it: any water
+cell 3–8 rings from the diver whose knowledge age is settled (`memAge` 9–50 —
+past stroke, trail and fresh shell, into readable brightness; `openAt` is
+truth, harness eyes only, like `eels`), sampled in its interior, must show
+≥3 distinct green levels; a flat fill shows one.
 
 ## The seed ledger made actionable (#2601 items 4+5)
 The over screen printed `seed 636f6666` and the DEEP LOG printed one per row,
