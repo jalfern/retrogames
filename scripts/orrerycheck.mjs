@@ -44,6 +44,8 @@ async function main() {
   ok('exposes __orreryTest DEV hook', /__orreryTest/.test(src))
   ok('no network assets', !/fetch\(|XMLHttpRequest|new Image\(|new Audio\(/.test(src))
   ok('has #hud caption (creditscheck contract)', /id="hud"/.test(src))
+  ok('hud teaches both verbs up front (#3780)',
+    /drag .*wind time/.test(src) && /tap a planet to zoom/.test(src))
   ok('credits + feedback injectors loaded', /credits\.js/.test(src) && /feedback\.js/.test(src))
   const reg = readFileSync(resolve(ROOT, 'src/config/games.js'), 'utf8')
   ok('not registered in games.js (demos law)', !/orrery/i.test(reg))
@@ -93,6 +95,11 @@ async function main() {
       const frames2 = await page.evaluate(() => window.__orreryTest.frames)
       ok('rAF advancing (frames advance)', frames2 > frames1 + 4, `${frames1} → ${frames2}`)
 
+      // attract (#3780): the dial must be ALIVE on arrival — no static-scene confusion
+      const attractState = await page.evaluate(() => ({ wind: window.__orreryTest.wind(), on: window.__orreryTest.attract() }))
+      ok('attract: self-winds at rest before any input', attractState.wind > 0.5 && attractState.on,
+        `wind=${attractState.wind.toFixed(2)} attract=${attractState.on}`)
+
       // wind: hold ArrowRight
       const daysBefore = await page.evaluate(() => window.__orreryTest.timeDays())
       await page.keyboard.down('ArrowRight')
@@ -103,6 +110,8 @@ async function main() {
       const daysAfter = await page.evaluate(() => window.__orreryTest.timeDays())
       ok('ArrowRight raises the wind', wind1 > 0.05, `wind=${wind1.toFixed(3)} d/s`)
       ok('time flows when winding (tDays advances)', daysAfter > daysBefore, `${daysBefore.toFixed(2)} → ${daysAfter.toFixed(2)}`)
+      ok('attract: first input releases the self-winder',
+        await page.evaluate(() => !window.__orreryTest.attract()))
 
       // planet positions: they move
       const p1 = await page.evaluate(() => { const pl = window.__orreryTest.planets(); return pl })
@@ -134,6 +143,13 @@ async function main() {
       await page.waitForTimeout(1100)
       const zoomOut = await page.evaluate(() => window.__orreryTest.zoom())
       ok('tap again zooms out', !zoomOut.active && zoomOut.scale < 1.3, `scale=${zoomOut.scale.toFixed(2)}`)
+
+      // captions are staged (#3780): the first zoom teaches the way back, then the pill retires
+      const hudAfterZoom = await page.evaluate(() => window.__orreryTest.hud())
+      ok('first zoom teaches the way back', /step back/i.test(hudAfterZoom.text) && !hudAfterZoom.gone, hudAfterZoom.text)
+      let retired = false
+      try { await page.waitForFunction(() => window.__orreryTest.hud().gone, null, { timeout: 9000 }); retired = true } catch { /* fall through to the pin */ }
+      ok('caption retires once taught', retired)
     }
   } finally {
     if (ctx) { try { await ctx.close() } catch {} }
