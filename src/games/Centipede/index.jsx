@@ -148,6 +148,18 @@ const CentipedeGame = () => {
             if (points > 0) state.fx.push({ x: x + 8, y: y + 4, vx: 0, vy: -0.5, life: 26, max: 26, text: String(points) })
         }
 
+        // #3736 — the plant law on screen: the sim turns a shot segment into a
+        // mushroom (arcade rule), and since #3620 the kill said so only in the
+        // state. Now the pop speaks it: body segments spray cap-skin chips (the
+        // colour the new cap wears) under an expanding sprout ring at the cell
+        // that receives them; a head reads bigger than the body's 10 — its 100
+        // pays like the machine's table. Dice-free like every burst here: fixed
+        // angles only, so `?seed=N` replays every pop byte-identical.
+        const plantPop = (x, y, cellX, cellY, isHead, points) => {
+            burst(x, y, isHead ? '#ffffff' : MUSHROOM_SKIN[3].cap, isHead ? 10 : 6, points)
+            state.fx.push({ ring: 1, x: cellX + 8, y: cellY + 8, life: 10, max: 10, color: MUSHROOM_SKIN[3].lite })
+        }
+
         const spawnCentipede = () => {
             state.centipedes = []
             // #3631 — the wave the field rebuilds on sets the column's pace.
@@ -433,7 +445,9 @@ const CentipedeGame = () => {
                         }
                     }
 
-                    burst(seg.x, seg.y, '#ffffff', 8, scoreForSegment(seg.head))
+                    // #3736 — the pop speaks the plant: cap chips + sprout ring
+                    // at the cell that just received the new mushroom.
+                    plantPop(seg.x, seg.y, Math.floor(seg.x / CELL_SIZE) * CELL_SIZE, Math.floor(seg.y / CELL_SIZE) * CELL_SIZE, seg.head, scoreForSegment(seg.head))
                     // #3632 — the segment pew: a fast falling chirp with a static
                     // tick underneath; the head dies brighter, two rising sparkle
                     // notes over the pew (the machine's exclamation mark).
@@ -966,6 +980,17 @@ const CentipedeGame = () => {
                     ctx.textAlign = 'center'
                     ctx.fillText(f.text, f.x, f.y)
                     ctx.globalAlpha = 1
+                } else if (f.ring) {
+                    // #3736 — sprout ring: the receiving cell opens as the new
+                    // cap takes root — a crisp stepped square (no AA on a pixel
+                    // field), widening while it fades.
+                    const k = 1 - f.life / f.max
+                    const w = Math.round(4 + k * 12)
+                    ctx.globalAlpha = f.life / f.max
+                    ctx.strokeStyle = f.color
+                    ctx.lineWidth = 1
+                    ctx.strokeRect(Math.round(f.x - w / 2) + 0.5, Math.round(f.y - w / 2) + 0.5, w, w)
+                    ctx.globalAlpha = 1
                 } else {
                     ctx.globalAlpha = f.life > 8 ? 1 : f.life / 8
                     ctx.fillStyle = f.color
@@ -1075,6 +1100,7 @@ const CentipedeGame = () => {
                 damaged: state.mushrooms.filter(m => m.health < 3).length, // #3664 revival watch
                 revived: revivedTotal, // #3664 — healed since run start
                 pops: state.fx.length, // #3620 — QA can catch a kill-pop mid-flight
+                rings: state.fx.filter((f) => f.ring).length, // #3736 — sprout witness: the plant-pop speaks
                 wave, // #3631 — speed ladder rung
                 rearSpd: Math.round(100 * state.centipedes.reduce((m, c) => Math.max(m, c.spd || 1), 1)) / 100,
                 bites: bitesTotal, // #3726 — spider devours this run

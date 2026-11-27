@@ -72,6 +72,7 @@ const drive = () => page.evaluate(async (n) => {
     const t0 = window.__game.state().tick
     let seenSpider = 0, seenScorpion = 0, seenFlea = 0, minShrooms = 999, rained = 0
     let seenPops = 0, maxPops = 0 // #3620 kill-pop juice rides the same proof
+    let seenRings = 0, maxRings = 0 // #3736 — the plant-pop's sprout witness
     let maxWave = 0, maxRearSpd = 1 // #3631 the ladder must visibly climb in-browser
     let seenPoison = 0 // venom must LAND en route — faster waves get it eaten sooner
     let lastM = window.__game.state().mushrooms
@@ -87,13 +88,15 @@ const drive = () => page.evaluate(async (n) => {
         lastM = st.mushrooms
         if (st.pops > 0) seenPops = 1
         maxPops = Math.max(maxPops, st.pops)
+        seenRings |= st.rings > 0 ? 1 : 0 // #3736 — a segment kill must speak the plant
+        maxRings = Math.max(maxRings, st.rings)
         maxWave = Math.max(maxWave, st.wave)
         maxRearSpd = Math.max(maxRearSpd, st.rearSpd)
         if (st.poisoned > 0) seenPoison = 1
     }
     const st = window.__game.state()
     return [st.tick - t0, st.score, st.lives, st.segments, st.heads, st.mushrooms,
-        seenSpider, seenScorpion, seenFlea, seenPoison, rained, minShrooms, st.playerX, st.playerY, seenPops, maxPops, maxWave, maxRearSpd, st.bites, st.stings].join('|')
+        seenSpider, seenScorpion, seenFlea, seenPoison, rained, minShrooms, st.playerX, st.playerY, seenPops, maxPops, maxWave, maxRearSpd, st.bites, st.stings, seenRings, maxRings].join('|')
 }, ROLLOUT)
 const r1 = await drive()
 const r2 = await drive()
@@ -105,6 +108,7 @@ rep.check('venom landed on caps during the rollout', roll[9] > 0, `poisoned=${ro
 rep.check('the garden shrank during the rollout (eaters ate)', roll[11] < 40, `minShrooms=${roll[11]}`)
 rep.check('the flea rained bonus mushrooms during the rollout', roll[10] > 0, `rained=${roll[10]}`)
 rep.check('kill-pop juice fires in-browser (debris + digits at the kill sites, #3620)', roll[14] === 1 && roll[15] > 0, `seenPops=${roll[14]}, maxPops=${roll[15]}`)
+rep.check('the plant-pop speaks the plant (sprout ring marks the cell that receives each new cap, #3736)', roll[20] === 1 && roll[21] > 0, `seenRings=${roll[20]}, maxRings=${roll[21]}`)
 rep.check('cuts race the rear chain in-browser (split boost compounds toward the cap, #3631)', roll[17] > 1, `maxRearSpd=${roll[17]}`)
 // The glide-pad rollout keeps the zapper alive but rarely empties a column;
 // a second all-fire rollout must clear wave 1 and spawn its faster rebuild.

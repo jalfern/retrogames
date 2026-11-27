@@ -89,8 +89,12 @@ console.log('#3620 kill-pop juice: debris and digits at the kill site')
         'debris drifts and fades on the tick clock')
     ok(/burst\(dead\.x, dead\.y, dead\.poison \? '#ff2d2d' : MUSHROOM_SKIN\[1\]\.cap, 6, MUSHROOM_POINTS\)/.test(src),
         'a destroyed mushroom throws cap-coloured debris (+1)')
-    ok(/burst\(seg\.x, seg\.y, '#ffffff', 8, scoreForSegment\(seg\.head\)\)/.test(src),
-        'a killed segment pops its arcade price')
+    ok(/plantPop\(seg\.x, seg\.y, Math\.floor\(seg\.x \/ CELL_SIZE\) \* CELL_SIZE, Math\.floor\(seg\.y \/ CELL_SIZE\) \* CELL_SIZE, seg\.head, scoreForSegment\(seg\.head\)\)/.test(src),
+        'a killed segment pops its arcade price (#3736 plantPop)')
+    ok(/isHead \? '#ffffff' : MUSHROOM_SKIN\[3\]\.cap, isHead \? 10 : 6/.test(src),
+        'body chips wear the cap they become; the head reads bigger than body 10 (#3736)')
+    ok(/state\.fx\.push\(\{ ring: 1, x: cellX \+ 8, y: cellY \+ 8/.test(src),
+        'a sprout ring marks the cell that receives the new cap (#3736)')
     ok(/burst\(s\.x, s\.y, '#c17bff', 8, SPIDER_POINTS\(dist\)\)/.test(src), 'the spider pops purple with its band')
     ok(/burst\(s\.x, s\.y, '#ff9d2e', 8, SCORPION_POINTS\)/.test(src), 'the scorpion pops amber at 1000')
     ok(/burst\(f\.x, f\.y, '#5ea8ff', 6, FLEA_POINTS\)/.test(src), 'the flea pops blue at 200')
