@@ -23,6 +23,7 @@ import {
     SCREEN_WIDTH, SAFE_Y, WAVE_BREAK_TICKS, PROVEN_WAVES, attractFerry, ATTRACT_FERRY_EVERY,
     SAUCER_FIRST_WAVE, SAUCER_SCORE,
     SMART_FIRST_WAVE, SMART_SCORE, CENTER_SILO_X, CENTER_ABM_SPEED, ABM_SPEED,
+    clusterMode,
 } from '../src/games/MissileCommand/sim.js'
 import { seedRng, seedFromQuery } from '../src/utils/gameContract.js'
 import { plant, pull } from './lib/mutateguard.mjs'
@@ -762,6 +763,121 @@ console.log('2P alternating (#3630 slice 2): flip, ledgers, shared board')
     ok(worstCities === 6, 'the CPU seat holds the shared board: 8 seeds, zero cities lost on P2\'s wave', `${worstCities}/6`)
 }
 
+// -------------------------------------- #3711 deep-wave doctrine (knots + silo-first) ----
+// Measured magazine law: from wave ~9 the raid fields more warheads than the
+// 30 shells the batteries refill with. The gunner gained two gated habits:
+//  - KNOT: when the blast envelope provably sweeps a second open warhead,
+//    spend one shell at the crossing point — a shell saved is a city owed.
+//  - SILO-FIRST: under deficit, silo streams are answered before city streams,
+//    because a dead silo forfeits the shells still loaded in it (~10) exactly
+//    when the wave outgrows the magazine.
+// Both engage only on the measured deficit (clusterMode); waves 1..5 pins and
+// the 60-raid deep claims ran green untouched. The section also pins what was
+// TESTED AND REJECTED: "sacrifice one city and let its stream through" costs
+// cities at waves 8-12 (dead structures retarget the spawn dice — nothing
+// absorbs leaks), so deep waves stay volume losses; the ceiling is honest.
+console.log('deep doctrine (#3711): knot economy and silo-first under deficit')
+{
+    // The gate: no wave the magazine can pay declares a deficit.
+    let falseDeficit = 0
+    for (let s = 1; s <= 8; s++) {
+        const gs = makeRun(s * 7919 + 3)
+        for (let w = 1; w <= 7; w++) {
+            gs.wave = w; startWave(gs, { noSmart: true })
+            if (clusterMode(gs)) falseDeficit++
+        }
+    }
+    ok(falseDeficit === 0, 'waves 1..7: no false deficit — the cheap waves keep the plain doctrine', `${falseDeficit}`)
+    let trueDeficit = 0
+    for (const w of [9, 10, 11, 12]) {
+        const gs = makeRun(7922); gs.wave = w; startWave(gs)
+        if (clusterMode(gs)) trueDeficit++
+    }
+    ok(trueDeficit === 4, 'waves 9..12: the deficit is declared (28-32+ warheads vs 30 shells)', `${trueDeficit}/4`)
+
+    // Knot unit: two warheads on truly crossing lines, timed to meet at one
+    // point inside a single ring. Construction meets at (402, 328); the shell
+    // detonates there as they arrive together — two kills, one shell.
+    {
+        const gs = makeRun(7)
+        gs.wave = 9
+        startWave(gs, { noSmart: true })
+        gs.spawning = false
+        gs.missilesLeftInWave = 2 // demand 4 vs ammo 3 — declared deficit, sky manual
+        gs.saucersLeftInWave = 0; gs.saucers = []
+        gs.warheads.length = 0
+        gs.silos.forEach((s) => { s.ammo = 1 })
+        gs.warheads.push(
+            { id: 91, x: 300, y: 200, startX: 300, startY: 0, targetX: 500, targetY: 450, speed: 1, color: '#f00', coverUntil: 0 },
+            { id: 92, x: 500, y: 196.86, startX: 500, startY: 0, targetX: 320, targetY: 450, speed: 1, color: '#f00', coverUntil: 0 },
+        )
+        let shells = 0, guard = 0, prevAmmo = gs.silos.reduce((a, s) => a + s.ammo, 0)
+        while (guard++ < 260 && gs.warheads.some((m) => m.id === 91 || m.id === 92)) {
+            const cmd = gunnerStep(gs)
+            tickMc(gs, cmd)
+            const ammo = gs.silos.reduce((a, s) => a + s.ammo, 0)
+            if (ammo < prevAmmo) shells += prevAmmo - ammo
+            prevAmmo = ammo
+        }
+        const survivors = gs.warheads.filter((m) => m.id === 91 || m.id === 92).length
+        ok(shells === 1 && survivors === 0, 'KNOT: one shell downs two crossing warheads (predicted AND actual)', `shells ${shells}, survivors ${survivors}`)
+    }
+
+    // Silo-first unit: under deficit a higher city warhead yields to the
+    // silo stream — the magazine is defended before the score.
+    {
+        const gs = makeRun(7)
+        gs.wave = 9
+        startWave(gs, { noSmart: true })
+        gs.spawning = false
+        gs.missilesLeftInWave = 2
+        gs.saucersLeftInWave = 0; gs.saucers = []
+        gs.warheads.length = 0
+        gs.silos.forEach((s) => { s.ammo = 1 })
+        gs.warheads.push(
+            { id: 93, x: 150, y: 300, startX: 150, startY: 0, targetX: 200, targetY: 550, speed: 1.5, color: '#f00', coverUntil: 0 },
+            { id: 94, x: 60, y: 280, startX: 60, startY: 0, targetX: 40, targetY: 530, speed: 1.5, color: '#f00', coverUntil: 0 },
+        )
+        const shot = gunnerStep(gs)
+        ok(shot && shot.wid === 94, 'SILO-FIRST: under deficit the silo stream outranks the lower city stream', `wid ${shot && shot.wid}`)
+    }
+
+    // Deep A/B: 12 seeds x waves 9-11, doctrine on vs off. Honest claims: the
+    // habits never lose a raid the old doctrine survived, never spend more
+    // shells, and never net fewer cities across the set. (Wave 12+ is excluded
+    // deliberately: games legitimately END there under BOTH doctrines — the
+    // measured ceiling is volume, see README #3711.)
+    {
+        const run = (seed, wave, noCluster) => {
+            const gs = makeRun(seed)
+            gs.wave = wave
+            startWave(gs)
+            let guard = 0, shells = 0, prev = 30
+            while (gs.wave <= wave && !gs.over && guard++ < 40000) {
+                tickMc(gs, gunnerStep(gs, { noCluster }))
+                const ammo = gs.silos.reduce((a, s) => a + (s.alive ? s.ammo : 0), 0)
+                if (ammo < prev) shells += prev - ammo
+                prev = ammo
+            }
+            return { over: gs.over, cities: citiesAlive(gs), shells }
+        }
+        let lostRaids = 0, cityDelta = 0, shellDelta = 0, raids = 0
+        for (let s = 1; s <= 12; s++) {
+            const seed = s * 7919 + 3
+            for (const w of [9, 10, 11]) {
+                const on = run(seed, w, false), off = run(seed, w, true)
+                raids++
+                if (on.over && !off.over) { lostRaids++; console.log(`  lost seed ${seed} w${w} (old survived)`) }
+                cityDelta += on.cities - off.cities
+                shellDelta += off.shells - on.shells
+            }
+        }
+        ok(raids === 36 && lostRaids === 0, 'deep A/B: 36 raids waves 9-11 — never loses a raid the plain doctrine survived', `${lostRaids}`)
+        ok(cityDelta >= 0, `deep A/B: cities never net worse (delta ${cityDelta} across 36 raids)`, `${cityDelta}`)
+        ok(shellDelta >= 0, `deep A/B: shells never spent faster (saved ${shellDelta} across 36 raids)`, `${shellDelta}`)
+    }
+}
+
 // -------------------------------------------------------------------- the law ----
 console.log('component wiring: pin, report, restart, seat')
 {
@@ -941,6 +1057,18 @@ if (process.argv.includes('--mutant')) {
         ['#3630 s2: pad arrow-aim dies (the stick idles again)', I,
             `if (keys.ArrowLeft) gs.crosshair.x = Math.max(0, gs.crosshair.x - P2_AIM_SPEED)`,
             `if (false) gs.crosshair.x = Math.max(0, gs.crosshair.x - P2_AIM_SPEED)`],
+        ['#3711: the knot never waits (hold disabled — the crossing shot is never taken)', S,
+            `if (!fired && cluster && holdX >= 1) {`,
+            `if (false) {`],
+        ['#3711: the cushion goes (grazing rim-kills get promised and dud the unit)', S,
+            `if (Math.hypot(q.x - p.x, q.y - p.y) < blastRadiusAt(t - k) - 2) {`,
+            `if (Math.hypot(q.x - p.x, q.y - p.y) < blastRadiusAt(t - k)) {`],
+        ['#3711: the knot point never reads as ready (singles only)', S,
+            `if (j - k < BLAST_LIFE) {`,
+            `if (false) {`],
+        ['#3711: silo-first is gone (dead magazines under deficit)', S,
+            `if (cluster) live.sort((a, b) => (isSiloTarget(b) ? 1 : 0) - (isSiloTarget(a) ? 1 : 0) || b.y - a.y)`,
+            `if (cluster) live.sort((a, b) => b.y - a.y)`],
     ]
     let died = 0
     for (const [name, file, from, to] of MUTANTS) {
