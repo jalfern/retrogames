@@ -257,6 +257,9 @@ export const MANUAL_CHECKS = [
   // #3645: TIDE POOL — browser-driven demo gate (Chrome via CDP over file://,
   // no dev server); advisory from the lane: npm run tidepoolcheck.
   "scripts/tidepoolcheck.mjs",
+  // #3646: LANTERN RIVER — browser-driven demo gate (Chrome via CDP over
+  // file://, no dev server); advisory from the lane: npm run lanternrivercheck.
+  "scripts/lanternrivercheck.mjs",
   "scripts/tidycheck.mjs",
   "scripts/tmdlinkcheck.mjs",
   // #2287: phone-viewport drive — needs the dev server + a touch-capable
