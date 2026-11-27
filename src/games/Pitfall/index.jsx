@@ -1121,9 +1121,18 @@ const PitfallGame = () => {
             ctx.clip()
 
             // --- BACKGROUND (Atari 2600 horizontal bands) ---
-            // Sky — blue/teal ($A4)
-            ctx.fillStyle = '#386890'
-            ctx.fillRect(0, 50, SCREEN_WIDTH, 300)
+            // Sky — stepped gradation, dark zenith to bright horizon (#3724). The 2600
+            // read depth as discrete color-RAM bands, not an airbrush: three fixed bands
+            // inside the existing $A hue ramp — $A2 zenith, $A4 body, $A6 horizon haze.
+            // $A4 and $A6 (#4A7CA8) are already in this file's palette; $A2 is the ramp
+            // neighbour one step darker than $A4 by the file's own step deltas. Pure
+            // draw-time literals — no gradient objects, no entropy (seedless law holds).
+            ctx.fillStyle = '#20486C' // $A2 zenith — mostly behind the canopy, shows in vine gaps
+            ctx.fillRect(0, 50, SCREEN_WIDTH, 168)
+            ctx.fillStyle = '#386890' // $A4 sky body (the old flat fill, now the middle band)
+            ctx.fillRect(0, 218, SCREEN_WIDTH, 66)
+            ctx.fillStyle = '#4A7CA8' // $A6 horizon haze — lightens where sky meets the ground
+            ctx.fillRect(0, 284, SCREEN_WIDTH, 66)
 
             // Canopy — layered green like original playfield graphics
             // Dark green base ($D2)

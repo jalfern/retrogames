@@ -1333,6 +1333,19 @@ for (const t of SEEDLESS) {
         && /exposeFeedbackState\(\s*\(\)\s*=>\s*\(\{[^)]*?\bdone:/.test(all))
 }
 
+// #3724 horizon-depth law (QA studio): Pitfall's 300px sky must read depth — fixed
+// stepped bands down the Atari $A hue ramp ($A2 zenith → $A4 body → $A6 horizon),
+// never the old flat single fill. Literals, not canvas gradients or RNG: a regression
+// to flat paint (or an airbrush/RNG reintroduction) turns this pin red — the seedless
+// law above guards the entropy half, this one guards the look.
+{
+    const pitfallSrc = readFileSync(new URL('../src/games/Pitfall/index.jsx', import.meta.url), 'utf8')
+    ok('pitfall sky: three stepped $A-ramp bands replace the flat 300px fill',
+        ['#20486C', '#386890', '#4A7CA8'].every((hex) => pitfallSrc.includes(hex))
+        && /fillRect\(0, 50, SCREEN_WIDTH, 168\)/.test(pitfallSrc)
+        && !/fillRect\(0, 50, SCREEN_WIDTH, 300\)/.test(pitfallSrc))
+}
+
 // #1473 DECO-aware law (batch 11): some classic engines are fully deterministic
 // but decorate the screen with unseeded Math.random — starfields, explosion
 // particles, camera shake, sparkle phase. A seed param there would be a FAKE pin
