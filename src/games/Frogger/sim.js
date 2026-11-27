@@ -46,6 +46,16 @@ export const timeBonus = gs => Math.floor(gs.timeLeft / 30) * 10
 // The attract demo thinks every 15 ticks (a deliberate hop cadence).
 export const DEMO_EVERY = 15
 
+// #3692 — arcade laws from Wikipedia §Gameplay/§Scoring, same sourcing as the
+// shipped laws: "A brightly colored female frog is sometimes on a log and may
+// be carried for bonus points… Guiding a lady frog home… scores 200"; "A
+// single bonus frog is given at 20,000 points"; 99,990 is the cabinet's
+// ceiling — players may pass it but the board "rolls over" and keeps only
+// the last five digits.
+export const LADY_BONUS = 200
+export const ONE_UP_AT = 20000
+export const SCORE_WRAP = 100000
+
 export const RIVER_CFG = [
     { dir: 1, speed: 0.6, kind: 'log', widths: [3], gap: 2.4 },
     { dir: -1, speed: 0.75, kind: 'turtle', widths: [2, 2], gap: 2.6, dive: true },
@@ -175,6 +185,12 @@ export function makeRun(seed, opts = {}) {
         watching: false,
         levelFlash: 0,
         demoTick: 0,
+        // #3692 — §Scoring bonus frog: one extra life at 20,000, once per
+        // seat (the arcade grants a SINGLE bonus). oneUp is the sound flag the
+        // shell consumes. lady = { lane, idx }: which log carries her (§Gameplay).
+        bonusGiven: [false, false],
+        oneUp: false,
+        lady: null,
         riverLanes: [],
         roadLanes: {},
         houses: [],
@@ -184,6 +200,7 @@ export function makeRun(seed, opts = {}) {
             bestRow: START_ROW, riding: -1,
             state: 'alive', // alive | dying | home
             cause: '', animT: 0, deadT: 0, homeCol: -1,
+            lady: false, // #3692 — riding home with the lady frog
         },
     }
     buildWorld(gs)
@@ -197,14 +214,38 @@ export function buildWorld(gs) {
     gs.houses = HOUSE_COLS.map(() => ({ filled: false, fly: false }))
     const flyIdx = Math.floor(gs.rand() * gs.houses.length)
     gs.houses[flyIdx].fly = true
+    // #3692 — the lady frog's dice (§Gameplay "sometimes on a log"). Rolled
+    // AFTER the fly's, so every traffic offset a seed already threw (lane
+    // phases t, and the fly house) lands on the same value — the certified
+    // driver sweeps (#2869, #1776) keep byte-identical roads. She rides a log
+    // only (never the diving turtles) and waits there until delivered home.
+    gs.lady = null
+    if (gs.rand() < 0.6) {
+        const logs = []
+        for (let i = 0; i < RIVER_CFG.length; i++) if (RIVER_CFG[i].kind === 'log') logs.push(i)
+        const li = logs[Math.floor(gs.rand() * logs.length)]
+        gs.lady = { lane: li, idx: Math.floor(gs.rand() * gs.riverLanes[li].items.length) }
+    }
 }
 
 // Every point the game pays goes through here: the active player's line in
 // scores[] plus the mirror on gs.score (the single-player HUD/report field).
 // 1P never leaves scores[0], so the mirror and the total are the same number.
 export function addScore(gs, n) {
-    gs.scores[gs.player - 1] += n
-    gs.score = gs.scores[gs.player - 1]
+    const p = gs.player - 1
+    let s = gs.scores[p] + n
+    // #3692 §Scoring — a SINGLE bonus frog at 20,000 (once per seat, not
+    // every multiple; the arcade text says "a single bonus frog is given").
+    if (!gs.bonusGiven[p] && s >= ONE_UP_AT) {
+        gs.bonusGiven[p] = true
+        gs.lives++
+        gs.oneUp = true
+    }
+    // #3692 §Scoring rollover — 99,990 is the cabinet ceiling; the score may
+    // pass it but the board only keeps the last five digits.
+    if (s >= SCORE_WRAP) s %= SCORE_WRAP
+    gs.scores[p] = s
+    gs.score = s
 }
 
 export function resetFrog(gs) {
@@ -219,6 +260,7 @@ export function resetFrog(gs) {
     frog.animT = 0
     frog.deadT = 0
     frog.homeCol = -1
+    frog.lady = false // #3692 — a drowned carrier loses her; she stays on her log
     gs.timeLeft = TIME_LIMIT
 }
 
@@ -280,6 +322,14 @@ export function enterHome(gs, hi) {
     const bonus = timeBonus(gs)
     addScore(gs, bonus)
     const frog = gs.frog
+    // #3692 §Scoring — "Guiding a lady frog home… scores 200". Delivered:
+    // she leaves the river for good this level.
+    let lady = false
+    if (gs.lady && frog.lady) {
+        addScore(gs, LADY_BONUS)
+        gs.lady = null
+        lady = true
+    }
     frog.state = 'home'
     frog.deadT = HOME_ANIM
     frog.homeCol = hi
@@ -289,7 +339,7 @@ export function enterHome(gs, hi) {
     } else {
         gs.timeLeft = TIME_LIMIT
     }
-    return { fly, bonus }
+    return { fly, bonus, lady }
 }
 
 // ------------------------------------------------------------------
@@ -325,7 +375,7 @@ export function hop(gs, dx, dy) {
             // say died, not home (the home jingle over a splat broke the
             // drawn-state-matches-logic law; #3676 caught it on the seat drive).
             if (!res) return { kind: 'died', cause: 'wall', row }
-            return { kind: 'home', row, fly: res.fly, bonus: res.bonus }
+            return { kind: 'home', row, fly: res.fly, bonus: res.bonus, lady: res.lady }
         }
         die(gs, 'water')
         return { kind: 'died', cause: 'water', row }
@@ -670,7 +720,7 @@ export function watchStep(gs) {
 // ---------------------------------------------------------------------------
 export function tickFrogger(gs, humanHop = null) {
     const ev = { hopped: 0, died: null, home: 0, fly: false, level: false, beep: false, over: false,
-        enter: 0, bonus: 0, handoff: 0, winner: 0, frozen: false }
+        enter: 0, bonus: 0, handoff: 0, winner: 0, frozen: false, lady: false, ladyPick: false }
     gs.tickN++
     const frog = gs.frog
     if (frog.animT > 0) frog.animT--
@@ -726,6 +776,17 @@ export function tickFrogger(gs, humanHop = null) {
                 gs.timeLeft--
                 if (gs.timeLeft <= 0) { die(gs, 'time'); ev.died = 'time' }
                 else if (gs.timeLeft < 5 * 60 && gs.timeLeft % 60 === 0) ev.beep = true
+                // #3692 — lady frog pickup (§Gameplay): standing on her log
+                // takes her along. Checked only in the deepest alive branch —
+                // a crush, splash or time-out this tick never rings the pickup
+                // jingle over a death (the event-honesty law, #3676).
+                if (gs.lady && !frog.lady && frog.riding === gs.lady.lane) {
+                    const sp = spansOf(gs.riverLanes[gs.lady.lane])[gs.lady.idx]
+                    if (sp && frog.x >= sp.x + 2 && frog.x <= sp.x + sp.w - 2) {
+                        frog.lady = true
+                        ev.ladyPick = true
+                    }
+                }
             }
         }
     } else if (frog.state === 'dying') {
@@ -748,5 +809,5 @@ export function tickFrogger(gs, humanHop = null) {
 function stamp(ev, r) {
     if (r.kind === 'hopped') { ev.hopped = r.row; if (r.enter) ev.enter = r.row }
     else if (r.kind === 'died') ev.died = r.cause
-    else if (r.kind === 'home') { ev.home = 1; if (r.fly) ev.fly = true; if (r.bonus) ev.bonus = r.bonus }
+    else if (r.kind === 'home') { ev.home = 1; if (r.fly) ev.fly = true; if (r.bonus) ev.bonus = r.bonus; if (r.lady) ev.lady = true }
 }

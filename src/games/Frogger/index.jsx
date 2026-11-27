@@ -8,7 +8,7 @@ import { isWatchKey, isTakeoverKey, playWatchStart, playWatchStop, watchSfxLog, 
 import { attractFrame, DIM } from './attract.js'
 import {
     CELL, COLS, W, HOME_ROW, RIVER_TOP, RIVER_BOT, MEDIAN_ROW, ROAD_TOP, ROAD_BOT, START_ROW,
-    TIME_LIMIT, HOP_ANIM, DIE_ANIM, DIVE_CYCLE, ROW_FREEZE,
+    TIME_LIMIT, HOP_ANIM, DIE_ANIM, DIVE_CYCLE, ROW_FREEZE, SCORE_WRAP,
     makeRun, tickFrogger, hop as simHop, supportAt as simSupportAt, spansOf, surfaced, houseAt, deathStyle, stateHash,
 } from './sim.js'
 import { exposeGame, unexposeGame, exposeFeedbackState, unexposeFeedbackState, seedFromQuery, contractHoldsLoop } from '../../utils/gameContract'
@@ -74,7 +74,7 @@ const FroggerGame = () => {
                 audioController.playNoise(0.25, 0.15)
             }
         }
-        const playHome = (fly, bonus) => {
+        const playHome = (fly, bonus, lady) => {
             audioController.playSweep(330, 660, 0.2, 'square', 0.1)
             if (fly) audioController.playTone(1568, 0.1, 'square', 0.1)
             // #3676 gap 0 — the arcade pays the unused-time bonus as its own
@@ -84,6 +84,19 @@ const FroggerGame = () => {
                 audioController.playTone(1174, 0.05, 'square', 0.07)
                 audioController.playTone(1760, 0.09, 'square', 0.07)
             }
+            // #3692 §Scoring — delivering the lady frog (200): a bright two-
+            // note sparkle over the home chime, the run's sweetest sound.
+            if (lady) {
+                audioController.playTone(1760, 0.06, 'square', 0.09)
+                audioController.playTone(2217, 0.1, 'square', 0.09)
+            }
+        }
+        // #3692 — finding her on a log: a rising two-octave chirp (distinct
+        // from home/hop/enter); one-up frog: the classic fast arcade run-up.
+        const playLadyPick = () => audioController.playSweep(880, 1760, 0.12, 'square', 0.09)
+        const playOneUp = () => {
+            audioController.playTone(659, 0.05, 'square', 0.09)
+            audioController.playSweep(880, 1760, 0.2, 'triangle', 0.1)
         }
         // #3676 gap 0 — row-entry bleep: a short chirp that climbs with the
         // row, riding the same octave curve as the hop tone but brighter.
@@ -149,7 +162,10 @@ const FroggerGame = () => {
                 const r = simHop(gs, dir[0], dir[1])
                 if (r?.kind === 'hopped') playHop(r.row)
                 else if (r?.kind === 'died') playDie(r.cause)
-                else if (r?.kind === 'home') playHome(r.fly)
+                // #3692 — forward the full home payout (bonus + lady): the
+                // keydown path used to drop the time-bonus triad's arguments.
+                else if (r?.kind === 'home') playHome(r.fly, r.bonus, r.lady)
+                if (gs.oneUp) { gs.oneUp = false; playOneUp() }
             }
         }
 
@@ -170,7 +186,11 @@ const FroggerGame = () => {
             if (ev.hopped) playHop(ev.hopped)
             if (ev.enter) playEnter(ev.enter)
             if (ev.died) playDie(ev.died)
-            if (ev.home) playHome(ev.fly, ev.bonus)
+            if (ev.home) playHome(ev.fly, ev.bonus, ev.lady)
+            if (ev.ladyPick) playLadyPick()
+            // #3692 §Scoring — the bonus-frog jingle, consumed wherever the
+            // score crossed 20k (loop tick or a keydown hop).
+            if (gs.oneUp) { gs.oneUp = false; playOneUp() }
             if (ev.handoff) playHandoff()
             if (ev.beep) audioController.playTone(1000, 0.04, 'square', 0.08)
             if (ev.level) audioController.playSweep(440, 1320, 0.6, 'square', 0.12)
@@ -191,6 +211,7 @@ const FroggerGame = () => {
                     row: gs.frog.row, x: gs.frog.x, frogState: gs.frog.state, time: gs.timeLeft,
                     riding: gs.frog.riding, atHouse: houseAt(gs.frog.x) >= 0 && !gs.houses[houseAt(gs.frog.x)].filled,
                     players: gs.players, player: gs.player, scores: [...gs.scores], winner: gs.winner, freeze: gs.freeze,
+                    lady: !!gs.lady, ladyLane: gs.lady ? gs.lady.lane : -1, carry: !!gs.frog.lady, oneUp: gs.oneUp,
                 }),
                 // Read-only "may I step up right now?" — the same predicates the
                 // engine applies on landing. A harness reads; only keys act.
@@ -284,6 +305,7 @@ const FroggerGame = () => {
                 x: Math.round(gs.frog.x),
                 homes: gs.houses.filter(h => h.filled).length,
                 players: gs.players, player: gs.player, scores: [...gs.scores], winner: gs.winner,
+                lady: !!gs.lady, carry: !!gs.frog.lady,
                 hash: stateHash(gs),
             }),
             canvas: () => canvas,
@@ -294,10 +316,13 @@ const FroggerGame = () => {
         // ------------------------------------------------------------------
         // DRAWING
         // ------------------------------------------------------------------
-        const drawFrog = (x, y, s) => {
-            ctx.fillStyle = '#5adb5a'
+        // #3692 — tintable so the lady frog (§Gameplay "brightly colored
+        // female frog") is our own original pink sprite, not a recolour of an
+        // original asset: same construction language as the player's frog.
+        const drawFrog = (x, y, s, body = '#5adb5a', shade = '#2f9e3f') => {
+            ctx.fillStyle = body
             ctx.fillRect(x - 6 * s, y - 4 * s, 12 * s, 8 * s)
-            ctx.fillStyle = '#2f9e3f'
+            ctx.fillStyle = shade
             ctx.fillRect(x - 8 * s, y - 2 * s, 2 * s, 5 * s)
             ctx.fillRect(x + 6 * s, y - 2 * s, 2 * s, 5 * s)
             ctx.fillStyle = '#ffffff'
@@ -401,6 +426,13 @@ const FroggerGame = () => {
                     if (lane.kind === 'log') drawLog(s.x, s.w, y + CELL / 2)
                     else drawTurtles(s.x, s.w, y + CELL / 2, surfaced(lane))
                 })
+                // #3692 — the lady frog rides her log (drawn on top of it; the
+                // player's frog may overlap her, as on the cabinet).
+                if (gs.lady && gs.lady.lane === i) {
+                    const sp = spansOf(lane)[gs.lady.idx]
+                    if (sp && sp.x + sp.w > 0 && sp.x < W)
+                        drawFrog(sp.x + sp.w / 2, y + CELL / 2 - 10, 0.5, '#ff8fc4', '#d1468f')
+                }
             })
 
             // ---- median ----
@@ -484,6 +516,11 @@ const FroggerGame = () => {
                 }
             }
 
+            // #3692 — she hitches a ride: pink rider on the carrier's back
+            // (gone the moment the frog dies — resetFrog drops frog.lady).
+            if (frog.state === 'alive' && frog.lady)
+                drawFrog(fx, fy - 8, 0.45, '#ff8fc4', '#d1468f')
+
             // ---- HUD ----
             ctx.fillStyle = '#000000'
             ctx.fillRect(0, 0, W, HUD_H)
@@ -492,15 +529,17 @@ const FroggerGame = () => {
             if (gs.players === 2) {
                 // #3676 — duel HUD: both scores shown at all times (the
                 // alternating arcade's law); the active seat's line is bright.
-                const pad6 = n => String(Math.max(0, n) % 1000000).padStart(6, '0')
+                // #3692 §Scoring — five digits: the cabinet keeps only the last
+                // five once 99,990 rolls over.
+                const pad5 = n => String(Math.max(0, n) % SCORE_WRAP).padStart(5, '0')
                 ctx.fillStyle = gs.player === 1 ? '#ffffff' : '#6f6f6f'
-                ctx.fillText(`P1 ${pad6(gs.scores[0])}`, 6, 9)
+                ctx.fillText(`P1 ${pad5(gs.scores[0])}`, 6, 9)
                 ctx.fillStyle = gs.player === 2 ? '#ffffff' : '#6f6f6f'
-                ctx.fillText(`P2 ${pad6(gs.scores[1])}`, 6, 21)
+                ctx.fillText(`P2 ${pad5(gs.scores[1])}`, 6, 21)
                 ctx.fillStyle = '#a9a9a9'
                 ctx.fillText('HI', 78, 9)
                 ctx.fillStyle = '#ffffff'
-                ctx.fillText(pad6(Math.max(gs.scores[0], gs.scores[1], hiScore)), 92, 9)
+                ctx.fillText(pad5(Math.max(gs.scores[0], gs.scores[1], hiScore)), 92, 9)
                 ctx.fillStyle = '#a9a9a9'
                 ctx.fillText('LV', 78, 21)
                 ctx.fillStyle = '#ffffff'
@@ -510,8 +549,8 @@ const FroggerGame = () => {
                 ctx.fillText('SCORE', 6, 9)
                 ctx.fillText('HI-SCORE', 6, 21)
                 ctx.fillStyle = '#ffffff'
-                ctx.fillText(String(gs.score).padStart(6, '0'), 40, 9)
-                ctx.fillText(String(Math.max(gs.score, hiScore)).padStart(6, '0'), 60, 21)
+                ctx.fillText(String(gs.score % SCORE_WRAP).padStart(5, '0'), 40, 9)
+                ctx.fillText(String(Math.max(gs.score, hiScore) % SCORE_WRAP).padStart(5, '0'), 60, 21)
                 ctx.fillStyle = '#a9a9a9'
                 ctx.fillText('LEVEL', 110, 9)
                 ctx.fillStyle = '#ffffff'
@@ -525,7 +564,10 @@ const FroggerGame = () => {
             const frac = Math.max(0, gs.timeLeft / TIME_LIMIT)
             ctx.fillStyle = frac < 0.25 ? '#e0483f' : '#ffe14d'
             ctx.fillRect(138, 15, tw * frac, 5)
-            for (let i = 0; i < gs.lives; i++) drawFrog(206 + i * 17, 7, 0.4)
+            // #3692 — lives right-aligned: the bonus frog at 20k (§Scoring)
+            // would otherwise push a fourth icon off the frame edge.
+            const livesX0 = Math.min(206, W - 8 - (gs.lives - 1) * 17)
+            for (let i = 0; i < gs.lives; i++) drawFrog(livesX0 + i * 17, 7, 0.4)
 
             if (gs.levelFlash > 0 && Math.floor(gs.levelFlash / 15) % 2 === 0) {
                 ctx.fillStyle = '#ffe14d'
@@ -562,8 +604,8 @@ const FroggerGame = () => {
                 ctx.font = 'bold 9px monospace'
                 if (gs.players === 2) {
                     // #3676 — the duel's verdict: both scores, highest wins (0 = draw).
-                    const pad6 = n => String(Math.max(0, n) % 1000000).padStart(6, '0')
-                    ctx.fillText(`P1 ${pad6(gs.scores[0])}   P2 ${pad6(gs.scores[1])}   LEVEL ${gs.level}`, W / 2, H / 2 + 6)
+                    const pad5 = n => String(Math.max(0, n) % SCORE_WRAP).padStart(5, '0')
+                    ctx.fillText(`P1 ${pad5(gs.scores[0])}   P2 ${pad5(gs.scores[1])}   LEVEL ${gs.level}`, W / 2, H / 2 + 6)
                     ctx.fillStyle = '#ffe14d'
                     ctx.fillText(gs.winner === 0 ? "IT'S A DRAW" : `PLAYER ${gs.winner} WINS`, W / 2, H / 2 + 22)
                     if (Math.floor(Date.now() / 500) % 2 === 0) {
