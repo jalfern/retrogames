@@ -7,7 +7,7 @@ import { isWatchKey, isTakeoverKey, playWatchStart, playWatchStop, watchSfxLog, 
 import { mountDbg, unmountDbg } from '../../utils/DebugKit'
 import { GAMES } from '../../config/games'
 import { exposeGame, unexposeGame, exposeFeedbackState, unexposeFeedbackState, seedFromQuery, contractHoldsLoop } from '../../utils/gameContract'
-import { GW, GH, TOP_PLAT, makeRun, tickDonkeyKong, stateHash, BRACE_WIDTH, BRACE_PLATE, BRACE_PAD, barrelRideFrame, BARREL_SPEED } from './sim.js'
+import { GW, GH, TOP_PLAT, makeRun, tickDonkeyKong, stateHash, BRACE_WIDTH, BRACE_PLATE, BRACE_PAD, barrelRideFrame, BARREL_SPEED, POPUP_LIFE } from './sim.js'
 import { attractFrame, DIM } from './attract.js'
 
 // DONKEY KONG — shell only since #1637 b27: canvas, sound, chrome, seat.
@@ -675,6 +675,22 @@ const DonkeyKongGame = () => {
             denyFx = Math.max(0, denyFx - 1)
             noClimbCooldown = Math.max(0, noClimbCooldown - 1)
 
+            // #3761 — obstacle-bonus popups: the +100/+50 the books pay become
+            // readable mid-frame on a muted phone. Cyan like the HUD score, 7px
+            // mono like the HELP!/OIL labels, rising and fading on the deny
+            // chevron's clock language. House FX (the arcade's own popup
+            // behavior is unverified — see #3761); the sim's books are the law.
+            if (gs.popups.length) {
+                ctx.textAlign = 'center'
+                ctx.font = '7px monospace'
+                for (const q of gs.popups) {
+                    const a = Math.max(0, Math.min(1, (POPUP_LIFE - q.age) / 24))
+                    ctx.fillStyle = `rgba(0, 255, 255, ${a.toFixed(3)})`
+                    ctx.fillText(q.text, q.x, q.y - 2 - q.age * 0.25)
+                }
+                ctx.textAlign = 'start'
+            }
+
             // Attract mode overlay
             if (gs.attract) {
                 attractTick++
@@ -747,6 +763,7 @@ const DonkeyKongGame = () => {
                     attract: gs.attract, over: gs.over,
                     hammer: gs.hammer, swingSeq: gs.swingSeq,
                     passed: gs.player.passedBarrels.size, // #3754 walk-past witness
+                    popups: gs.popups.length, // #3761 bonus-popup witness (FX count)
                     // #3618 half-rung state for the drive harness
                     hang: gs.player.hanging,
                     brk: gs.player.climbLadder && gs.player.climbLadder.broken
@@ -793,6 +810,20 @@ const DonkeyKongGame = () => {
                     let paid = 0
                     for (let i = 0; i < 80; i++) paid += (tickDonkeyKong(gs, { left: false, right: false, up: false, down: false, jump: false }).passedBarrel || 0)
                     return { paid, delta: gs.score - s0, witnesses: gs.player.passedBarrels.size - n0 }
+                },
+                // #3761 — the same walk-past rig, but stopping AT the paying
+                // tick so a harness or screenshot catches the +50 popup while
+                // it is alive (walkpast() fast-forwards past its expiry).
+                walkpastfx: () => {
+                    const s0 = gs.score
+                    gs.player.x = 150
+                    gs.player.y = 176
+                    gs.player.vx = 0; gs.player.vy = 0
+                    for (let i = 0; i < 10; i++) tickDonkeyKong(gs, { left: false, right: false, up: false, down: false, jump: false })
+                    gs.barrels.push({ x: 120, y: 222, w: 10, h: 10, vx: BARREL_SPEED, vy: 0, rot: 0, onLadder: false, falling: false })
+                    let paid = 0
+                    for (let i = 0; i < 80 && !paid; i++) paid += (tickDonkeyKong(gs, { left: false, right: false, up: false, down: false, jump: false }).passedBarrel || 0)
+                    return { paid, delta: gs.score - s0, popups: gs.popups.map(q => ({ text: q.text, age: q.age })) }
                 },
             }
             mountDbg({

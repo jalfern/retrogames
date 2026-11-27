@@ -25,6 +25,9 @@ export const LADDER_SPEED = 1.2
 export const BARREL_SPEED = 1.2
 export const START_LIVES = 3
 export const WIN_SCORE = 1000
+// #3761 — obstacle-bonus popups (#50/+100, see §obstacle-bonus). Render-only
+// law: the popups ride the books, they never drive them.
+export const POPUP_LIFE = 48
 export const BARREL_DIVE_CHANCE = 0.35 // the original's random ladder take
 
 // #3641 — the barrel-voice law. The arcade voiced every barrel↔ladder event;
@@ -275,6 +278,7 @@ export function makeRun(seed, opts = {}) {
             passedBarrels: new Set(),   // #3754 walk-past-50 witness (mirrors jumped)
         },
         barrels: [],
+        popups: [], // #3761 — transient +100/+50 bonus labels (FX, not books)
     }
 }
 
@@ -292,6 +296,7 @@ function resetPlayer(gs) {
     p.frame = 0
     p.jumpedBarrels = new Set()
     p.passedBarrels = new Set()   // #3754 — witnesses reset with the life
+    gs.popups.length = 0          // #3761 — transient popups die with the life too
     gs.barrels = []
     gs.barrelTimer = 180
     gs.deathTimer = 0
@@ -552,6 +557,12 @@ export function tickDonkeyKong(gs, input = null) {
     const ev = { jump: false, jumpedBarrel: 0, passedBarrel: 0, died: false, respawn: false, won: false, over: false, barrel: false, hammerUp: false, swing: false, hammered: 0, hammerDown: false, climbed: false, hang: false, noClimb: false, reached: false, pull: false, rivet: false, collapse: false, barrelVoices: [] }
     const p = gs.player
     gs.tickN++
+    // #3761 — popups age at the top of the tick, so the tick that pays a
+    // bonus still shows its popup at age 0. Render-only; the books are untouched.
+    for (let i = gs.popups.length - 1; i >= 0; i--) {
+        gs.popups[i].age++
+        if (gs.popups[i].age >= POPUP_LIFE) gs.popups.splice(i, 1)
+    }
     if (gs.swing > 0) gs.swing--
     if (gs.over) { ev.over = true; return ev }
 
@@ -817,7 +828,8 @@ export function tickDonkeyKong(gs, input = null) {
 
     // ---- RIVET PULLS (#3598) ----
     // Walk onto a rivet on her girder grounded: hands close, PULL_TICKS of
-    // yank, then the rivet comes out for the arcade 100 and the hole stays
+    // yank, then the rivet comes out for our 100 (house price — #3761 could
+    // not verify the arcade's number from reachable sources) and the hole stays
     // dark in the girder. Four holes — the last one out starts the collapse.
     if (gs.rivetPhase) {
         if (gs.pullTimer > 0) {
@@ -898,10 +910,15 @@ export function tickDonkeyKong(gs, input = null) {
                     p.jumpedBarrels.add(b)
                     gs.score += 100
                     ev.jumpedBarrel++
+                    gs.popups.push({ x: b.x + b.w / 2, y: b.y, text: '+100', age: 0 }) // #3761
                 }
             }
-            // #3754 — the arcade's other half of the obstacle bonus
-            // (Wikipedia §Scoring: jump an obstacle = 100, WALK PAST one = 50).
+            // #3754 — our obstacle bonus pays BOTH halves: jump-over 100 and
+            // WALK-PAST 50. #3761 honesty note: the arcade's exact prices could
+            // NOT be verified from sources this lane reaches (Wikipedia lists
+            // the scoring CATEGORIES, not values; fandom/manual unreachable),
+            // so these are OUR scoreboard law, pinned by kongcheck — never
+            // sold as "the arcade's".
             // A barrel crossing Mario's column BELOW his feet while grounded
             // and alive pays +50, once per barrel. Canvas y grows downward, so
             // "below" is negative dy: the band −48..−10 sits clear of the
@@ -910,13 +927,14 @@ export function tickDonkeyKong(gs, input = null) {
             // 40 px floor gap), a top-pair row at ≈−27 — and it starts below
             // the jump law's −24..0 window only because grounded excludes
             // airborne anyway; a grounded barrel at −24..−10 is mid-fall past
-            // the feet, which the arcade counts as walked past too. Jumped
+            // the feet, which our law counts as walked past too. Jumped
             // barrels never double-dip; the dead pay nothing.
             else if (p.grounded && !p.climbing && gs.deathTimer <= 0) {
                 if (Math.abs(dx) < 16 && dy <= -10 && dy > -48 && !p.passedBarrels.has(b) && !p.jumpedBarrels.has(b)) {
                     p.passedBarrels.add(b)
                     gs.score += 50
                     ev.passedBarrel++
+                    gs.popups.push({ x: b.x + b.w / 2, y: b.y, text: '+50', age: 0 }) // #3761
                 }
             }
         }
@@ -979,6 +997,7 @@ function cloneWorld(gs) {
         pullIdx: gs.pullIdx,
         rivetPhase: gs.rivetPhase,
         collapse: gs.collapse,
+        popups: gs.popups.map(q => ({ ...q })), // #3761 — rollouts carry the FX buffer
         dkFall: gs.dkFall,
         hammer: gs.hammer,
         swing: gs.swing,
