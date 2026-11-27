@@ -513,6 +513,15 @@ npm run dev -- --port 5173 --strictPort      # then /retrogames/pinball
   re-dress — is polish-pass work, routed to the QA lane as #3789 (the
   kickback save sweep + grapple voice shipped with #3468 + #3766 — see
   "#3766 — the rescue shows").
+- **CLOSED (#3789 item 1): the ball drags its own speed.** The same v-law the
+  blade rides now grades the ball: `ballGhosts(v)` (count, capped 12) and
+  `ballGhostA(v)` (burn, capped 0.5) read `v = hypot(vx, vy)` per frame, and
+  the history is a per-puck WeakMap — so a rail-bound orbit run smears a
+  comet, a trickle barely blurs, a magnet-held or parked ball drags nothing,
+  and every multiball member carries its own tail. Display state only —
+  physics, scoring and `stateHash` untouched (static pin §3789 in
+  pinballcheck; a constant-count, flat-alpha or lead-ball-only mutant dies).
+  Still open on #3789: lit-hierarchy pass, EMBER re-dress.
   The JET LANE combo banner landed with #3468: the
   flank SET announces itself `JET LANE! +<set>` (hot, pulsing, crawl-in — the
   same class as the right-ramp RAMP SET), mirroring the launch-lane SET.
