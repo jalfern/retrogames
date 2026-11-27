@@ -529,7 +529,22 @@ npm run dev -- --port 5173 --strictPort      # then /retrogames/pinball
   and every multiball member carries its own tail. Display state only —
   physics, scoring and `stateHash` untouched (static pin §3789 in
   pinballcheck; a constant-count, flat-alpha or lead-ball-only mutant dies).
-  Still open on #3789: lit-hierarchy pass, EMBER re-dress.
+  Still open as #3794: EMBER re-dress (the lit-hierarchy pass shipped
+  below as #3793; #3789 split into #3793/#3794 when item 1 landed).
+- **CLOSED by #3793 (#3789 item 2): lamps read three intensities.** Progress,
+  sets and the jackpot all glowed at one intensity class — banked locks
+  flashed like completed sets, kickback-ready flashed like a firing one. The
+  law now lives in one place (`art.js`: `LAMP_SINGLE/SET/JACKPOT`,
+  `jackpotNow`, `lampClass`, `lampLook`, `lampFill`): single-lit lamps burn
+  steady lane amber with a small bloom, a completed SET flashes white↔hot on
+  an 8-frame beat, and a live multiball escalates every LIT lamp to a
+  full-white 4-frame strobe — a dark lamp never escalates. Lock lamps, JET
+  LANE progress + SET, the orbit pads and bank lamps, and kickback-ready all
+  take brightness from the class, and RAMP SET finally has a playfield lamp
+  above its top rollover (the set lived only in the DMD line before).
+  Display state only — physics, scoring and `stateHash` untouched (static
+  pins §3793 in pinballcheck; the uniform-pulse and hot-kickback looks are
+  pinned gone, and a mutant escalating dark lamps dies).
   The JET LANE combo banner landed with #3468: the
   flank SET announces itself `JET LANE! +<set>` (hot, pulsing, crawl-in — the
   same class as the right-ramp RAMP SET), mirroring the launch-lane SET.
