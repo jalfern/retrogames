@@ -12,7 +12,7 @@
 
 import { readFileSync } from 'node:fs'
 import { spawnSync } from 'node:child_process'
-import { mushroomField, scoreForSegment, MUSHROOM_POINTS, CELL_SIZE, START_LIVES, SPIDER_POINTS, SCORPION_POINTS, FLEA_POINTS, SPIDER_EVERY, SCORPION_EVERY, FLEA_COOLDOWN, poisonMushroom, bulletEscapes, waveSpeed, splitSpd, SPEED_CAP, munchCue, MUNCH_FLOOR, MUNCH_CEIL, MUNCH_MIN_EVERY, MUNCH_MAX_EVERY, reviveGarden, REVIVE_POINTS, SPIDER_BITE, STING_REACH, spiderDevours, scorpionStings } from '../src/games/Centipede/sim.js'
+import { mushroomField, scoreForSegment, MUSHROOM_POINTS, CELL_SIZE, START_LIVES, SPIDER_POINTS, SCORPION_POINTS, FLEA_POINTS, SPIDER_EVERY, SCORPION_EVERY, FLEA_COOLDOWN, poisonMushroom, bulletEscapes, waveSpeed, splitSpd, SPEED_CAP, munchCue, MUNCH_FLOOR, MUNCH_CEIL, MUNCH_MIN_EVERY, MUNCH_MAX_EVERY, reviveGarden, REVIVE_POINTS, SPIDER_BITE, STING_REACH, spiderDevours, scorpionStings, BITE_FLASH, STING_FLASH, CHOMP_FRAMES, biteFlash, stingFlash } from '../src/games/Centipede/sim.js'
 import { seedRng, seedFromQuery } from '../src/utils/gameContract.js'
 import { plant, pull } from './lib/mutateguard.mjs'
 
@@ -376,6 +376,19 @@ console.log('#3726 §bite: the garden\u2019s bugs bite the column')
         (src.match(/stingsTotal = 0 \/\/ #3726/g) || []).length === 2,
         'both run-reset paths zero the witnesses (startRun + contract reset)')
     ok(/devour: \(\) =>/.test(src) && /stingSeg: \(\) =>/.test(src), 'DEV staging hooks exist for the drive')
+    // #3733 — the bite & sting tells: the ecology must READ at a glance.
+    ok(BITE_FLASH === 6 && STING_FLASH === 8 && CHOMP_FRAMES === 6, 'tell lifetimes pinned (6f white fall-site flash, 8f venom spark, 6f jaw clamp)')
+    {
+        const bf = biteFlash(100, 120), sf = stingFlash(100, 120)
+        ok(bf.flash === true && bf.color === '#ffffff' && bf.life === BITE_FLASH && bf.x === 108 && bf.y === 128, 'the fall site flashes white at the cell centre')
+        ok(sf.flash === true && sf.color === '#ffe27a' && sf.life === STING_FLASH, 'the sting spits a warm spark — a different read from the white bite')
+        ok(bf.vx === 0 && bf.vy === 0 && sf.vx === 0 && sf.vy === 0, 'tells sit on the cell — no drift, no dice: replays stay bit-exact')
+    }
+    ok(bite && /state\.fx\.push\(biteFlash\(seg\.x, seg\.y\)\)/.test(bite[0]), 'the bite stamps its white flash at the fall site')
+    ok(bite && /s\.chomp = CHOMP_FRAMES/.test(bite[0]), 'the spider clamps its jaws the tick it devours')
+    ok(/state\.fx\.push\(stingFlash\(c\.x, c\.y\)\)/.test(src), 'the sting stamps its spark on the struck segment')
+    ok(/if \(f\.flash\) \{/.test(src), 'the renderer draws cell-flashes')
+    ok(/chomp: 0/.test(src) && /if \(s\.chomp > 0\) s\.chomp--/.test(src), 'the chomp timer is born at rest and decays on the tick clock')
 }
 
 // ------------------------------------------------------------------ mutants ----
@@ -524,6 +537,22 @@ if (process.argv.includes('--mutant')) {
                         }
                     }`,
             `if (state.centipedes[i]) state.centipedes[i].head = true`],
+        // #3733 — the tells are laws too: a bite or sting nobody can see is no tell.
+        ['the bite flashes nothing (the lunch is invisible again)', I,
+            `state.fx.push(biteFlash(seg.x, seg.y))`,
+            `void seg`],
+        ['the spider never chomps (jaws stay slack)', I,
+            `s.chomp = CHOMP_FRAMES`,
+            `void i`],
+        ['the sting spits no spark (column-venom invisible)', I,
+            `state.fx.push(stingFlash(c.x, c.y))`,
+            `void c`],
+        ['cell-flashes are never drawn', I,
+            `if (f.flash) {`,
+            `if (false && f.flash) {`],
+        ['the bite flash dies in one frame (invisible again)', S,
+            `export const BITE_FLASH = 6`,
+            `export const BITE_FLASH = 1`],
     ]
     let died = 0
     for (const [name, file, from, to] of MUTANTS) {

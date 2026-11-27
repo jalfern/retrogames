@@ -97,6 +97,15 @@ export const spiderDevours = (spider, seg) => (
     Math.abs(spider.x - seg.x) < SPIDER_BITE && Math.abs(spider.y - seg.y) < SPIDER_BITE
 )
 
+// #3733 — bite & sting tells. The ecology must READ at a glance: a devoured
+// cell flashes white and the spider clamps its jaws; a stung segment spits a
+// warm venom spark (cap-venom has no flash of its own, so column-venom reads
+// distinct). Render-only fx — no dice, no physics, replays stay bit-exact.
+export const BITE_FLASH = 6 // frames the fall site stays white
+export const STING_FLASH = 8 // frames the venom spark glows
+export const CHOMP_FRAMES = 6 // jaw-clamp frames on the devouring spider
+export const biteFlash = (x, y) => ({ x: x + 8, y: y + 8, vx: 0, vy: 0, life: BITE_FLASH, max: BITE_FLASH, flash: true, color: '#ffffff' })
+export const stingFlash = (x, y) => ({ x: x + 8, y: y + 8, vx: 0, vy: 0, life: STING_FLASH, max: STING_FLASH, flash: true, color: '#ffe27a' })
 // The scorpion stings the column: segments it touches turn red and race —
 // the same venom law the caps obey.
 export const scorpionStings = (scorpion, seg) => (
