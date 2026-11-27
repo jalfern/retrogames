@@ -753,9 +753,26 @@ const PacmanGame = () => {
             const hudLeft = (viewWidth - mapWidth * scale) / 2
             ctx.textAlign = 'left'
             ctx.fillStyle = stageFlash > 0 ? '#ffe14a' : '#9aa4b2'
-            ctx.font = `${stageFlash > 0 ? 14 : 12}px monospace`
-            ctx.fillText(`ROUND ${round}`, hudLeft, hudBottom + 4)
-            drawFruit(ctx, hudLeft + 78, hudBottom, fruitForRound(round).kind)
+            // #3678: bell/key rounds (round 7+) lift the label + icon so a
+            // first-timer can tell a bell from a key at arm's length on a
+            // phone. Rounds 1-6 keep the exact 12px/icon-at-+78 floor — the
+            // identity check pins that pixel floor unchanged.
+            const legible = round >= 7
+            if (legible) {
+                ctx.font = `${stageFlash > 0 ? 20 : 18}px monospace`
+                ctx.fillText(`ROUND ${round}`, hudLeft, hudBottom + 4)
+                const labelW = ctx.measureText(`ROUND ${round}`).width
+                const iconX = hudLeft + labelW + 16
+                ctx.save()
+                ctx.translate(iconX, hudBottom)
+                ctx.scale(1.7, 1.7)
+                drawFruit(ctx, 0, 0, fruitForRound(round).kind)
+                ctx.restore()
+            } else {
+                ctx.font = `${stageFlash > 0 ? 14 : 12}px monospace`
+                ctx.fillText(`ROUND ${round}`, hudLeft, hudBottom + 4)
+                drawFruit(ctx, hudLeft + 78, hudBottom, fruitForRound(round).kind)
+            }
         }
 
         let lastTime = 0
