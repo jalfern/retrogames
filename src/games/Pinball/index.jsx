@@ -1183,23 +1183,27 @@ const PinballGame = () => {
                 const kbCx = (KB.x1 + KB.x2) / 2, kbCy = KB.yFrom - 3
                 const kbArmed = !used && gs.launched && !gs.done
                 const kbLit = lit > 0
+                // #3793: the ready lamp joins the jackpot strobe like every lit lamp;
+                // standby-by-default stays quiet amber.
+                const kbEscal = jb && kbArmed && !kbLit && !(arm > 0)
+                const kbStrobe = (gs.tick >> 2) % 2 === 0 ? '#ffffff' : pal.hot
                 ctx.save()
                 if (kbLit) { ctx.shadowColor = '#ffffff'; ctx.shadowBlur = 16 }
                 else if (arm > 0) { ctx.shadowColor = '#ffffff'; ctx.shadowBlur = 12 + 6 * Math.sin(gs.tick / 4) }
-                else if (kbArmed) { ctx.shadowColor = pal.lane; ctx.shadowBlur = 4 }   // #3793: ready is a single-lit standby, not a flash
+                else if (kbArmed) { ctx.shadowColor = kbEscal ? pal.hot : pal.lane; ctx.shadowBlur = kbEscal ? 20 : 4 }   // #3793: ready is a single-lit standby, not a flash
                 // plunger shaft pops up through the ring on fire
                 if (kbLit) {
                     ctx.fillStyle = pal.chrome
                     ctx.fillRect(kbCx - 4, kbCy - (lit / 18) * 10, 8, (lit / 18) * 10 + 4)
                 }
                 // rubber ring
-                ctx.strokeStyle = kbLit || arm > 0 ? '#ffffff' : (kbArmed ? pal.lane : 'rgba(148,163,184,0.5)')
+                ctx.strokeStyle = kbLit || arm > 0 ? '#ffffff' : (kbArmed ? (kbEscal ? kbStrobe : pal.lane) : 'rgba(148,163,184,0.5)')
                 ctx.lineWidth = 3
                 ctx.beginPath(); ctx.arc(kbCx, kbCy, 7.5, 0, 7); ctx.stroke()
                 // chrome face
                 ctx.fillStyle = kbLit ? '#ffffff'
                     : arm > 0 ? `rgba(255,255,255,${0.55 + 0.35 * Math.sin(gs.tick / 4)})`
-                    : kbArmed ? `rgba(${pal.laneRgb},0.72)`
+                    : kbArmed ? (kbEscal ? kbStrobe : `rgba(${pal.laneRgb},0.72)`)
                     : 'rgba(148,163,184,0.35)'
                 ctx.beginPath(); ctx.arc(kbCx, kbCy, 4.5, 0, 7); ctx.fill()
                 // #3451: per-side label — white on fire/arm, amber when live,

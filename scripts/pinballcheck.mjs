@@ -2454,7 +2454,7 @@ const wrap = (gs) => {
     // wiring: every lit lamp site in the shell draws through the classes, the
     // RAMP SET finally has a playfield lamp, and the old uniform looks are gone.
     r.check('#3793 every lamp site takes brightness from lampClass/lampLook and the RAMP SET lamp exists',
-        (idxSrc.match(/lampLook\(lampClass\(/g) || []).length >= 7 && /gs\.rampLit/.test(idxSrc))
+        (idxSrc.match(/lampLook\(lampClass\(/g) || []).length >= 7 && /gs\.rampLit/.test(idxSrc) && /kbEscal/.test(idxSrc))
     r.check('#3793 no lamp site keeps the old uniform pulse and kickback-ready is no longer a hot flash',
         !/const pulse = on && \(gs\.tick >> 3\)/.test(idxSrc) && !/kbArmed \? pal\.hot\b/.test(idxSrc) &&
         !/else if \(kbArmed\) \{ ctx\.shadowColor = pal\.hot/.test(idxSrc))
