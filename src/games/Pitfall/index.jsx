@@ -1238,6 +1238,31 @@ const PitfallGame = () => {
             ctx.fillRect(0, 370, SCREEN_WIDTH, 2)
             ctx.fillRect(0, 400, SCREEN_WIDTH, 2)
             ctx.fillRect(0, 435, SCREEN_WIDTH, 2)
+            // Ground grain — deterministic seeded speckle and dark pockets, era
+            // palette ($12 olive / $10 dark olive), the same stable surface per
+            // room (seeded off roomTreeBits, no entropy). Draw-time only — no
+            // gameplay change; pits/holes are drawn later and cover it.
+            let grainSeed = (roomTreeBits * 2654435761 + 0x1234567) >>> 0
+            const grain = () => {
+                grainSeed = (grainSeed * 1664525 + 1013904223) >>> 0
+                return grainSeed / 4294967296
+            }
+            // Dark pockets — irregular 5–10px hollows
+            for (let i = 0; i < 16; i++) {
+                const gx = Math.floor(grain() * SCREEN_WIDTH)
+                const gy = 358 + Math.floor(grain() * 104)
+                const gw = 5 + Math.floor(grain() * 6)
+                const gh = 3 + Math.floor(grain() * 3)
+                ctx.fillStyle = grain() < 0.7 ? '#646410' : '#444400'
+                ctx.fillRect(gx, gy, gw, gh)
+            }
+            // Fine speckle — sawdust, biased toward the surface soil band
+            for (let i = 0; i < 140; i++) {
+                const gx = Math.floor(grain() * SCREEN_WIDTH)
+                const gy = 356 + Math.floor(Math.pow(grain(), 0.8) * 110)
+                ctx.fillStyle = grain() < 0.68 ? '#646410' : '#444400'
+                ctx.fillRect(gx, gy, grain() < 0.82 ? 2 : 3, 2)
+            }
 
             // Underground — black background ($00)
             ctx.fillStyle = '#000000'
