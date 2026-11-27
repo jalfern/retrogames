@@ -710,6 +710,21 @@ const PacmanGame = () => {
             round: round, stage: speedStage(gs.score),
         }))
 
+        // DEV probe for the harness (#3661) — the mcsaucerdrive convention:
+        // the live ladder state, so pixels can be checked against the sim.
+        if (import.meta.env.DEV) {
+            window.__pacTest = {
+                probe: () => ({
+                    tick: tickN, score: gs.score, done: gameOver, seed, lives,
+                    round, stage: speedStage(gs.score),
+                    pac: { x: pacman.x, y: pacman.y, p: pacman.progress, speed: pacman.speed },
+                    power: pacman.poweredUp ? pacman.powerTimer : 0,
+                    fruit: fruitTr.fruit ? { x: fruitTr.fruit.x, y: fruitTr.fruit.y, kind: fruitTr.fruit.kind || 'cherry' } : null,
+                    ghosts: ghosts.map(g => ({ type: g.type, x: g.x, y: g.y, state: g.state })),
+                }),
+            }
+        }
+
         mountDbg({
             title: 'PAC-MAN',
             getState: () => [
@@ -723,6 +738,7 @@ const PacmanGame = () => {
                 { label: 'Reset positions', run: () => resetPositions() },
                 { label: 'Force game over', run: () => { gameOver = true } },
                 // #3661 cheat hooks so QA can ride the ladder without the grind
+                { label: 'Next round', run: () => { round++ } },
                 { label: 'Round → 14', run: () => { round = 14 } },
                 { label: 'Score → 5000', run: () => { gs.score = 5000 } },
             ],
@@ -735,6 +751,7 @@ const PacmanGame = () => {
             cancelAnimationFrame(animationFrameId)
             unexposeFeedbackState()
             unmountDbg()
+            if (import.meta.env.DEV && window.__pacTest) delete window.__pacTest
         }
     }, [])
 

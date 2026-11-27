@@ -206,6 +206,7 @@
     "homebodyqueuecheck": "node scripts/homebodyqueuecheck.mjs",
     "homebodydrive": "node scripts/homebodydrive.mjs",
     "pacmancheck": "node scripts/pacmancheck.mjs",
+    "pacprogressiondrive": "node scripts/pacprogressiondrive.mjs",
     "pongcheck": "node scripts/pongcheck.mjs",
     "pongdrive": "node scripts/pongdrive.mjs",
     "asteroidscheck": "node scripts/asteroidscheck.mjs",
