@@ -80,7 +80,20 @@ identical seeded drives answer identically including what was seen en route.
   #3620: each wave now seats 3 clover blocks (2x2) and 2 five-cap hedges from
   the seeded stream, remainder scattered; formations draw no extra dice, so
   `?seed=N` replays unchanged. Authentic per-wave *layouts* (fixed tables)
-  stay UNVERIFIED in-repo — ours are seeded shapes, not the machine's map.
+  **#BLOCKED** (#3664 ruling): the ROM's placement tables sit outside the
+  network boundary ("GitHub, npm, and docs you already use"), and the premise
+  itself reads wrong against the sources — Wikipedia describes the arcade's
+  field as *accumulating* during play ("at higher levels, the screen can
+  become increasingly crowded with mushrooms due to player/enemy actions"),
+  a seeded garden that wears in, not a map re-authored per wave. Ours is the
+  seeded-shapes reading; the fixed-table reading is no gap, it is a dead end.
+- Restored in the #3664 pass: death had left poison and chips in the garden —
+  the arcade heals them with the zapper. Wikipedia (verbatim):
+  "The Bug Blaster is destroyed when hit by any enemy, after which any
+  poisonous or partially damaged mushrooms revert to normal. 5 points are
+  awarded for each regenerated mushroom." Poison clears, chips heal, 5 ×
+  regenerated on every respawn; caps shot away stay gone (the § names exactly
+  those two states). Dice-free, so `?seed=N` replays keep bit-exact.
 - ~~One centipede per wave with no speed ladder across waves.~~ #3631: each
   cleared wave spawns ×1.08 faster (capped at ×2) and the rear sub-chain behind
   every cut compounds ×1.25 — dice-free, so `?seed=N` replays the whole ladder.
