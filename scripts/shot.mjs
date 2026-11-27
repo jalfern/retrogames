@@ -14,6 +14,8 @@
 //   --eval   : JS run ONCE after load, BEFORE --prewait/--settle. (See AGENTS.md:
 //              a transient effect must be fired with a setTimeout, not run inline.)
 //   --steps  : JSON array of {down|up, wait} applied in order (keyboard + wait ms).
+//   --scale : deviceScaleFactor (default 2) — pass 3 for the issue-3678
+//             @3 phone-viewport legibility shot
 //   --no-start : do NOT press a key first. Needed to photograph the attract
 //              screen / OPTIONS menu (the default key press dismisses them).
 //
@@ -34,6 +36,7 @@ mkdirSync(dirname(out), { recursive: true })
 
 const width = +opt('--w', 440)
 const height = +opt('--h', 420)
+const scale = +opt('--scale', 2)
 const settle = +opt('--settle', 300)
 const prewait = +opt('--prewait', settle)
 const evalJs = opt('--eval')
@@ -57,7 +60,7 @@ try {
     process.exit(1)
 }
 
-const page = await browser.newPage({ viewport: { width, height }, deviceScaleFactor: 2, hasTouch: touch, isMobile: touch })
+const page = await browser.newPage({ viewport: { width, height }, deviceScaleFactor: scale, hasTouch: touch, isMobile: touch })
 page.on('console', m => { if (m.type() === 'error') console.log('[console.error]', m.text()) })
 page.on('pageerror', e => console.log('[pageerror]', e.message))
 
