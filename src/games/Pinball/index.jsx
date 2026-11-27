@@ -1100,31 +1100,42 @@ const PinballGame = () => {
             // #3766 (#3446 item 2 completed): the rescue SHOWS. #3468 shipped a
             // sweep on the left save only, riding the outlane guide (geometry the
             // mirror cabinet's right side never had). One law now: the chase
-            // rides the SAVE'S OWN COLUMN — head travels drain → device top with
-            // a short fading tail, so whichever side fires, on either cabinet,
-            // the lamp-chase names the pocket the ball was grabbed from.
+            // rides the SAVE'S OWN COLUMN. #3800 items 1+3 (phone legibility +
+            // classic length): the head sweeps the WHOLE lane — drain → outlane
+            // top, same 14-of-18-tick decay law — the bed fill covers the full
+            // column at readable alpha, and the head carries a hot under-glow +
+            // long bright core tail, so at 640×426 the chase names the column
+            // that saved the ball instead of flickering inside the column art.
             if (gs.kbSweep > 0) {
                 const KBs = gs.kbSweepL ? tb.kbL : tb.kb
                 const cxCol = (KBs.x1 + KBs.x2) / 2
                 const total = 18
                 const elapsed = total - gs.kbSweep
                 const t = Math.min(1, elapsed / 14)
-                const yBot = KBs.yTo, yTop = KBs.yFrom - 3
+                const yBot = KBs.yTo, yTop = KBs.yFrom - 82
                 const yNow = yBot + (yTop - yBot) * t
                 ctx.save()
                 ctx.globalAlpha = 0.15 + 0.85 * Math.min(1, gs.kbSweep / 12)
-                // the lane bed the head has already crossed stays softly lit
-                ctx.fillStyle = `rgba(${pal.hotRgb},0.16)`
-                ctx.fillRect(KBs.x1 + 2, yNow, (KBs.x2 - KBs.x1) - 4, yBot - yNow)
-                ctx.strokeStyle = '#ffffff'
-                ctx.shadowColor = pal.hot
-                ctx.shadowBlur = 18
-                ctx.lineWidth = 3.5
+                // the lane bed the head has already crossed stays lit — full
+                // column width, 0.30 alpha: a phone can read WHICH pocket fired
+                ctx.fillStyle = `rgba(${pal.hotRgb},0.3)`
+                ctx.fillRect(KBs.x1, yNow, KBs.x2 - KBs.x1, yBot - yNow)
                 ctx.lineCap = 'round'
-                const yTail = Math.min(yBot, yNow + 44)
+                // soft hot under-glow behind the core tail — survives downscale
+                ctx.strokeStyle = pal.hot
+                ctx.shadowColor = pal.hot
+                ctx.shadowBlur = 22
+                ctx.lineWidth = 9
+                const yGlow = Math.min(yBot, yNow + 68)
+                ctx.beginPath(); ctx.moveTo(cxCol, yNow); ctx.lineTo(cxCol, yGlow); ctx.stroke()
+                // the white core: thick enough to survive phone-scale sampling
+                ctx.strokeStyle = '#ffffff'
+                ctx.shadowBlur = 18
+                ctx.lineWidth = 4.5
+                const yTail = Math.min(yBot, yNow + 56)
                 ctx.beginPath(); ctx.moveTo(cxCol, yNow); ctx.lineTo(cxCol, yTail); ctx.stroke()
                 ctx.fillStyle = '#ffffff'
-                ctx.beginPath(); ctx.arc(cxCol, yNow, 4.5, 0, 7); ctx.fill()
+                ctx.beginPath(); ctx.arc(cxCol, yNow, 5.5, 0, 7); ctx.fill()
                 ctx.restore()
             }
 
