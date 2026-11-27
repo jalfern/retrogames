@@ -1,81 +1,69 @@
-# STATE — forge board snapshot (slot a, 2026-11-27 — DK walk-past 50 SHIPPED `fca8127`)
+# STATE — forge board snapshot (slot b, 2026-11-27 — MC hot-seat P2 battery buttons SHIPPED `4dc509c`)
 
-## This session (slot a) — shipped twice
-- **TARGET #3753 REFUSED at claim** — held by b (live, pid 34 min at kick,
-  `forge/mc-bonus-city` pushed with game+harness). Normal ladder: halt none;
-  steer none; `next` #1712 skipped (`waiting-jon`+`lane:research`+`big-build`);
-  game-queue empty; feedback held (#3749 `building-qa`, #3244/#2971
-  `waiting-jon`); QA-borrow blocked (live QA mini) → flagship stage null →
-  NEVER-DRY rung (#1571).
-- **Honest ladder audit:** `idle-kick` answered `KICK PAC-MAN 0 weak`, but
-  PAC-MAN's only gap was its live-drive advisory — harness, not gameplay.
-  Filed `pacmandrive` as its own job **#3755** (`lane:forge`) with the
-  mis-citation fixed, and took the oldest title with a real rule gap: DK.
-- **Shipped #3672** (PR #3756, squash `36e73b3`): parseGaps declines leading
-  `~~` struck-through bullets — shipped work can no longer score as weakness.
-  +2 jonqcheck pins, +2 lanecheck weakestStage pins; proof = mutating the
-  filter reddens exactly those 3. Verified stale-marks merged with it: Frogger
-  audio CLOSED #3714, Pong `**DISCLAIMER:**`→canonical, Asteroids #391 note
-  marked DISCLAIMER (AGENTS-blessed omission), Pinball #3336-item-2 marked
-  DISCLAIMER (#3335 DEFAULTED keep-level-only), Pac-Man #737 misref corrected.
-- **Shipped #3754** (PR #3759, squash `fca8127`): **DONKEY KONG walk-past 50** —
-  the arcade obstacle bonus's missing half (§Scoring: jump 100 / walk past 50;
-  the 100 existed). Grounded, alive, barrel crossing below the feet (dy band
-  −48..−10, clear of the kill box) pays +50 once per barrel; `passedBarrels`
-  witness rides `stateHash` + watch serialize; lower 50-blip beside the jump's
-  100-blip; no dice. kongcheck §obstacle-bonus 6 pins + 4 named mutants
-  (all 41 mutants die); kongdrive 15/15 with a deterministic `walkpast()` DEV
-  rig (paid=1, delta=50, witnesses=1). README: walk-past clause CLOSED;
-  oil-drum flame + timer-zero stay honest open.
-- jonq: nothing ANSWERED/DEFAULTED to execute (#3335 already consumed by QA
-  lane); asked nothing new — no taste/priority call needed.
+## This session (slot b) — never-dry rung: #3760 seat 2's three buttons
+- TARGET #3754 REFUSED at claim (slot a held it live — they shipped `fca8127`
+  mid-session). Ladder: steer none; `next` #1712 waiting-jon; game-queue empty;
+  feedback all QA-held/waiting-jon + live QA session owns the borrow → NEVER-DRY.
+  `idle-kick` → `KICK MISSILE COMMAND 0 weak` (score 3: three unowned gaps).
+- Gap triage: 0 gunner-deep-proof = concluded measurement (#3711 banked the
+  slack; tail is human-vs-harness provability, not game code); 1 FOA arcs =
+  unsourced (Wikipedia §Gameplay has only the three-button law; inventing sector
+  angles violates the fidelity law / #3695 BLOCKED precedent); 2 hot-seat P2
+  battery buttons = oldest SHIPABLE gameplay gap → filed POLISH #3760
+  (why-weakest in the issue) and shipped it.
+- GAME: Z/X/C name LEFT/CENTER/RIGHT for seat 2 (arcade three-button law,
+  Wikipedia §Gameplay). Edge latch `p2Batt` (reset beside `p2Fire`) fires
+  through `fireBattery` → dead/empty duds ride free, sim stays seat-agnostic;
+  duty guard mirrors P1's 1/2/3-vs-Space guard (off-duty joins, shot swallowed,
+  never queued). Any Z/X/C press joins a human into the CPU seat. Batteries
+  wear `1/2/3`/`Z/X/C` per seat on duty; join card teaches the triangle;
+  registry line updated. Desktop keyboard only (Jon's multiplayer ruling); pad
+  untouched; no dice → seeded rollouts byte-stable.
+- Proof: missilecmdcheck 170→182 (§p2-batteries sim pins + 8 wiring pins),
+  mutants 47→53 all die (6 named: deaf/never-reset/no-join/lying-table/
+  seat-blind/guardless), NEW `mcp2battdrive` 16/16 ×2 real Chrome (real Z
+  joins + cyan teach pixels, Z/X/C off-duty sleep, origins 40/400/760 own
+  magazines, P1 asleep, one-seed byte-equal, zero errors). parseGaps MC
+  open gaps 3→0 (gunner + arcs marked BLOCKED with evidence, P2 CLOSED).
+  lint:mario/fps/ai + eslint + build green. PR #3765 → `4dc509c`, prod bundle `index-BSXjF196.js`.
 
 ## Harness facts paid this session (kept so lanes stop re-paying)
-- **kongcheck's mutant flag is `--mutant`** (singular). `--mutate` is silently
-  ignored and the run reads as green-with-no-walk. Check the gate's own argv
-  word before trusting a "mutants passed" line.
-- mutateguard #2047 works: `--mutant` refuses a dirty tree — commit first, then
-  walk; `.mutant-running` gone when the walk exits clean.
-- Canvas dy is **player.cy − barrel.cy**: a barrel BELOW the feet is NEGATIVE
-  dy (a `dy>=10` band for "below" fires on nothing). Girder spacings 24/32/40
-  → lower-track crossings sit at dy ≈ −27…−43; band −48..−10 spans them all.
-- A walk-past completed before the killer lands is a LEGITIMATE 50 — the
-  dead-pay-nothing proof needs an instant-kill rig (killer already in the
-  kill box) with the floor barrel timed to cross only during the death anim.
-- kongdrive's #3618 ladder-hang check is seed-luck (random seed per load;
-  observed flap on identical code). New live proof rides the deterministic
-  `walkpast()` DEV hook, not board luck — same lesson as slot b's stamp hook.
+- CDP round-trips (press→evaluate) can close INSIDE one frame gap: a pixel
+  assert right after a UI moment sees nothing. Settle ≥1 frame (~200 ms) before
+  capturing one-shot fx.
+- Under box load (two lanes + QA + dev servers on one Mac) the rAF tick chain
+  lags fixed sleeps by up to a second — browser drives must POLL to the
+  landing condition (ammo/origins), never pace presses with fixed sleeps.
+  (Same family as #3753's break-swallower; this is the actuator half.)
+- README verify-block edits: anchor oldStrings on non-indented substrings —
+  hand-counted column alignment misfires the exact-match.
 
 ## BOARD facts at close
-- main GREEN at fca8127 (static; #3756 36e73b3 also merged this session). building: #3753? (b, live — MC bonus-city,
-  2 commits pushed). building-qa: #3749, #3648. game-queue: empty.
-  `next`: #1712 (waiting-jon). halt: 0. Filed: #3755 (pacmandrive,
-  lane:forge), #3761 (`feedback`, QA's job: hammer re-price vs
-  arcade 300/800 claims, score popups, flame/timer, art rung).
-- Rule 4 satisfied: game code merged (#3759 + #3756 data marks).
+- main GREEN at `4dc509c` (`static` passed #3765; nightly green).
+  Slot a shipped #3754 (`fca8127`), the CENTIPEDE authored kill-pop (#3750,
+  #3749), LANTERN RIVER far bank (#3762) and their docs close-out (#3764) this
+  window. building: none after this merge. building-qa: #3761 (DK polish pass
+  after #3759), #3743 (ORRERY demo). game-queue empty.
+  `next`: #1712 (waiting-jon). halt: 0.
+- Rule 4 satisfied: game code merged this window (#3765, src/games/**).
 
 ## PLAYABLE on main right now
-- DONKEY KONG — every barrel you clear pays: leap 100, walk past 50:
-  https://jalfern.com/retrogames/donkeykong
-- CENTIPEDE kill-pop garden (#3736), MC fairness trail/shimmer/attract ad
-  (#3739), ASTEROIDS kiting bounty (#3717/#3737), FROGGER duel-seat (#3721),
-  ROGUE cart laws (#3710/#3715), TIDEPOOL field guide (#3752).
+- MISSILE COMMAND hot-seat — seat 2 calls batteries with Z/X/C:
+  https://jalfern.com/retrogames/missilecommand
+- DONKEY KONG walk-past 50 (#3754), CENTIPEDE authored kill-pop (#3749),
+  TIDEPOOL field guide, PITFALL grain, ASTEROIDS bounty popup.
 
 ## Open questions (links only — #605)
-- #3516, #3244, #2971, #1712 (all AWAITING; none mine this session).
+- #3335, #3516, #3244, #2971, #1712 (all AWAITING; none mine this session).
 
 ## Next claims (for whoever is free)
-1. #3755 pacmandrive — small, well-specified harness job (lane:forge).
-2. Never-dry after this session's closes: `weakestStage` names PAC-MAN only
-   while #3755 stays open (then via the drive gap again — take gameplay
-   anyway: DK fireballs/electric-floor + timer-zero capture is the next true
-   rung); Pinball's #3446-residue bullet still lists live sub-items; Frogger's
-   remaining bullet is the driver-horizon note (not closable, not buildable —
-   leave it).
-3. QA: #3749 + the new DK polish issue; MC #3753 belongs to b.
+1. game-queue empty → never-dry again; re-derive with `idle-kick.mjs` (MC now
+   scores 0 — the kick names the true weakest title).
+2. Slot a's #3670 follow-ups / fresh QA filed items may land any time.
+3. ~45 stale lane worktrees under ~/Dev — purge lane only.
 
 ## Slot state at handoff
-- :5173 stopped via `scripts/devstop.sh` at close.
-- Worktrees `~/Dev/retrogames-forge-phantom-filter` PRUNED (#3756 merged);
-  `~/Dev/retrogames-forge-dk-walkpast` pruned after #3759 merged.
-- STATE parked via `statepark.mjs park a`; shift report pushed.
+- Dev server :5178 stopped via scripts/devstop.sh.
+- Worktree ~/Dev/retrogames-forge-mc-p2batt pruned post-merge (rule-5 cleanup).
+- STATE.md committed to main (game merged this session, step 9) and parked for
+  slot b via statepark.mjs park b.
