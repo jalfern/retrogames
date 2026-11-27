@@ -83,6 +83,26 @@ waves pays 100 per living city and 50 per spare missile, then reloads.
   be told to shoot anywhere) so outer-sector bombs are still defended; a
   covered-until-lapse retry loop covers the dodge. The gunner branch is inert
   below the gate, so the waves 1..5 sweep proof is byte-untouched.
+- **TWO-PLAYER ALTERNATING (#3630 slice 2) — the manual's own hot-seat.** Atari
+  1981 manual §6, games 18–34: players take the board one wave at a time and
+  both scores display. Rules as built: `2` at attract or game-over opens the hot-
+  seat (`1` returns solo; the mode persists across restarts — Defender #3533
+  convention; phones get a labelled tap button, never a second pad). P1 defends
+  the odd waves, P2 the even; **cities and silos are shared**, so a burn on your
+  wave costs your partner too — the strategy core of alternating play. The wave
+  bonus pays whoever played the wave (`addScore` routes every credit — warhead 25,
+  ferry 125, bonus — to the live seat); `gs.score` stays player 1's ledger and
+  `gs.score2` only moves in 2P, so **every solo proof replays byte-identical**
+  (§2player pins the dice-parity trace over 5000 ticks). Seat 2 is the CPU by
+  default (AGENTS.md multiplayer law) driven by the certified `gunnerStep` — 8
+  seeds hold the shared board with zero cities lost through a P2 wave. Two humans
+  is the desktop keyboard option: WASD aims, F fires, and any P2 key joins
+  mid-run ("PLAYER 2 JOINED" — the CPU yields its seat). Off-duty, P1's mouse/
+  Space are asleep (the guard never spends the other seat's ammo); WATCH is
+  solo-only — in hot-seat the gunner owns seat 2 outright. THE END names the
+  winner over both books (equal books: A DRAW). Hand-offs ride real wave clears
+  with a jingle — climbing for P2, descending for P1 — and the incoming
+  defender is named on the WAVE COMPLETE card.
 - **Restart was missing entirely before the batch-15 port** — the GAME OVER
   screen was dead. `startRun()` now rebuilds cities, silos, ammo, score, wave
   and spawn state from any key, click, or canvas tap (phones included).
@@ -104,13 +124,19 @@ waves pays 100 per living city and 50 per spare missile, then reloads.
 
 ## Verify
 ```
-npm run missilecmdcheck             # 83 checks: raid replay, sweep 24 seeds waves 1-5 clean,
+npm run missilecmdcheck             # 107 checks: raid replay, sweep 24 seeds waves 1-5 clean,
                                   #   doctrine pins (safe altitude, urgency, cover), saucers
                                   #   (byte-exact gate, entry/launch/kill/hold), deep doctrine
                                   #   A/B waves 6-10, juice, attract ad, smart bombs (speed
                                   #   split, gate, evade, blind-spot kill, center-only kill,
-                                  #   wave hold, watch center doctrine), wiring + registry
-npm run missilecmdcheck -- --mutant # 24 mutants, all must die
+                                  #   wave hold, watch center doctrine), 2P alternating
+                                  #   (flip seq, bonus attribution, shared board, per-seat
+                                  #   credits, dice-parity trace, CPU-seat defense), wiring
+npm run missilecmdcheck -- --mutant # 32 mutants, all must die
+npm run mc2pdrive                 # live browser hot-seat drive (needs the dev server): real 2
+                                  #   key opens the mode, real keys fire P1's wave only, turn
+                                  #   flips after wave 1, the CPU defends P2's wave, real WASD
+                                  #   + F join, dual-score HUD pixels, winner card, zero errors
 npm run mcsaucerdrive             # live browser ferry drive (11 checks): gate negative, probe↔pixels,
                                   #   attract ad, orange cruise-trail pixels, real mouse+Space 125
                                   #   kill with kill-juice sighting (needs the dev server)
@@ -123,9 +149,10 @@ npm run attractcheck              # attract screen rule 6
 ```
 
 ## Honest gaps
-- No two-player alternating game (#3630, slice 2 — manual §6: games 18–34,
-  players alternate one wave at a time, both scores displayed; AGENTS.md law:
-  CPU default via `gunnerStep`, two humans a desktop keyboard option).
+- The two-player game (shipped, #3630 slice 2) does not expose the arcade's
+  game-number table (games 18–34 selected waves-per-game, starting wave and
+  smart-bomb on/off with the dial). Our hot-seat runs the default raid curve —
+  one wave per seat, arrivals gated by wave as in solo.
 - Human clicks obey the nearest-battery |dx| click law; the arcade's per-base
   three buttons are modelled for the watch's smart-bomb shots (`cmd.silo`) but
   not exposed to the player — you can only call the fast battery by aiming in

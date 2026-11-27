@@ -265,6 +265,16 @@ const MissileCommandGame = () => {
                 }
                 p2Fire = false
             }
+            // P1/keyboard aim on the tick — the registry has advertised "Arrow
+            // Keys: Aim" since the port, and the pad dispatches arrows, but the
+            // keys were captured and never read. Phones get stick-to-aim now;
+            // in hot-seat the arrows belong to P1 only while P1 is on duty.
+            if (!attractUiRef.current && (!gs.twoP || gs.turn === 1)) {
+                if (keys.ArrowUp) gs.crosshair.y = Math.max(0, gs.crosshair.y - P2_AIM_SPEED)
+                if (keys.ArrowDown) gs.crosshair.y = Math.min(SCREEN_HEIGHT, gs.crosshair.y + P2_AIM_SPEED)
+                if (keys.ArrowLeft) gs.crosshair.x = Math.max(0, gs.crosshair.x - P2_AIM_SPEED)
+                if (keys.ArrowRight) gs.crosshair.x = Math.min(SCREEN_WIDTH, gs.crosshair.x + P2_AIM_SPEED)
+            }
             const cmd = attractUiRef.current ? attractCmd()
                 : gs.twoP && gs.turn === 2 && gs.p2cpu ? gunnerStep(gs) // the CPU seat
                 : gs.watch ? gunnerStep(gs) : null
@@ -648,7 +658,12 @@ const MissileCommandGame = () => {
                     // #3630 slice 2: the hot-seat view for the drive script.
                     twoP: gs.twoP, turn: gs.turn, p1: gs.score, p2: gs.score2, p2cpu: gs.p2cpu,
                     winner: gs.over ? winner(gs) : null,
+                    state: gs.state,
+                    crosshair: [Math.round(gs.crosshair.x), Math.round(gs.crosshair.y)],
                 }),
+                // the drive flips seat 2 without a join flash: the guard and
+                // actuation code paths read the flag, which is what's proven.
+                p2cpu: (v) => { if (gs.twoP) gs.p2cpu = !!v; return gs.p2cpu },
                 // harness-only ferry lift (same cheat DebugKit offers) so a drive
                 // script doesn't sit through five waves at 60 fps
                 toWave6: () => { gs.wave = 6; startWave(gs); return gs.wave },

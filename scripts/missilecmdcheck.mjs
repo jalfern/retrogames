@@ -729,8 +729,12 @@ console.log('component wiring: pin, report, restart, seat')
     ok(/gs\.twoP && gs\.turn === 2 && gs\.p2cpu \? gunnerStep\(gs\)/.test(src),
         'the CPU seat drives the certified gunner on P2 waves')
     ok(/if \(gs\.twoP\) return/.test(src), 'watch is solo-only — seat 2 belongs to the gunner')
+    ok(/if \(keys\.ArrowLeft\) gs\.crosshair\.x = Math\.max/.test(src),
+        'P1 arrows aim the crosshair — the pad stick finally has a load')
     ok(/twoP: gs\.twoP, turn: gs\.turn, p1: gs\.score, p2: gs\.score2/.test(src),
         'the production report carries the hot-seat picture')
+    ok(/PLAYER \$\{w\} WINS/.test(src) && /A DRAW/.test(src),
+        'THE END names the hot-seat winner over both books')
     const simSrc = readFileSync('src/games/MissileCommand/sim.js', 'utf8')
     ok(/if \(gs\.twoP\) \{\s*gs\.turn = gs\.turn === 1 \? 2 : 1/.test(simSrc),
         'the flip lives in nextWave and is gated by the mode')
@@ -843,6 +847,9 @@ if (process.argv.includes('--mutant')) {
         ['#3630 s2: the CPU seat abdicates (P2 waves fly undefended)', I,
             `gs.twoP && gs.turn === 2 && gs.p2cpu ? gunnerStep(gs)`,
             `false ? gunnerStep(gs)`],
+        ['#3630 s2: pad arrow-aim dies (the stick idles again)', I,
+            `if (keys.ArrowLeft) gs.crosshair.x = Math.max(0, gs.crosshair.x - P2_AIM_SPEED)`,
+            `if (false) gs.crosshair.x = Math.max(0, gs.crosshair.x - P2_AIM_SPEED)`],
     ]
     let died = 0
     for (const [name, file, from, to] of MUTANTS) {
