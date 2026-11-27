@@ -9,7 +9,8 @@ import { readFileSync, writeFileSync } from 'node:fs'
 import { spawnSync } from 'node:child_process'
 import { attractFrame, INFO_MSGS, HOLD, PRESS, DIM, HUD, estWidth } from '../src/games/Frogger/attract.js'
 import { makeLane, DIVE_CYCLE, deathStyle, makeRun, tickFrogger, watchStep,
-    ROW_FREEZE, timeBonus, TIME_LIMIT, START_ROW, ROAD_BOT, CELL } from '../src/games/Frogger/sim.js'
+    ROW_FREEZE, timeBonus, TIME_LIMIT, START_ROW, ROAD_BOT, CELL,
+    addScore, die, ONE_UP_AT, LADY_BONUS, RIVER_CFG, RIVER_TOP, HOUSE_COLS, spansOf } from '../src/games/Frogger/sim.js'
 import { seedRng, seedFromQuery } from '../src/utils/gameContract.js'
 import { plant, pull } from './lib/mutateguard.mjs'
 
@@ -331,6 +332,77 @@ console.log('duel & tell (#3676): alternating 2P, row-entry pause, time bonus')
     ok(/PLAYER \$\{gs\.player\}/.test(src2) && /WINS/.test(src2),
         'the banner names the seat and the verdict names the winner')
     ok(/players: gs\.players/.test(src2), 'the QA state carries the duel fields')
+}
+
+// ---------------------------------------- lady frog + bonus frog (#3692) ----
+// §Scoring: "A single bonus frog is given at 20,000 points"; 99,990 is the
+// cabinet ceiling — passing it "rolls over", only the last five digits are
+// kept. §Gameplay: the lady frog is "sometimes on a log"; delivering her home
+// scores 200. Her dice are seeded and rolled AFTER the fly's, so a seed's
+// pre-#3692 traffic (lane phases + fly house) stays byte-identical.
+console.log('lady frog + bonus frog + rollover (#3692)')
+{
+    const g = makeRun(99)
+    addScore(g, ONE_UP_AT)
+    ok(g.lives === 4 && g.oneUp, 'bonus frog at 20,000 (§Scoring)', `lives ${g.lives}`)
+    addScore(g, ONE_UP_AT)
+    ok(g.lives === 4, 'a SINGLE bonus frog — no second life at 40,000', `lives ${g.lives}`)
+    g.scores[0] = 99990
+    addScore(g, 50)
+    ok(g.score === 40, 'rollover keeps the last five digits (§Scoring)', `${g.score}`)
+
+    // "Sometimes": seeded sweep shows her on some worlds, not all — always on
+    // a log, never on the diving turtles.
+    let ladies = 0, badLane = 0
+    for (let s = 1; s <= 40; s++) {
+        const w = makeRun(s * 77)
+        if (w.lady) { ladies++; if (RIVER_CFG[w.lady.lane].kind !== 'log') badLane++ }
+    }
+    ok(ladies > 0 && ladies < 40, 'the lady frog appears on some worlds and not others (§Gameplay)', `${ladies}/40`)
+    ok(badLane === 0, 'she rides logs only', `${badLane} on turtles`)
+    const simSrc = readFileSync('src/games/Frogger/sim.js', 'utf8')
+    ok(simSrc.indexOf('gs.lady = { lane') > simSrc.indexOf('const flyIdx'),
+        'the lady dice roll after the fly roll — per-seed traffic stays byte-stable')
+
+    // Ride her home: pickup standing on her log, +200 at the nest, and she
+    // leaves the river.
+    const g2 = makeRun(5150)
+    const spans0 = spansOf(g2.riverLanes[0])
+    const vi = spans0.findIndex(s => s.x + s.w / 2 > 2 * CELL && s.x + s.w / 2 < (CELL * 13) - 2 * CELL)
+    g2.lady = { lane: 0, idx: vi }
+    g2.frog.row = RIVER_TOP
+    g2.frog.x = spans0[vi].x + spans0[vi].w / 2
+    g2.frog.riding = 0
+    let picked = false
+    for (let t = 0; t < 4 && !picked; t++) picked = tickFrogger(g2).ladyPick
+    ok(picked && g2.frog.lady, 'standing on her log takes her along (pickup event)', `carry ${g2.frog.lady}`)
+    const before = g2.score
+    const hi = g2.houses.findIndex(h => !h.filled)
+    g2.frog.row = RIVER_TOP
+    g2.frog.x = HOUSE_COLS[hi] * CELL + CELL / 2
+    const evD = tickFrogger(g2, { dx: 0, dy: -1 })
+    ok(evD.home === 1 && evD.lady, 'delivering her home fires its own event', JSON.stringify({ home: evD.home, lady: evD.lady }))
+    ok(g2.score - before >= LADY_BONUS + 50, 'the nest pays +200 for the lady (§Scoring)', `+${g2.score - before}`)
+    ok(g2.lady === null, 'delivered — she leaves the river for the rest of the level')
+
+    // A drowned carrier loses her; she herself waits on her log.
+    const g3 = makeRun(5150)
+    g3.lady = { lane: 0, idx: vi }
+    g3.frog.row = RIVER_TOP
+    g3.frog.x = spansOf(g3.riverLanes[0])[vi].x + spansOf(g3.riverLanes[0])[vi].w / 2
+    g3.frog.riding = 0
+    for (let t = 0; t < 4 && !g3.frog.lady; t++) tickFrogger(g3)
+    die(g3, 'water')
+    for (let t = 0; t < 60; t++) tickFrogger(g3)
+    ok(g3.frog.state === 'alive' && !g3.frog.lady && !!g3.lady,
+        'a drowned carrier loses her; she waits on her log', JSON.stringify({ carry: g3.frog.lady, lady: !!g3.lady }))
+
+    // Shell pins: the sounds and the five-digit HUD exist in the shell.
+    const src3 = readFileSync('src/games/Frogger/index.jsx', 'utf8')
+    ok(/ev\.ladyPick/.test(src3) && /playOneUp\(\)/.test(src3),
+        'the shell sounds the pickup chirp and the one-up jingle')
+    ok(/SCORE_WRAP/.test(src3) && /padStart\(5, '0'\)/.test(src3),
+        'the HUD pads the score to five digits (the rollover is visible)')
 }
 
 if (process.argv.includes('--mutate')) {

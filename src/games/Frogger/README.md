@@ -57,6 +57,13 @@ byte-equal, every seed banks ≥1 level, 36/40 zero-death, ≥20 homes per seed,
   time bonus, ten points per unused ½ second (§Scoring). The pause is a
   human-seat law: under the watch seat the physics stay exact tick-for-tick so
   the certified drivers (#2869 gapsweep, #1776 watchcheck pin) never desync.
+- ~~No lady frog; no bonus life; six-digit score~~ **CLOSED by #3692**: a
+  seeded die sometimes places a pink lady frog on a log (§Gameplay); standing
+  on her log picks her up and delivering her home pays 200 (§Scoring) — she
+  survives her carrier's death and waits on the log, and leaves the river once
+  delivered. A single bonus frog at 20,000 (§Scoring, once per seat), and the
+  score rolls over past 99,990 keeping five digits. Her dice roll after the
+  fly's, so every seed's traffic is byte-identical to pre-#3692 (pinned).
 - Original logs-turtles carry frogs off-screen only via riding; a frog riding
   off the edge dies as "off" — faithful, but the arcade shows a distinct
   off-screen splat.
