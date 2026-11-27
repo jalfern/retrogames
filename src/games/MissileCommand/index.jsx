@@ -59,6 +59,13 @@ const MissileCommandGame = () => {
         const P2_CODES = ['KeyW', 'KeyA', 'KeyS', 'KeyD', 'KeyF']
         const P2_AIM_SPEED = 9
         let p2Fire = false // edge-latched between keydown and the next tick
+        // #3760 — seat 2's three buttons (Wikipedia §Gameplay: "pressing one of
+        // three buttons to launch a counter-missile from the appropriate
+        // battery"): Z/X/C name LEFT/CENTER/RIGHT for the second seat,
+        // mirroring P1's 1/2/3 (#3695). Edge-latched like F; a dead or empty
+        // battery is a dud, never a reroute (fireBattery keeps its gates).
+        const P2_BATT = { KeyZ: 0, KeyX: 1, KeyC: 2 }
+        let p2Batt = null // the battery seat 2 named since the last tick
         let joinFlashUntil = 0 // "PLAYER 2 JOINED" card, on the sim clock
 
         const seat = () => {
@@ -197,11 +204,12 @@ const MissileCommandGame = () => {
             }
             // #3630 slice 2: seat 2's keyboard — WASD aim + F fire. Any press
             // joins the game mid-run; the keys only act on P2's own waves.
-            if (gs.twoP && P2_CODES.includes(e.code)) {
+            if (gs.twoP && (P2_CODES.includes(e.code) || e.code in P2_BATT)) {
                 e.preventDefault()
                 joinP2()
                 if (gs.turn === 2 && !gs.p2cpu && !gs.over && !attractUiRef.current) {
                     if (e.code === 'KeyF') p2Fire = true
+                    else if (e.code in P2_BATT) p2Batt = P2_BATT[e.code] // #3760
                     else keys2[e.code] = true
                 }
                 return
@@ -280,8 +288,13 @@ const MissileCommandGame = () => {
                     if (keys2.KeyA) gs.crosshair.x = Math.max(0, gs.crosshair.x - P2_AIM_SPEED)
                     if (keys2.KeyD) gs.crosshair.x = Math.min(SCREEN_WIDTH, gs.crosshair.x + P2_AIM_SPEED)
                     if (p2Fire) fireAt(gs, gs.crosshair.x, gs.crosshair.y)
+                    // #3760 — the named battery answers on P2's wave from any
+                    // aim (the arcade's three-button law is seat 2's too);
+                    // off-duty the latch is swallowed whole, never queued.
+                    if (p2Batt !== null) fireBattery(gs, p2Batt, gs.crosshair.x, gs.crosshair.y)
                 }
                 p2Fire = false
+                p2Batt = null
             }
             // P1/keyboard aim on the tick — the registry has advertised "Arrow
             // Keys: Aim" since the port, and the pad dispatches arrows, but the
@@ -472,7 +485,9 @@ const MissileCommandGame = () => {
                     ctx.font = '10px monospace'
                     ctx.textAlign = 'center'
                     ctx.fillStyle = '#7a7a7a'
-                    ctx.fillText(String(i + 1), s.x, GROUND_Y - 34)
+                    // #3760 — the wear follows the seat: batteries teach Z/X/C
+                    // while a human holds seat 2, and 1/2/3 the rest of the time.
+                    ctx.fillText(gs.twoP && gs.turn === 2 && !gs.p2cpu ? 'ZXC'[i] : String(i + 1), s.x, GROUND_Y - 34)
                     if (i === 1 && gs.smartWave) {
                         ctx.fillStyle = '#00e5ff'
                         ctx.fillText('FAST', s.x, GROUND_Y - 46)
@@ -753,6 +768,10 @@ const MissileCommandGame = () => {
                 // the whole point of the join moment and must clear ART.md phone legibility (#3689)
                 ctx.font = '30px monospace'
                 ctx.fillText('PLAYER 2 JOINED — WASD + F', SCREEN_WIDTH / 2, 120)
+                // #3760 — the seat's three buttons get taught at the join moment
+                ctx.font = '16px monospace'
+                ctx.fillStyle = '#00e5ff'
+                ctx.fillText('Z X C — fire LEFT / CENTER / RIGHT', SCREEN_WIDTH / 2, 150)
             }
 
             ctx.restore()
