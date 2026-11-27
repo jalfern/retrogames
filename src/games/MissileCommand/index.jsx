@@ -304,14 +304,22 @@ const MissileCommandGame = () => {
                 }
                 // #3630 smart bombs — a nervous double-warble announces one,
                 // and its kill crunches with a high interrogation ping.
+                // #3665 sound identity: the single 0.06 warble sat under the
+                // wave-7 bed (boom 0.5, ferry 0.16) — you never learned the
+                // threat by ear. Now two quick descending saw chirps (nothing
+                // else in the palette descends twice — ferry rides up on sine,
+                // cruisefire growls at 180) at a level that cuts phone
+                // speakers; the kill ping tightens its 740→1180 step and
+                // lifts out of the buried range.
                 else if (ev === 'smart') {
-                    audioController.playSweep(720, 300, 0.18, 'sawtooth', 0.06)
-                    audioController.playTone(300, 0.05, 'square', 0.05)
+                    audioController.playSweep(720, 300, 0.14, 'sawtooth', 0.12)
+                    audioController.playSweep(620, 260, 0.14, 'sawtooth', 0.1, null, 0.12)
+                    audioController.playTone(300, 0.05, 'square', 0.08, 0.26)
                 }
                 else if (ev === 'smartkill') {
-                    audioController.playNoise(0.18, 0.45)
-                    audioController.playTone(740, 0.12, 'square', 0.09)
-                    audioController.playTone(1180, 0.08, 'square', 0.06)
+                    audioController.playNoise(0.2, 0.5)
+                    audioController.playTone(740, 0.1, 'square', 0.12)
+                    audioController.playTone(1180, 0.08, 'square', 0.09, 0.09)
                 }
                 // #3630 slice 2: the handoff jingle spells who is next — P2
                 // climbs (G→D, the bright right corner), P1 descends (E→C, the
@@ -410,6 +418,10 @@ const MissileCommandGame = () => {
             })
 
             gs.warheads.forEach((m) => {
+                // #3665: smart bombs paint their own cyan tell below — the same
+                // 1px red line here stayed visible under the bend, and a red-on-red
+                // bend is exactly the story #3638 proved two reds cannot tell.
+                if (m.smart) return
                 // #3638: cruise launches read distinct from ICBM trails — same
                 // physics, different eyes. Orange trail + warm tip survives the
                 // 600px phone letterbox where two reds were one story.
@@ -430,16 +442,27 @@ const MissileCommandGame = () => {
             // its path is a polyline of every sidestep, and the head burns a
             // white-hot cyan core that pulses — the tell that this warhead is
             // reading the sky. Same ICBM skeleton (it IS an ICBM), new paint.
+            // #3665 phone legibility: at the ~0.71 letterbox the 1px bend
+            // antialiased into the black and the 4px diamond sat at ~3px —
+            // present but invisible next to the ABM's white head. Same
+            // lesson as #3638's cruise trail: 2 px survives device scale 1.
+            // A steady cyan halo ring rides the pulse so the head reads as
+            // "different warhead" before the bend does.
             gs.warheads.forEach((m) => {
                 if (!m.smart) return
                 ctx.strokeStyle = '#ff4040'
-                ctx.lineWidth = 1
+                ctx.lineWidth = 2
                 ctx.beginPath()
                 ctx.moveTo(m.startX, m.startY)
                 for (const [tx, ty] of m.trail) ctx.lineTo(tx, ty)
                 ctx.lineTo(m.x, m.y)
                 ctx.stroke()
                 const pulse = Math.floor(gs.tick / 6) % 2 === 0
+                ctx.strokeStyle = 'rgba(0,229,255,0.55)' // halo — the cyan identity, steady on the beat
+                ctx.lineWidth = 1.5
+                ctx.beginPath()
+                ctx.arc(m.x, m.y, pulse ? 7 : 6, 0, Math.PI * 2)
+                ctx.stroke()
                 ctx.fillStyle = pulse ? '#ffffff' : '#9ff4ff' // hot core
                 ctx.beginPath() // diamond head, 45° to the warhead's square
                 ctx.moveTo(m.x, m.y - 4)
