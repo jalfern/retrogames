@@ -454,6 +454,22 @@ const setBall = (gs, x, y, vx, vy) => { gs.bx = x; gs.by = y; gs.vx = vx; gs.vy 
         /function spinPersist\(ev\)/.test(sh) && (sh.match(/spinPersist\(ev\)/g) || []).length >= 3 && /bladeA - g \* /.test(sh))
 }
 
+// #3789 item 1: graduated BALL read — the v-law leaves the blade and rides the
+// ball. Static pins (display lives in the shell, like #3446's): the ghosts must
+// be per-ball (WeakMap history), count graded by speed at the call site, burn
+// graded by speed, and drawn for EVERY puck, not just the lead ball. A mutant
+// that constantifies the count, flattens alpha, or re-narrows to pucks[0] dies.
+{
+    const sh = readFileSync(join(dirname(fileURLToPath(import.meta.url)), '..', 'src/games/Pinball/index.jsx'), 'utf8')
+    r.check('#3789 shell drags speed-graded ghosts on every ball — helpers from v, per-puck WeakMap, count+alpha graded',
+        /function ballGhosts\(v\)/.test(sh) && /function ballGhostA\(v\)/.test(sh) &&
+        /const v = Math\.hypot\(b\.vx \|\| 0, b\.vy \|\| 0\)/.test(sh) &&
+        /ballGhosts\(v\)/.test(sh) && /ballGhostA\(v\)/.test(sh) &&
+        /for \(const b of gs\.pucks\)/.test(sh) && /tm\.get\(b\)/.test(sh) &&
+        /trailRef = useRef\(new WeakMap\(\)\)/.test(sh) && /trail: new WeakMap\(\)/.test(sh),
+        'ballGhosts/ballGhostA from v; per-puck ghosts on gs.pucks loop')
+}
+
 // -------------------------------------------------------- flippers ----
 {
     const gs = makeGame(61); gs.launched = true
