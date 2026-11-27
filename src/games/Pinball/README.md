@@ -361,10 +361,37 @@ compile reads ghost, never as a save.
   one-shot guard; the pad's A (a `[data-vc]`, no canvas pointerdown) and real
   keys act normally.
 
+## #3766 — the rescue shows (save chase, #3446 item 2 completed)
+
+#3250 gave the right drain a free save; #3468 gave the LEFT save a lamp-chase
+and a grapple voice — but the right save still flashed alone, the chase rode
+`outlaneGuide` geometry its mirror side didn't have, and none of it was gated.
+One law now, sim-carried like the #1588 juice signals:
+
+- **`gs.kbSweep` (18 → 0) + `gs.kbSweepL`** — set the moment EITHER save
+  fires, decayed with the flash field, cleared by `resetBall`. Which column it
+  rides is the DEVICE (`gs.kbSweepL ? tb.kbL : tb.kb`), so CABINET ONE's
+  right save, its left save, and both EMBER RIDER mirrors read identically at
+  375 pt without a single per-cabinet coordinate.
+- **The chase**: head travels the save's own column drain → device top over
+  14 of its 18 ticks with a short fading tail, hot glow, lane bed behind the
+  head softly lit (all pure display — rules, dice and `stateHash` never see
+  the signal; a pinned gate proves the hash ignores it).
+- **The voice stays the grapple** (#3468): clunk + snap + latched ring, and a
+  static gate now pins that it is NOT the ramp blip and can never regress to
+  one.
+
+Gated in `pinballcheck` §8c: ten pins (arm side R / arm side L / EMBER mirror
+arm, fire-tick decay accounting, expires-not-sticky, spent save drains without
+a chase, re-arm on new ball, resetBall squats nothing, hash-blindness,
+renderer-keys-off-sim, voice identity) and six named mutants
+(`kbSweepR`, `kbSweepL`, `kbSweepSticky`, `kbSweepSquat`, `kbSweepSide`,
+`kbSweepWhoosh` — all 31 mutants in the file die).
+
 ## Verify
 
 ```bash
-npm run pinballcheck          # 326 literal physics/rules/determinism/mirror/skins/demo/smith/smith-UI/garage/mix/pack/flank/chain pins, plain Node (+21 mutants incl. packmagnet/magspent/magclock/magstall/magrearm/chaincone/chainslot)
+npm run pinballcheck          # 342 literal physics/rules/determinism/mirror/skins/demo/smith/smith-UI/garage/mix/pack/flank/chain/save-chase pins, plain Node (+31 mutants incl. packmagnet/magspent/magclock/magstall/magrearm/chaincone/chainslot/kbSweep*)
 npm run pinballplay           # headless-Chrome drive (both cabinets: select, plunger, wrap, magnet, kickback, DMD, pixels, kits incl. driven-demo/chase/announce/memory/NO-SUCH-KIT legs, + #3336 live phone-mix legs, + #3432 flank leg: KICKBACK L / JET LANE SET / combo rearm; announce legs gated on a quiet table, #3452)
 npm run pinballsmith          # headless-Chrome TABLE SMITH drive (#3284 + #3359): ghost→bench, refusals, wipe/name/save, saved cabinet plays the row, TEST homes, reload persistence, garage: slot switch (Digit1/2/3), SAVE into a garage slot, slot-choice persistence, legacy-blob one-shot migration (+#3290: badge-while-unselected, nova-demo honesty, drawn-rim delta, seam nearest-centre, touch tap-guard + tool taps)
 CONTRACT_ONLY=pinball npm run contractcheck   # game-contract driving
@@ -481,8 +508,9 @@ npm run dev -- --port 5173 --strictPort      # then /retrogames/pinball
   the shell rides: flash persistence and blade motion-ghosts scale with it, so
   a fast ramp feed blurs and a limp outlane trickle does not. Display state
   only: physics, scoring and `stateHash` are untouched (gates §spinner +
-  mutants spinrung/spincool/spingrade). Still open on #3446: the kickback
-  save sweep + distinct grapple sound, ramp ball-motion read, lit-hierarchy
-  pass, EMBER re-dress. The JET LANE combo banner landed with #3468: the
+  mutants spinrung/spincool/spingrade). Still open on #3446: ramp ball-motion
+  read, lit-hierarchy pass, EMBER re-dress (the kickback save sweep + grapple
+  voice shipped with #3468 + #3766 — see "#3766 — the rescue shows").
+  The JET LANE combo banner landed with #3468: the
   flank SET announces itself `JET LANE! +<set>` (hot, pulsing, crawl-in — the
   same class as the right-ramp RAMP SET), mirroring the launch-lane SET.

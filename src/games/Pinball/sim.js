@@ -357,6 +357,11 @@ export function makeGame(seed = 1, cab = 0) {
         kickCd: 0,
         kbUsed: false, kbFlash: 0,   // #3250: the kickback save — one per ball
         kbLUsed: false, kbLFlash: 0, kbLArmFlash: 0,   // #3432: mirror save + re-arm flash
+        // #3766 (#3446 item 2 completed): the save SHOWS — a lamp-chase riding
+        // the rescue's own column, drain → device, on EITHER side. Display-only
+        // (never rules, dice or the hash), sim-carried like the #1588 juice
+        // signals so the harness can pin it.
+        kbSweep: 0, kbSweepL: 0,
         rampLHits: 0, rampLLit: false, rampLFlash: 0,   // #3432: JET LANE set counter
         bbCd: 0,           // steel-clack event cooldown in substeps (#3217)
         nudgeMeter: 0, nudgeDecay: 0, tilt: false,
@@ -409,6 +414,7 @@ export function resetBall(gs) {
     gs.spinPass = 0; gs.spinCool = 0;   // #3446: the ladder restarts with the ball
     gs.nudgeMeter = 0; gs.nudgeDecay = 0; gs.mult = 1; gs.banksThisBall = 0;
     gs.kbUsed = false;   // the kickback re-arms with every new ball
+    gs.kbSweep = 0; gs.kbSweepL = 0;   // #3766: the chase dies with the ball
     gs.kbLUsed = false; gs.rampLHits = 0; gs.rampLLit = false;   // #3432 mirror devices too
     gs.bbCd = 0;
     // rung 2: the tower drops its locks with the ball; the pack ends with it
@@ -944,6 +950,7 @@ export function stepGame(gs, pad = {}) {
         if (!gs.kbUsed && p.vy > KB.minVy &&
             p.bx > KB.x1 && p.bx < KB.x2 && p.by > KB.yFrom && p.by < KB.yTo) {
             gs.kbUsed = true; gs.kbFlash = 18;
+            gs.kbSweep = 18; gs.kbSweepL = 0;   // #3766: the right save shows
             p.vx = KB.vx; p.vy = KB.vy; p.stall = 0;
             add(gs, T.rules.kb);
             say(gs, `KICKBACK! +${T.rules.kb}`, 90);
@@ -958,6 +965,7 @@ export function stepGame(gs, pad = {}) {
         if (KBL && !gs.kbLUsed && p.vy > KBL.minVy &&
             p.bx > KBL.x1 && p.bx < KBL.x2 && p.by > KBL.yFrom && p.by < KBL.yTo) {
             gs.kbLUsed = true; gs.kbLFlash = 18;
+            gs.kbSweep = 18; gs.kbSweepL = 1;   // #3766: one law, both sides
             p.vx = KBL.vx; p.vy = KBL.vy; p.stall = 0;
             add(gs, T.rules.kb);
             say(gs, `KICKBACK! +${T.rules.kb}`, 90);
@@ -1042,6 +1050,7 @@ export function stepGame(gs, pad = {}) {
     if (gs.kbFlash > 0) gs.kbFlash -= 1;
     if (gs.rampLFlash > 0) gs.rampLFlash -= 1;
     if (gs.kbLFlash > 0) gs.kbLFlash -= 1;
+    if (gs.kbSweep > 0) gs.kbSweep -= 1;   // #3766: the chase runs its 18 ticks
     if (gs.kbLArmFlash > 0) gs.kbLArmFlash -= 1;
     gs.laneFlash = gs.laneFlash.map((v) => Math.max(0, v - 1));
     if (gs.lockFlash > 0) gs.lockFlash -= 1;
@@ -1216,6 +1225,7 @@ export function stateOf(gs) {
         liveBalls: gs.pucks.length, locks: gs.locks,
         multiball: gs.multiball, extraBall: gs.extraBall,
         rampHits: gs.rampHits, saveT: gs.saveT, kbUsed: gs.kbUsed,
+        kbSweep: gs.kbSweep, kbSweepL: gs.kbSweepL,   // #3766 display-only signal (not hashed)
         // #3432: the flank devices are observable state too — the hash must move when they do
         rampLHits: gs.rampLHits, rampLLit: gs.rampLLit, kbLUsed: gs.kbLUsed,
         // ---- rung 3 ----

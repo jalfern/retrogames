@@ -316,6 +316,13 @@ snake's line + blip (mutants: unplugged emit → 2 red; deleted line → 1 red).
    members. roguecheck +11 pins (cart value, one-rung-only, one d10, fx Δ,
    greet order, no-op at cap, nine-subtype coverage, struct goldens).
 - Food is the only light-source clock; no lamp/oil and torch-lit radius.
+  **BLOCKED** (#3766 audit): the 1980 original carries no lamp, no oil and no
+  torch radius — Wikipedia §Gameplay/§User interface (checked 2026-11-27) names
+  the item roster as weapons, armor, potions, scrolls and other magical items
+  only; torches, lantern oil and a torch-lit radius are the Moria (1983)/Hack
+  lineage inventions added atop Rogue after its source was closed. Inventing
+  them would break the fidelity law (this repo's BLOCKED precedent, #3695), so
+  the bullet stays an honest note, not owed work.
 
 RETRO bar: pure green-phosphor monospace look, original ASCII symbol set and
 the classic message line voice ("You begin to feel much better.", "Welcome to level 4!").

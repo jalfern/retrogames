@@ -283,7 +283,8 @@ const mkFlash = (tb) => ({
     orbit: 0, orbitArm: 0, mag: 0, magFree: 0,
     kb: 0, // #3250 kickback pop
     rampL: 0, kbL: 0, kbLArm: 0,   // #3432 JET LANE wires + mirror save + re-arm pulse
-    sweep: 0, // #3468 item 2: the kickback highlight sweep up the outlane
+    // #3766 replaced fl.sweep: the save-chase is sim-carried (gs.kbSweep) so
+    // both sides, both cabinets ride one law — see the draw block below.
     wobble: 0, // #3297 tilt-warning cabinet wobble (22 → 0, a damped lean)
     pzone: 0, // #3297 fresh power-zone tick (lights the meter steps briefly)
 })
@@ -503,7 +504,7 @@ const PinballGame = () => {
                 // #3432: the left save reads its own lamp (ev.side).
                 else if (ev.type === 'kickback') {
                     fl[ev.side === 'L' ? 'kbL' : 'kb'] = 18
-                    if (ev.side === 'L') fl.sweep = 18   // #3468 item 2: the save shows
+                    // #3766: the chase is sim state (gs.kbSweep) — both saves show it
                     shakeRef.current = Math.max(shakeRef.current, 8)
                     spawn(ev.x, ev.y, 16, pal.hot, 260)
                     spawnRing(ev.x, ev.y, pal.hot, 30, 16)
@@ -624,7 +625,7 @@ const PinballGame = () => {
                 else if (ev.type === 'bank') { fl.bank = 40; d.shk.current = Math.max(d.shk.current, 4) }
                 else if (ev.type === 'spinner') { fl.spinner = Math.max(fl.spinner, spinPersist(ev)) }
                 else if (ev.type === 'kicker') { sparkD(d, ev.x, ev.y, 9, pal.lane, 220) }
-                else if (ev.type === 'kickback') { fl[ev.side === 'L' ? 'kbL' : 'kb'] = 18; if (ev.side === 'L') fl.sweep = 18; sparkD(d, ev.x, ev.y, 12, pal.hot, 240) }
+                else if (ev.type === 'kickback') { fl[ev.side === 'L' ? 'kbL' : 'kb'] = 18; sparkD(d, ev.x, ev.y, 12, pal.hot, 240) }   // #3766: chase rides gs.kbSweep, both sides
                 else if (ev.type === 'ramp') { fl.ramp = 8; sparkD(d, ev.x, ev.y, 4, pal.lane, 110) }
                 else if (ev.type === 'rampset') { fl.ramp = 20 }
                 else if (ev.type === 'rampL') { fl.rampL = 8; sparkD(d, ev.x, ev.y, 4, pal.lane, 110) }
@@ -1085,28 +1086,34 @@ const PinballGame = () => {
             ctx.fillStyle = `rgba(${pal.kickerRgb},${0.25 + 0.2 * Math.sin(gs.tick / 7)})`
             ctx.beginPath(); ctx.moveTo(v.outMouthX1, 505); ctx.lineTo(v.outMouthX2, 505); ctx.lineTo(v.outMouthTip, 526); ctx.closePath(); ctx.fill()
 
-            // #3468 item 2: KICKBACK L rescue — a brief highlight sweep rides
-            // UP the outlane (head travels drain→top, a short fading tail
-            // behind) so the save reads as the save, not only as a flash.
-            if (fl.sweep > 0) {
-                const og = tb.outlaneGuide
+            // #3766 (#3446 item 2 completed): the rescue SHOWS. #3468 shipped a
+            // sweep on the left save only, riding the outlane guide (geometry the
+            // mirror cabinet's right side never had). One law now: the chase
+            // rides the SAVE'S OWN COLUMN — head travels drain → device top with
+            // a short fading tail, so whichever side fires, on either cabinet,
+            // the lamp-chase names the pocket the ball was grabbed from.
+            if (gs.kbSweep > 0) {
+                const KBs = gs.kbSweepL ? tb.kbL : tb.kb
+                const cxCol = (KBs.x1 + KBs.x2) / 2
                 const total = 18
-                const elapsed = total - fl.sweep
+                const elapsed = total - gs.kbSweep
                 const t = Math.min(1, elapsed / 14)
-                const yBot = og.y2, yTop = og.y1
+                const yBot = KBs.yTo, yTop = KBs.yFrom - 3
                 const yNow = yBot + (yTop - yBot) * t
-                const xAt = (y) => og.x1 + (og.x2 - og.x1) * ((y - og.y1) / (og.y2 - og.y1))
                 ctx.save()
-                ctx.globalAlpha = 0.15 + 0.85 * Math.min(1, fl.sweep / 12)
+                ctx.globalAlpha = 0.15 + 0.85 * Math.min(1, gs.kbSweep / 12)
+                // the lane bed the head has already crossed stays softly lit
+                ctx.fillStyle = `rgba(${pal.hotRgb},0.16)`
+                ctx.fillRect(KBs.x1 + 2, yNow, (KBs.x2 - KBs.x1) - 4, yBot - yNow)
                 ctx.strokeStyle = '#ffffff'
                 ctx.shadowColor = pal.hot
                 ctx.shadowBlur = 18
                 ctx.lineWidth = 3.5
                 ctx.lineCap = 'round'
                 const yTail = Math.min(yBot, yNow + 44)
-                ctx.beginPath(); ctx.moveTo(xAt(yNow), yNow); ctx.lineTo(xAt(yTail), yTail); ctx.stroke()
+                ctx.beginPath(); ctx.moveTo(cxCol, yNow); ctx.lineTo(cxCol, yTail); ctx.stroke()
                 ctx.fillStyle = '#ffffff'
-                ctx.beginPath(); ctx.arc(xAt(yNow), yNow, 4.5, 0, 7); ctx.fill()
+                ctx.beginPath(); ctx.arc(cxCol, yNow, 4.5, 0, 7); ctx.fill()
                 ctx.restore()
             }
 

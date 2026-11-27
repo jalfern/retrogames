@@ -21,7 +21,7 @@ const mutEq = process.argv.find((a) => a.startsWith('--mutate='))
 const MUT = mutEq ? mutEq.split('=')[1] : (MUTI > -1 ? process.argv[MUTI + 1] || null : null)
 if (MUTI > -1 && !MUT) {
     let died = 0
-    const RULES = ['seed', 'economy', 'mirror', 'search', 'kickback', 'skin', 'demo', 'smithzone', 'smithload', 'tiltnudge', 'powerzone', 'solo', 'seam', 'mix', 'packmagnet', 'magspent', 'magclock', 'magstall', 'magrearm', 'chaincone', 'chainslot', 'holoring', 'spinrung', 'spincool', 'spingrade']
+    const RULES = ['seed', 'economy', 'mirror', 'search', 'kickback', 'skin', 'demo', 'smithzone', 'smithload', 'tiltnudge', 'powerzone', 'solo', 'seam', 'mix', 'packmagnet', 'magspent', 'magclock', 'magstall', 'magrearm', 'chaincone', 'chainslot', 'holoring', 'spinrung', 'spincool', 'spingrade', 'kbSweepR', 'kbSweepL', 'kbSweepSticky', 'kbSweepSquat', 'kbSweepSide', 'kbSweepWhoosh']
     for (const rule of RULES) {
         const res = spawnSync(process.execPath, [fileURLToPath(import.meta.url), `--mutate=${rule}`], { encoding: 'utf8' })
         // child convention at EOF: exit 0 = the rule broke and the check saw red
@@ -203,6 +203,48 @@ if (MUT) {
             from: "gs.events.push({ type: 'spinner', x: sp.xMax - 8 * sp.side, y: b.by, v: Math.abs(b.vy) });",
             to: "gs.events.push({ type: 'spinner', x: sp.xMax - 8 * sp.side, y: b.by });",
             note: 'spinner events drop v — persistence cannot grade with feed speed',
+        },
+        // #3766: the right save stops showing its rescue (the old left-only law).
+        kbSweepR: {
+            file: 'src/games/Pinball/sim.js',
+            from: 'gs.kbSweep = 18; gs.kbSweepL = 0;   // #3766: the right save shows',
+            to: 'gs.kbSweepL = 0;   // mutant: the right save flashed only',
+            note: 'right kickback never arms the chase — one side flashes in the dark',
+        },
+        // #3766: mirror the omission onto the left save.
+        kbSweepL: {
+            file: 'src/games/Pinball/sim.js',
+            from: 'gs.kbSweep = 18; gs.kbSweepL = 1;   // #3766: one law, both sides',
+            to: 'gs.kbSweepL = 1;   // mutant: the left save never chases',
+            note: 'left kickback never arms the chase',
+        },
+        // #3766: the chase stops being a flash — the lane glows forever.
+        kbSweepSticky: {
+            file: 'src/games/Pinball/sim.js',
+            from: 'if (gs.kbSweep > 0) gs.kbSweep -= 1;   // #3766: the chase runs its 18 ticks',
+            to: 'if (gs.kbSweep > 0) gs.kbSweep -= 0;   // mutant: sticky chase',
+            note: 'chase never decays — the save column burns after one rescue',
+        },
+        // #3766: a new ball inherits the old ball's chase.
+        kbSweepSquat: {
+            file: 'src/games/Pinball/sim.js',
+            from: '    gs.kbSweep = 0; gs.kbSweepL = 0;   // #3766: the chase dies with the ball',
+            to: '    gs.kbSweepL = 0;   // mutant: chase squats past reset',
+            note: 'resetBall leaves a dead chase riding the column',
+        },
+        // #3766: renderer ignores which side fired.
+        kbSweepSide: {
+            file: 'src/games/Pinball/index.jsx',
+            from: 'const KBs = gs.kbSweepL ? tb.kbL : tb.kb',
+            to: 'const KBs = tb.kb',
+            note: 'the chase always rides the right column — the left save shows a lie',
+        },
+        // #3766: the rescue loses its voice back to a generic blip.
+        kbSweepWhoosh: {
+            file: 'src/games/Pinball/index.jsx',
+            from: 'a.playTone(110, 0.06, \'square\', 0.16); a.playNoise(0.04, 0.15)',
+            to: 'a.playSweep(980, 980, 0.04, \'square\', 0.09)',
+            note: 'kickback drops its grapple clunk — the rescue is just another blip',
         },
     }
     const a = ANCHORS[MUT]
@@ -2033,6 +2075,74 @@ const wrap = (gs) => {
         sh2.includes('const dd = Math.abs(px - (r.x + CARD_W / 2))') && sh2.includes('if (dd < bd) { bd = dd; best = i }'))
     r.check('#3290 the selected mini-card carries its own legible message strip',
         sh2.includes('textFit(mt, CARD_W - 10') && sh2.includes('mf.size'))
+}
+
+// --- 8c. the save chase (#3766, #3446 item 2 completed) ----------------------
+// #3250 shipped the rescue; #3468 gave the LEFT save a lamp-chase and a
+// grapple voice — but the right save still flashed in silence-equivalent, the
+// chase geometry didn't exist on the mirror side, and nothing was gated.
+// One law now: gs.kbSweep rides the SAVE'S OWN COLUMN, drain → device, on
+// either side, either cabinet. Display-only: never rules, dice, or the hash.
+{
+    // right save (CABINET ONE): chase arms, side R
+    const sc = drive(makeGame(120))
+    setBall(sc, 196, 558, 0, 300); clear(sc)
+    drive(sc, {}, 1)
+    r.check('#3766 the right save arms the chase, side R (17 ticks ride after the fire-tick decay)',
+        sc.events.some((e) => e.type === 'kickback') && stateOf(sc).kbSweep === 17 && stateOf(sc).kbSweepL === 0,
+        `sweep=${stateOf(sc).kbSweep} side=${stateOf(sc).kbSweepL}`)
+    // the chase runs out — it is a flash, not a state
+    let peakAfter = 0
+    for (let i = 0; i < 25; i++) { drive(sc, {}, 1); peakAfter = Math.max(peakAfter, stateOf(sc).kbSweep) }
+    r.check('#3766 the chase expires with its flash (never sticky)',
+        stateOf(sc).kbSweep === 0 && peakAfter <= 16, `after=${stateOf(sc).kbSweep} peak=${peakAfter}`)
+    // a spent save never arms a new chase
+    setBall(sc, 196, 552, 0, 300); clear(sc)
+    let spendSeen = [], sweepMax = 0
+    for (let i = 0; i < 40; i++) { drive(sc, {}, 1); spendSeen.push(...types(sc)); sweepMax = Math.max(sweepMax, stateOf(sc).kbSweep) }
+    r.check('#3766 the spent save drains its next ball without a chase',
+        !spendSeen.includes('kickback') && spendSeen.includes('drain') && sweepMax === 0,
+        `sweepMax=${sweepMax} ${spendSeen.join(',')}`)
+    // a new ball clears a live chase
+    resetBall(sc); sc.kbFlash = 0
+    setBall(sc, 196, 558, 0, 300); clear(sc)
+    drive(sc, {}, 1)
+    r.check('#3766 a fresh ball re-arms save AND chase', sc.events.some((e) => e.type === 'kickback') && stateOf(sc).kbSweep === 17)
+    sc.kbSweep = 19; resetBall(sc)
+    r.check('#3766 resetBall kills a chase still riding', stateOf(sc).kbSweep === 0)
+    // left save: same law, side L
+    const lc = drive(makeGame(140))
+    setBall(lc, 165, 556, 0, 300); clear(lc)   // §8b's proven left-save drop
+    drive(lc, {}, 1)
+    r.check('#3766 the left save arms the chase on the same law, side L',
+        lc.events.some((e) => e.type === 'kickback') && stateOf(lc).kbSweep === 17 && stateOf(lc).kbSweepL === 1,
+        `sweep=${stateOf(lc).kbSweep} side=${stateOf(lc).kbSweepL}`)
+    // EMBER RIDER: the mirrored column shows it too (device law, not geometry)
+    const em = drive(makeGame(123, 1))
+    setBall(em, 163, 558, 0, 300); clear(em)
+    drive(em, {}, 1)
+    r.check('#3766 EMBER RIDER arms the chase for its mirrored save (side R)',
+        em.events.some((e) => e.type === 'kickback') && stateOf(em).kbSweep === 17 && stateOf(em).kbSweepL === 0,
+        `sweep=${stateOf(em).kbSweep} side=${stateOf(em).kbSweepL}`)
+    // display-only: the chase is invisible to the gameplay fingerprint
+    const hp = drive(makeGame(124))
+    setBall(hp, 196, 558, 0, 300); clear(hp)
+    drive(hp, {}, 1)
+    const hLive = stateHash(hp)
+    hp.kbSweep = 0; hp.kbSweepL = 1
+    r.check('#3766 the chase rides display state only — stateHash never sees it',
+        hLive === stateHash(hp), `live=${hLive} off=${stateHash(hp)}`)
+    // renderer: one column law keyed off the sim signal (static)
+    const jsxSrc = readFileSync(new URL('../src/games/Pinball/index.jsx', import.meta.url), 'utf8')
+    r.check('#3766 the renderer rides gs.kbSweep and names the firing side column',
+        /gs\.kbSweep > 0/.test(jsxSrc) && /gs\.kbSweepL \? tb\.kbL : tb\.kb/.test(jsxSrc))
+    // the rescue has its own voice: clunk + snap + ring, not the ramp blip
+    const kbCase = jsxSrc.match(/case 'kickback':([\s\S]*?)break/)
+    const rampCase = jsxSrc.match(/case 'ramp': case 'rampL':([\s\S]*?)break/)
+    r.check('#3766 the kickback sfx is a grapple (clunk+noise+snap+ring), distinct from the ramp blip',
+        !!kbCase && /playNoise/.test(kbCase[1]) && /playTone\(110/.test(kbCase[1]) && /playTone\(880/.test(kbCase[1]) &&
+        !/playTone\(980/.test(kbCase[1]) && !!rampCase && /playTone\(980/.test(rampCase[1]) && !/playNoise/.test(rampCase[1]),
+        kbCase && kbCase[1].trim())
 }
 
 // --------------------------------------------- solo bed (#3304) ----
