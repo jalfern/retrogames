@@ -248,8 +248,18 @@ export function weakestStage({ games = [], qaIssues = [], heldDirs = [] } = {}) 
             // #3093: same law — a fix owned by a hand-run lane (`lane:manual`)
             // is weakness no automatic lane may act on.
             if ((q.labels || []).includes('lane:manual')) return false
-            const n = norm(`${q.title || ''} ${q.body || ''}`)
-            return (words.length > 2 && n.includes(words)) || (dwords.length > 3 && n.includes(dwords))
+            // #3788: word-boundary naming. Substring matching manufactured a
+            // phantom `KICK CONTRA -1 weak` on 2026-11-27 — a QA issue said
+            // "parity-pinned art-kit contract", and "contract" CONTAINS
+            // "contra". Weakness must be named, not embedded. Punctuation is
+            // folded to spaces first so `qa(contra):` still names CONTRA.
+            // Ownership/held matching stays substring-conservative (#3074):
+            // this asymmetry only removes false weakness, never rekindles a
+            // suppressed gap or an unheld-but-adjacent title.
+            const n = norm(`${q.title || ''} ${q.body || ''}`).replace(/[^a-z0-9 ]+/g, ' ').replace(/\s+/g, ' ')
+            const nb = ` ${n} `
+            return (words.length > 2 && nb.includes(` ${words} `))
+                || (dwords.length > 3 && nb.includes(` ${dwords} `))
         }).length
         const score = gaps.length + named
         if (score > 0 && (!best || score > best.score)) {

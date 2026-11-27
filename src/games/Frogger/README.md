@@ -79,11 +79,15 @@ byte-equal, every seed banks ≥1 level, 36/40 zero-death, ≥20 homes per seed,
   never a copied cabinet tune.~~ **CLOSED by #3714** (1a35fa6): the bullet
   described the fix, not a gap — the cabinet-style tunes shipped with the
   #3703/#3714 pass and froggercheck pins the note tables.
-- The driver is survival-greedy, not perfect: the 40-seed sweep (120 s per
-  seed, `npm run froggercheck -- --mutate`'s sweep) and a dedicated per-seed
-  driver-horizon re-measure on 2026-11-27 (40/40 seeds clean, zero deaths
-  across 120 s, clears 40/40, min homes 55, 2852 total homes) leave the
+- ~~The driver is survival-greedy, not perfect~~ **CLOSED by #3788** (evidence,
+  not a code change — the re-measure was not a PR): the 40-seed sweep (120 s
+  per seed, `npm run froggercheck -- --mutate`'s sweep) and a dedicated
+  per-seed driver-horizon re-measure on 2026-11-27 (40/40 seeds clean, zero
+  deaths across 120 s, clears 40/40, min homes 55, 2852 total homes) leave the
   honest gap closed — the earlier "4 of 40 seeds shed one life" note was
-  measured against the older driver build. The driver plans 7 s ahead (420
-  ticks) plus a 15 s drift carry-out projection; a pattern beyond that reads
-  as horizon, not as danger.
+  measured against the older driver build.
+- **DISCLAIMER** (#3788): the driver plans 7 s ahead (420 ticks) plus a 15 s
+  drift carry-out projection; a pattern beyond that reads as horizon, not as
+  danger. This is an autopilot limit on the harness side, not a player-visible
+  rule — a decided state, no longer an open gap (#3788; slot a adjudicated
+  non-buildable 2026-11-27).
