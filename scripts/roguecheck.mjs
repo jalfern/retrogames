@@ -12,7 +12,7 @@ import {
   MAP_W, MAP_H, createInitialState, stepGame, hash, done, runScore,
   buildGrid, monsterAttack, rng, setSeed, generateDungeon, isWall, blocksMove,
   isThrowable, shootRay, watchStep, advanceMonsters, MONSTER_DEFS, MONSTER_ENERGY, qaSeatLevel,
-  getItemName, shackles, trapWeights,
+  getItemName, shackles, trapWeights, xpNeeded, checkLevel, handleQuaff,
 } from '../src/games/Rogue/sim.js'
 
 let pass = 0, fail = 0
@@ -222,6 +222,62 @@ console.log('rules')
         if (t.player.level === 2) leveled = true
     }
     ok('xp past the table threshold levels the hero up', leveled)
+
+    // #3697 — the cart's life-dice law. Rogue 3.6 (BSD restoration mirror):
+    // fight.c check_level walks the whole ladder (multi-level jump, gain =
+    // roll(Δ,10) — Δ real d10s); potions.c rolls healing per LEVEL (d4s /
+    // d8s) with the overflow quirk hp = ++max_hp.
+    ok('xp ladder matches the cart e_levels verbatim — 40920 typo, top rung level 20',
+        [0, 10, 20, 40, 80, 160, 320, 640, 1280, 2560, 5120, 10240, 20480, 40920,
+            81920, 163840, 327680, 655360, 1310720, 2621440, 2621440]
+            .every((v, i) => xpNeeded(i + 1) === v))
+    setSeed(7)
+    let jumpOk = true, msgOnce = true, jLo = 99, jHi = 0
+    for (let i = 0; i < 200; i++) {
+        const p = { level: 1, exp: 100, hp: 5, maxHp: 5 }   // 100xp crosses rungs 2..5
+        const msgs = []
+        checkLevel(p, msgs)
+        if (p.level !== 5) jumpOk = false
+        if (msgs.length !== 1 || !/^Welcome to level 5!/.test(msgs[0])) msgOnce = false
+        const g = p.maxHp - 5
+        if (g < jLo) jLo = g
+        if (g > jHi) jHi = g
+    }
+    ok('one big award jumps the whole ladder (100xp at lvl 1 lands lvl 5)', jumpOk)
+    ok('the jump greets once, naming the rung it lands on', msgOnce)
+    ok('multi-level gain is 4 REAL d10s (spreads past one die, stays 4..40)', jumpOk && jLo >= 4 && jHi > 10)
+    ok('the gain actually rolls (never flat)', jLo < jHi)
+    {
+        const p = { level: 20, exp: 10 ** 9, hp: 1, maxHp: 1 }
+        const msgs = []
+        checkLevel(p, msgs)
+        ok('no rung 21 — the cart table tops out at level 20', p.level === 20 && msgs.length === 0)
+    }
+    setSeed(11)
+    let xLo = 99, xHi = 0, scaledBeyond20 = false
+    for (let i = 0; i < 300; i++) {
+        let w = createInitialState(1 + (i % 300))
+        w = { ...w, player: { ...w.player, level: 10, hp: 1, maxHp: 200, inventory: [{ type: '!', subtype: 1 }] } }
+        const g = handleQuaff(w, 0).player.hp - 1
+        if (g < xLo) xLo = g
+        if (g > xHi) xHi = g
+        if (g > 20) scaledBeyond20 = true
+    }
+    ok('extra healing rolls d8s per level (level 10 gain stays 10..80)', xLo >= 10 && xHi <= 80)
+    ok('and can overshoot the old flat 10–20 band — the dice scale with the hero', scaledBeyond20)
+    let quirkOk = true, fitOk = true
+    for (let i = 0; i < 40; i++) {
+        let w = createInitialState(500 + i)
+        const m0 = w.player.maxHp
+        w = { ...w, player: { ...w.player, hp: m0, inventory: [{ type: '!', subtype: 1 }] } }
+        const t = handleQuaff(w, 0)
+        if (t.player.maxHp !== m0 + 1 || t.player.hp !== m0 + 1) quirkOk = false
+        w = { ...w, player: { ...w.player, hp: 1, maxHp: m0, inventory: [{ type: '!', subtype: 0 }] } }
+        const u = handleQuaff(w, 0)
+        if (u.player.maxHp !== m0 || u.player.hp < 2 || u.player.hp > m0) fitOk = false
+    }
+    ok('healing overflow buys exactly +1 max (the cart quirk)', quirkOk)
+    ok('a heal that fits in the bar never touches max', fitOk)
 
     // d20 fairness: the same adjacent duel sometimes hits, sometimes misses
     setSeed(5)
