@@ -1,0 +1,712 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
+<meta name="theme-color" content="#0b1122">
+<title>Lantern River</title>
+<style>
+  html, body { margin: 0; padding: 0; height: 100%; overflow: hidden; background: #0b1122;
+    -webkit-user-select: none; user-select: none; overscroll-behavior: none; }
+  canvas { display: block; width: 100vw; height: 100vh; touch-action: none; cursor: crosshair; }
+  #hud {
+    box-sizing: border-box;
+    position: fixed; left: max(12px, env(safe-area-inset-left)); bottom: max(12px, env(safe-area-inset-bottom));
+    z-index: 4; max-width: min(68vw, 420px);
+    font: 10px/1.7 Georgia, serif; letter-spacing: .18em; text-transform: uppercase;
+    color: #f0ead2; background: rgba(7, 10, 22, .55); border: 1px solid rgba(240, 234, 210, .28);
+    border-radius: 999px; padding: 8px 14px; pointer-events: none;
+    transition: opacity 1.2s; text-align: left;
+  }
+  #hud.gone { opacity: 0; }
+  @media (max-width: 640px) {
+    #hud { font-size: 8px; letter-spacing: .12em; padding: 7px 12px;
+      top: max(10px, env(safe-area-inset-top)); bottom: auto;
+      left: 50%; right: auto; transform: translateX(-50%);
+      max-width: 92vw; text-align: center; }
+  }
+</style>
+</head>
+<body>
+<canvas id="scene"></canvas>
+<div id="hud">tap the water to launch lanterns · drag to look around</div>
+<script>
+(() => {
+  'use strict';
+  const canvas = document.getElementById('scene');
+  const ctx = canvas.getContext('2d');
+  const hudEl = document.getElementById('hud');
+  let W = 0, H = 0, DPR = 1, portrait = false;
+  let hy = 0;                    // horizon line (river top)
+
+  // ---------- seeded rng ----------
+  function mulberry(seed) {
+    let a = seed >>> 0;
+    return function () {
+      a |= 0; a = (a + 0x6D2B79F5) | 0;
+      let t = Math.imul(a ^ (a >>> 15), 1 | a);
+      t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+      return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+    };
+  }
+  const rng = mulberry(20261127);
+
+  // ---------- layout ----------
+  function layout() {
+    W = window.innerWidth; H = window.innerHeight;
+    DPR = Math.min(window.devicePixelRatio || 1, 2);
+    canvas.width = Math.round(W * DPR); canvas.height = Math.round(H * DPR);
+    canvas.style.width = W + 'px'; canvas.style.height = H + 'px';
+    ctx.setTransform(DPR, 0, 0, DPR, 0, 0);
+    portrait = H > W;
+    hy = portrait ? H * 0.44 : H * 0.40;
+    const moon = { x: W * 0.70, y: H * 0.155, r: Math.min(W, H) * (portrait ? 0.085 : 0.068) };
+    buildStars(); buildHills(); buildTown(); buildReeds(); buildGrain();
+    G.moon = moon; G.hy = hy;
+    if (lanterns) for (const L of lanterns) { if (L.y < hy + 14) L.y = hy + 14; }
+  }
+
+  // Mutable scene params (rebuilt on resize)
+  const G = { moon: { x: 0, y: 0, r: 0 }, hy: 0 };
+
+  // ---------- stars / moon / hills / town / reeds ----------
+  let stars = [];
+  function buildStars() {
+    const r2 = mulberry(9001);
+    stars = [];
+    const n = Math.round((W * hy) / 2600);
+    for (let i = 0; i < n; i++) {
+      const big = r2() < 0.12;
+      stars.push({
+        x: r2() * W, y: r2() * (hy - 26), r: big ? 1.9 : (0.7 + r2() * 0.9),
+        bright: big ? 0.85 + r2() * 0.15 : 0.4 + r2() * 0.5,
+        twPh: r2() * Math.PI * 2, twF: 0.35 + r2() * 1.35,
+      });
+    }
+  }
+
+  const HIL = { back: [], front: [] };
+  function buildHills() {
+    const r2 = mulberry(4242);
+    const mk = (hMin, hVar, seed) => {
+      const rr = mulberry(seed);
+      const hills = [];
+      const peaks = 4 + Math.floor(rr() * 2);
+      for (let i = 0; i < peaks; i++) {
+        hills.push({ x: (i / (peaks - 1)) * W + (rr() - 0.5) * W * 0.18,
+          hgt: hMin + rr() * hVar, width: W * (0.22 + rr() * 0.22) });
+      }
+      return hills;
+    };
+    HIL.back = mk(H * 0.06, H * 0.055, 77);
+    HIL.front = mk(H * 0.035, H * 0.04, 88);
+  }
+
+  let town = [];
+  function buildTown() {
+    const r2 = mulberry(90210);
+    town = [];
+    let x = W * 0.07;
+    const xEnd = W * 0.93;
+    while (x < xEnd) {
+      const bw = W * (0.045 + r2() * 0.045);
+      const bh = H * (0.075 + r2() * 0.075) * (portrait ? 1.08 : 0.92);
+      const cx = x + bw / 2;
+      const wins = [];
+      const cols = Math.max(1, Math.floor(bw / (bw < W * 0.055 ? 12 : 15)));
+      const rows = Math.max(1, Math.floor(bh / 20));
+      for (let c = 0; c < cols; c++) for (let r = 0; r < rows; r++) {
+        if (r2() < 0.55) {
+          wins.push({
+            x: x + 3 + c * ((bw - 6) / cols) + r2() * 2,
+            y: hy - bh + 7 + r * Math.min(17, bh / rows),
+            w: 4 + r2() * 3, h: 5 + r2() * 3.5,
+            hue: r2(), ph: r2() * 6.28, f: 0.5 + r2() * 1.4,
+          });
+        }
+      }
+      town.push({ x, bw, bh, wins, spire: r2() < 0.3, tower: r2() < 0.3 });
+      x += bw + W * (0.008 + r2() * 0.02);
+    }
+  }
+
+  let reeds = [];
+  function buildReeds() {
+    const r2 = mulberry(1337);
+    reeds = [];
+    const clusters = [{ side: -1, x: W * 0.045 }, { side: 1, x: W * 0.955 }];
+    for (const cl of clusters) {
+      const n = 9;
+      for (let i = 0; i < n; i++) {
+        const h = H * (0.10 + r2() * 0.085) * (portrait ? 0.9 : 1.0);
+        reeds.push({
+          side: cl.side, base: cl.x + (r2() - 0.5) * W * 0.055,
+          h, sway: 6 + r2() * 10, phase: r2() * 6.28,
+          width: 2 + r2() * 1.6, tipCurve: 0.35 + r2() * 0.5,
+        });
+      }
+    }
+  }
+
+  let grain = null;
+  function buildGrain() {
+    const g = document.createElement('canvas');
+    g.width = Math.max(2, Math.floor(W / 2)); g.height = Math.max(2, Math.floor(H / 2));
+    const gc = g.getContext('2d');
+    const id = gc.createImageData(g.width, g.height);
+    const rr = mulberry(555);
+    for (let i = 0; i < id.data.length; i += 4) {
+      const v = rr() * 255;
+      id.data[i] = id.data[i + 1] = id.data[i + 2] = v > 200 ? 255 : 10;
+      id.data[i + 3] = v > 252 ? 14 : 0;
+    }
+    gc.putImageData(id, 0, 0);
+    grain = g;
+  }
+
+  // ---------- audio ----------
+  let audioCtx = null;
+  let noiseSrc = null;
+  let chimeStep = 0;
+  const PENTA = [523.25, 587.33, 659.25, 783.99, 880.00]; // C5 D5 E5 G5 A5
+
+  function ensureAudio() {
+    if (audioCtx) return;
+    try { audioCtx = new (window.AudioContext || window.webkitAudioContext)(); } catch { audioCtx = null; }
+    if (!audioCtx) return;
+    // ambient loop: soft brown noise, slow breathing gain
+    const dur = 2;
+    const buf = audioCtx.createBuffer(1, audioCtx.sampleRate * dur, audioCtx.sampleRate);
+    const ch = buf.getChannelData(0);
+    let last = 0;
+    for (let i = 0; i < ch.length; i++) {
+      const white = Math.random() * 2 - 1;
+      last = (last + 0.02 * white) / 1.02;
+      ch[i] = last * 3.2;
+    }
+    noiseSrc = audioCtx.createBufferSource();
+    noiseSrc.buffer = buf; noiseSrc.loop = true;
+    const lp = audioCtx.createBiquadFilter(); lp.type = 'lowpass'; lp.frequency.value = 360; lp.Q.value = 0.7;
+    const gain = audioCtx.createGain(); gain.gain.value = 0.045;
+    const lfo = audioCtx.createOscillator(); lfo.frequency.value = 0.083;
+    const lfoG = audioCtx.createGain(); lfoG.gain.value = 0.016;
+    lfo.connect(lfoG).connect(gain.gain);
+    noiseSrc.connect(lp).connect(gain).connect(audioCtx.destination);
+    noiseSrc.start(); lfo.start();
+  }
+  function chime() {
+    if (!audioCtx) return;
+    const t = audioCtx.currentTime;
+    const f = PENTA[chimeStep % PENTA.length]; chimeStep++;
+    const o = audioCtx.createOscillator(); const g = audioCtx.createGain();
+    o.type = 'sine'; o.frequency.value = f;
+    g.gain.setValueAtTime(0.0001, t);
+    g.gain.exponentialRampToValueAtTime(0.14, t + 0.015);
+    g.gain.exponentialRampToValueAtTime(0.0001, t + 1.15);
+    o.connect(g).connect(audioCtx.destination);
+    o.start(t); o.stop(t + 1.2);
+    const h = audioCtx.createOscillator(); const hg = audioCtx.createGain();
+    h.type = 'sine'; h.frequency.value = f * 2;
+    hg.gain.setValueAtTime(0.0001, t);
+    hg.gain.exponentialRampToValueAtTime(0.035, t + 0.012);
+    hg.gain.exponentialRampToValueAtTime(0.0001, t + 0.5);
+    h.connect(hg).connect(audioCtx.destination);
+    h.start(t); h.stop(t + 0.55);
+  }
+
+  // ---------- lanterns ----------
+  const lanterns = [];
+  const MAX_LANTERNS = 22;
+
+  function addLantern(x, y) {
+    const horizonY = hy + H * 0.02;
+    if (y < horizonY + 10) y = horizonY + 10 + rng() * 8;
+    const scale0 = Math.max(0.62, Math.min(1.05, (portrait ? 1.02 : 0.9) * (0.9 + rng() * 0.25)));
+    lanterns.push({
+      x, y, y0: y, scale0, seed: rng() * 1000,
+      age: 0, life: 12 + rng() * 5,
+      swayPhase: rng() * 6.28, swayAmp: 14 + rng() * 16,
+      swaySpeed: 0.45 + rng() * 0.4,
+      rise: H * (0.028 + rng() * 0.012),
+    });
+    if (lanterns.length > MAX_LANTERNS) lanterns.splice(0, lanterns.length - MAX_LANTERNS);
+  }
+
+  // ---------- ripples ----------
+  const ripples = [];
+
+  function addRipple(x, y, maxR, life, col, w) {
+    ripples.push({ x, y, age: 0, life, maxR, col: col || '#e8d9a0', w: w || 1.6 });
+  }
+
+  // wind settles slowly into gentle rings (no user action)
+  let windT = 0;
+  function windRipple(dt) {
+    windT -= dt;
+    if (windT <= 0) {
+      windT = 2.2 + rng() * 2.2;
+      const x = W * (0.12 + rng() * 0.76);
+      const y = hy + H * (0.10 + rng() * 0.62);
+      addRipple(x, y, 26 + rng() * 30, 2.6, '#d9e4ff', 1.0);
+    }
+  }
+
+  // ---------- input: tap launches, drag looks ----------
+  let pointer = { down: false };
+  let drag = { startX: 0, startY: 0, offX: 0, offY: 0, targetOffX: 0, targetOffY: 0, active: false, moved: false };
+
+  function pos(e) {
+    const t = e.touches && e.touches[0] ? e.touches[0] : e;
+    const r = canvas.getBoundingClientRect();
+    return { x: t.clientX - r.left, y: t.clientY - r.top };
+  }
+
+  function onDown(e) {
+    e.preventDefault();
+    ensureAudio();
+    const p = pos(e);
+    pointer.down = true;
+    drag.active = true; drag.moved = false;
+    drag.startX = p.x; drag.startY = p.y;
+    drag.offX = drag.targetOffX; drag.offY = drag.targetOffY;
+  }
+  function onMove(e) {
+    if (!drag.active) return;
+    const p = pos(e);
+    const dx = p.x - drag.startX, dy = p.y - drag.startY;
+    if (!drag.moved && Math.hypot(dx, dy) > 11) drag.moved = true;
+    if (drag.moved) {
+      drag.targetOffX = Math.max(-30, Math.min(30, dx * 0.42));
+      drag.targetOffY = Math.max(-18, Math.min(18, dy * 0.3));
+    }
+  }
+  function onUp(e) {
+    if (!drag.active) return;
+    e.preventDefault();
+    const p = pos(e);
+    pointer.down = false;
+    if (!drag.moved) {
+      if (p.y > hy + 12) {
+        addLantern(p.x, p.y);
+        addRipple(p.x, p.y, 44, 1.0, '#f2d6a0', 1.8);
+        chime();
+        hudEl.classList.add('gone');
+      } else {
+        addRipple(p.x, p.y, 22, 0.6, '#d9e4ff', 1.1);
+      }
+    }
+    drag.active = false;
+    drag.targetOffX = 0; drag.targetOffY = 0;
+  }
+
+  canvas.addEventListener('pointerdown', onDown);
+  window.addEventListener('pointermove', onMove, { passive: false });
+  window.addEventListener('pointerup', onUp, { passive: false });
+  window.addEventListener('pointercancel', onUp, { passive: false });
+  canvas.addEventListener('contextmenu', e => e.preventDefault());
+  document.addEventListener('visibilitychange', () => { lastTime = 0; });
+
+  // fade HUD after a while
+  const hudTimer = setTimeout(() => hudEl.classList.add('gone'), 8000);
+
+  // ---------- DEV hooks ----------
+  const DEV = {
+    ready: false,
+    frames: 0,
+    launch: (x, y) => { addLantern(x, y); addRipple(x, y, 40, 0.9, '#f2d6a0', 1.6); },
+    state: () => ({ ready: DEV.ready, frames: DEV.frames, lanterns: lanterns.length, time: tGlobal }),
+    reset: () => { lanterns.length = 0; ripples.length = 0; windT = 0.4; },
+  };
+  window.__lanternTest = DEV;
+
+  // ---------- scene draw ----------
+  function drawSky(t) {
+    const g = ctx.createLinearGradient(0, 0, 0, hy + 4);
+    g.addColorStop(0, '#070b1c');
+    g.addColorStop(0.52, '#141c3a');
+    g.addColorStop(0.86, '#25304f');
+    g.addColorStop(1, '#2f3a63');
+    ctx.fillStyle = g;
+    ctx.fillRect(-44, 0, W + 88, hy + 4);
+  }
+
+  function drawStars(t) {
+    for (const s of stars) {
+      const tw = 0.55 + 0.45 * Math.sin(t * s.twF * 2 + s.twPh);
+      ctx.globalAlpha = s.bright * tw;
+      ctx.fillStyle = '#fdf6e3';
+      ctx.beginPath(); ctx.arc(s.x, s.y, s.r, 0, 6.283); ctx.fill();
+      if (s.r > 1.7) {
+        ctx.globalAlpha = s.bright * tw * 0.5;
+        ctx.fillRect(s.x - 5, s.y - 0.6, 10, 1.2);
+        ctx.fillRect(s.x - 0.6, s.y - 5, 1.2, 10);
+      }
+    }
+    ctx.globalAlpha = 1;
+  }
+
+  function drawMoon(t) {
+    const { x, y, r } = G.moon;
+    const halo = ctx.createRadialGradient(x, y, r * 0.4, x, y, r * 3.4);
+    halo.addColorStop(0, 'rgba(246,227,180,0.30)');
+    halo.addColorStop(0.45, 'rgba(240,214,150,0.10)');
+    halo.addColorStop(1, 'rgba(240,214,150,0)');
+    ctx.fillStyle = halo;
+    ctx.beginPath(); ctx.arc(x, y, r * 3.4, 0, 6.283); ctx.fill();
+
+    ctx.fillStyle = '#f6e3b4';
+    ctx.beginPath(); ctx.arc(x, y, r, 0, 6.283); ctx.fill();
+    // faint pocks — cut-paper texture
+    ctx.fillStyle = 'rgba(226,204,158,0.55)';
+    ctx.beginPath(); ctx.arc(x - r * 0.3, y - r * 0.18, r * 0.22, 0, 6.283); ctx.fill();
+    ctx.beginPath(); ctx.arc(x + r * 0.34, y + r * 0.3, r * 0.16, 0, 6.283); ctx.fill();
+    ctx.beginPath(); ctx.arc(x + r * 0.1, y - r * 0.42, r * 0.12, 0, 6.283); ctx.fill();
+  }
+
+  function drawHillLayer(hills, color, t) {
+    ctx.fillStyle = color;
+    ctx.beginPath();
+    ctx.moveTo(-44, hy + 2);
+    const N = 60;
+    for (let i = 0; i <= N; i++) {
+      const x = -44 + (W + 88) * (i / N);
+      let y = hy;
+      for (const h of hills) {
+        const d = (x - h.x) / h.width;
+        y -= Math.max(0, 1 - d * d) * h.hgt;
+      }
+      // a low rolling floor far behind
+      y -= H * 0.028 * (0.6 + 0.4 * Math.sin(x * 0.008 + 2.1));
+      ctx.lineTo(x, y);
+    }
+    ctx.lineTo(W + 44, hy + 2);
+    ctx.closePath();
+    ctx.fill();
+  }
+
+  function drawTown(t) {
+    ctx.fillStyle = '#0e1322';
+    for (const b of town) {
+      ctx.fillRect(b.x, hy - b.bh, b.bw, b.bh);
+      // little roofline
+      if (b.spire) {
+        ctx.beginPath();
+        ctx.moveTo(b.x + b.bw * 0.5, hy - b.bh - (portrait ? 14 : 11));
+        ctx.lineTo(b.x + b.bw * 0.62, hy - b.bh);
+        ctx.lineTo(b.x + b.bw * 0.38, hy - b.bh);
+        ctx.closePath(); ctx.fill();
+      }
+      if (b.tower) {
+        ctx.fillRect(b.x + b.bw * 0.42, hy - b.bh - (portrait ? 10 : 8), b.bw * 0.16, portrait ? 10 : 8);
+      }
+    }
+    // far bank strip
+    ctx.fillStyle = '#11152c';
+    ctx.fillRect(-44, hy - 1, W + 88, 5);
+    // lit windows
+    for (const b of town) {
+      for (const w of b.wins) {
+        const flick = 0.78 + 0.22 * Math.sin(t * w.f * 6.28 + w.ph);
+        const lit = flick >= 0.64;
+        if (!lit) continue;
+        const warm = w.hue < 0.7 ? '#f6c453' : (w.hue < 0.9 ? '#ffde8a' : '#f2a54a');
+        ctx.fillStyle = warm;
+        ctx.globalAlpha = 0.45 + 0.55 * flick;
+        ctx.fillRect(w.x, w.y, w.w, w.h);
+      }
+    }
+    ctx.globalAlpha = 1;
+  }
+
+  function drawRiver() {
+    const g = ctx.createLinearGradient(0, hy, 0, H);
+    g.addColorStop(0, '#1a2342');
+    g.addColorStop(0.55, '#111a36');
+    g.addColorStop(1, '#0a1126');
+    ctx.fillStyle = g;
+    ctx.fillRect(-44, hy, W + 88, H - hy);
+    // subtle horizontal shimmer
+    ctx.fillStyle = 'rgba(80,100,160,0.16)';
+    const rows = 4 + Math.floor(H / 160);
+    for (let i = 0; i < rows; i++) {
+      const y = hy + (H - hy) * (0.12 + 0.75 * (i / rows)) + Math.sin(G.hy + i * 3.1) * 2;
+      ctx.fillRect(-44, y, W + 88, 1.4);
+    }
+  }
+
+  function drawMoonReflection(t) {
+    const { x, y, r } = G.moon;
+    if (y > hy) return;
+    const w0 = r * 1.05;
+    const len = H - hy;
+    ctx.save();
+    const n = 20;
+    for (let i = 0; i < n; i++) {
+      const f = i / (n - 1);
+      const yy = hy + 6 + len * f * 0.94;
+      const ww = w0 * (1 - f * 0.55) * (1 + 0.35 * Math.sin(t * 1.5 + i * 2.2));
+      const wob = Math.sin(t * 1.4 + i * 1.05 + 2.2) * (5 + f * 16);
+      ctx.globalAlpha = 0.085 * (1 - f * 0.78) * (0.72 + 0.28 * Math.sin(t * 2.0 + i * 1.8));
+      ctx.fillStyle = '#f4eaca';
+      ctx.beginPath();
+      ctx.ellipse(x + wob, yy, ww / 2, len / n * 0.85, 0, 0, 6.283);
+      ctx.fill();
+    }
+    ctx.restore();
+    ctx.globalAlpha = 1;
+  }
+
+  function drawReeds(t) {
+    const bankH = Math.max(9, H * 0.032);
+    ctx.fillStyle = '#090d1c';
+    ctx.fillRect(-44, H - bankH, W + 88, bankH);
+    // soft vignette over the bank edge
+    const bw = ctx.createLinearGradient(0, H - bankH - 8, 0, H);
+    bw.addColorStop(0, 'rgba(9,13,28,0)');
+    bw.addColorStop(1, 'rgba(9,13,28,0.55)');
+    ctx.fillStyle = bw;
+    ctx.fillRect(-44, H - bankH - 8, W + 88, 8 + bankH);
+
+    const breeze = Math.sin(t * 0.42) * 0.9 + Math.sin(t * 0.93 + 2.0) * 0.5;
+    for (const r of reeds) {
+      const bend = breeze * r.sway * 0.028 + Math.sin(t * 0.5 + r.phase) * 4;
+      const bx = r.side < 0 ? r.base : r.base; // base x
+      const tx = bx + bend + r.side * r.h * 0.10;
+      const tip = { x: bx + r.side * r.h * 0.28 + bend * 1.5, y: H - r.h };
+      ctx.strokeStyle = '#070a15';
+      ctx.lineWidth = r.width;
+      ctx.lineCap = 'round';
+      ctx.beginPath();
+      ctx.moveTo(bx, H + 3);
+      ctx.quadraticCurveTo(bx + bend * 0.5, H - r.h * 0.55, tip.x, tip.y);
+      ctx.stroke();
+      // little seed head
+      ctx.fillStyle = '#0e1226';
+      ctx.beginPath(); ctx.arc(tip.x, tip.y, r.width * 1.15, 0, 6.283); ctx.fill();
+    }
+  }
+
+  function drawRipples() {
+    for (const rp of ripples) {
+      if (rp.age >= rp.life) continue;
+      const k = rp.age / rp.life;
+      const e = 1 - Math.pow(1 - k, 2); // easeOut
+      const rx = 4 + e * rp.maxR;
+      const ry = rx * 0.34;
+      ctx.globalAlpha = (1 - k) * 0.75;
+      ctx.strokeStyle = rp.col;
+      ctx.lineWidth = rp.w;
+      ctx.beginPath();
+      ctx.ellipse(rp.x, rp.y, rx, ry, 0, 0, 6.283);
+      ctx.stroke();
+    }
+    ctx.globalAlpha = 1;
+  }
+
+  function drawLantern(L, t) {
+    if (L.age >= L.life) return;
+    const horizonY = hy + H * 0.02;
+    const k = Math.max(0, Math.min(1, (L.y0 - L.y) / (L.y0 - horizonY)));
+    const scale = L.scale0 * (1 - 0.74 * k);
+    const alpha = Math.min(1, (L.life - L.age) / 1.6) * (1 - Math.max(0, (k - 0.85) / 0.15) * 0.5);
+    if (alpha <= 0.01) return;
+    const bob = Math.sin(t * 2.1 + L.seed) * 2.2;
+    const sway = Math.sin(t * L.swaySpeed + L.swayPhase) * L.swayAmp;
+    const x = L.x + sway;
+    const y = L.y + bob;
+    const w = 26 * scale, h = 34 * scale;
+
+    ctx.save();
+    ctx.globalAlpha = alpha;
+
+    // warm halo
+    const halo = ctx.createRadialGradient(x, y, w * 0.25, x, y, w * 2.9);
+    halo.addColorStop(0, 'rgba(255,191,94,0.40)');
+    halo.addColorStop(0.5, 'rgba(255,191,94,0.13)');
+    halo.addColorStop(1, 'rgba(255,191,94,0)');
+    ctx.fillStyle = halo;
+    ctx.beginPath(); ctx.arc(x, y, w * 2.9, 0, 6.283); ctx.fill();
+
+    // paper body
+    const body = ctx.createLinearGradient(x - w / 2, y, x + w / 2, y);
+    body.addColorStop(0, '#e8955a');
+    body.addColorStop(0.28, '#ffc76e');
+    body.addColorStop(0.5, '#ffd98a');
+    body.addColorStop(0.74, '#ffc76e');
+    body.addColorStop(1, '#e8955a');
+    ctx.fillStyle = body;
+    ctx.beginPath();
+    if (ctx.ellipse) {
+      ctx.ellipse(x, y, w / 2, h / 2, 0, 0, 6.283);
+    } else {
+      ctx.ellipse(x, y, w / 2, h / 2, 0, 0, 6.283);
+    }
+    ctx.fill();
+
+    // ribs
+    ctx.strokeStyle = 'rgba(150,80,40,0.42)';
+    ctx.lineWidth = Math.max(0.8, 1.1 * scale);
+    for (let i = -2; i <= 2; i++) {
+      const rx = x + (i / 2.4) * (w / 2) * 0.72;
+      ctx.beginPath();
+      ctx.moveTo(rx, y - h / 2 + 3.5 * scale);
+      ctx.quadraticCurveTo(rx - i * 0.6 * scale, y, rx, y + h / 2 - 3.5 * scale);
+      ctx.stroke();
+    }
+
+    // caps
+    ctx.fillStyle = '#7a3d18';
+    ctx.fillRect(x - w * 0.16, y - h / 2 - 4.5 * scale, w * 0.32, 4.5 * scale);
+    ctx.fillRect(x - w * 0.20, y + h / 2, w * 0.40, 3.5 * scale);
+    // little tassel
+    ctx.strokeStyle = 'rgba(200,120,60,0.85)';
+    ctx.lineWidth = 1.4 * scale;
+    ctx.beginPath();
+    ctx.moveTo(x, y + h / 2 + 3.5 * scale);
+    ctx.quadraticCurveTo(x + Math.sin(t * 1.7 + L.seed) * 2.5 * scale, y + h / 2 + 8.5 * scale, x + Math.sin(t * 1.1 + L.seed) * 4 * scale, y + h / 2 + 11 * scale);
+    ctx.stroke();
+
+    ctx.restore();
+  }
+
+  function drawSkylineReflections(t) {
+    // faint, stretched town reflection under the far bank
+    if (! town.length) return;
+    ctx.save();
+    ctx.globalAlpha = 0.16;
+    for (const b of town) {
+      const bh = b.bh * 0.55;
+      ctx.fillStyle = '#0d1124';
+      ctx.fillRect(b.x + Math.sin(t * 0.8 + b.x) * 1.2, hy + 1, b.bw, bh);
+    }
+    ctx.restore();
+    ctx.globalAlpha = 1;
+  }
+
+  // vignette + grain
+  function drawOverlays() {
+    const vg = ctx.createRadialGradient(W / 2, H * 0.46, Math.min(W, H) * 0.42, W / 2, H * 0.5, Math.max(W, H) * 0.78);
+    vg.addColorStop(0, 'rgba(0,0,0,0)');
+    vg.addColorStop(1, 'rgba(0,0,0,0.42)');
+    ctx.fillStyle = vg;
+    ctx.fillRect(0, 0, W, H);
+    if (grain) {
+      ctx.globalAlpha = 0.5;
+      ctx.drawImage(grain, 0, 0, W, H);
+      ctx.globalAlpha = 1;
+    }
+  }
+
+  // ---------- main loop ----------
+  let tGlobal = 0;
+  let lastTime = 0;
+
+  function update(dt) {
+    windRipple(dt);
+    for (let i = lanterns.length - 1; i >= 0; i--) {
+      const L = lanterns[i];
+      L.age += dt;
+      const horizonY = hy + H * 0.02;
+      const span = L.y0 - horizonY;
+      const remain = Math.max(0, L.y - horizonY);
+      const speed = remain < 2 ? 2 : L.rise * (0.3 + 0.7 * (remain / span));
+      L.y -= speed * dt;
+      L.x += Math.sin(L.age * L.swaySpeed + L.swayPhase) * L.swayAmp * 0.004 * (60 * dt) * 0.55;
+      // clamp lateral wander back onto the river
+      const xMin = W * 0.06, xMax = W * 0.94;
+      if (L.x < xMin) L.x = xMin; if (L.x > xMax) L.x = xMax;
+      if (L.age >= L.life) lanterns.splice(i, 1);
+    }
+    for (let i = ripples.length - 1; i >= 0; i--) {
+      ripples[i].age += dt;
+      if (ripples[i].age >= ripples[i].life) ripples.splice(i, 1);
+    }
+    // parallax easing
+    drag.offX += (drag.targetOffX - drag.offX) * Math.min(1, dt * 5);
+    drag.offY += (drag.targetOffY - drag.offY) * Math.min(1, dt * 5);
+  }
+
+  function draw() {
+    ctx.clearRect(0, 0, W, H);
+    const px = drag.offX, py = drag.offY;
+    // layers with parallax depth (paper-cut depth)
+    const layers = [
+      { d: 0, fn: () => drawSky(tGlobal) },
+      { d: 0.35, fn: () => { drawStars(tGlobal); drawMoon(tGlobal); } },
+      { d: 0.26, fn: () => drawHillLayer(HIL.back, '#232c50', tGlobal) },
+      { d: 0.4, fn: () => drawHillLayer(HIL.front, '#1a2140', tGlobal) },
+      { d: 0.52, fn: () => drawTown(tGlobal) },
+      { d: 0.1, fn: () => { drawRiver(); drawSkylineReflections(tGlobal); drawMoonReflection(tGlobal); } },
+      { d: 0.16, fn: () => drawRipples() },
+      { d: 0.2, fn: () => { for (const L of lanterns) drawLanternReflectionsOne(L, tGlobal); } },
+      { d: 0.2, fn: () => { for (const L of lanterns) drawLantern(L, tGlobal); } },
+      { d: 0.62, fn: () => drawReeds(tGlobal) },
+    ];
+    for (const layer of layers) {
+      ctx.save();
+      ctx.translate(-px * layer.d, -py * layer.d);
+      layer.fn();
+      ctx.restore();
+    }
+    drawOverlays();
+  }
+
+  function drawLanternReflectionsOne(L, t) {
+    const horizonY = hy + H * 0.02;
+    const k = Math.max(0, Math.min(1, (L.y0 - L.y) / (L.y0 - horizonY)));
+    const alpha = (1 - k * 0.55) * 0.22 * (L.age < L.life - 1.6 ? 1 : Math.max(0, (L.life - L.age) / 1.6));
+    if (alpha <= 0.01) return;
+    const sway = Math.sin(t * L.swaySpeed + L.swayPhase) * L.swayAmp;
+    const lx = L.x + sway;
+    const yTop = Math.min(L.y + 11, H - 6);
+    const len = H - yTop - 2;
+    ctx.globalAlpha = alpha;
+    const w0 = 15 * L.scale0 * (1 - 0.74 * k) * 0.62;
+    const n = 16;
+    for (let i = 0; i < n; i++) {
+      const f = i / (n - 1);
+      const yy = yTop + 3 + len * f;
+      const ww = w0 * (1 - f * 0.45) * (1 + 0.35 * Math.sin(t * 2.2 + i * 1.7 + L.seed));
+      const wob = Math.sin(t * 2.1 + i * 1.4 + L.seed) * (2.5 + f * 6.5);
+      ctx.fillStyle = '#ffcf7a';
+      ctx.beginPath();
+      ctx.ellipse(lx + wob, yy, ww / 2, len / n * 0.72, 0, 0, 6.283);
+      ctx.fill();
+    }
+    ctx.globalAlpha = 1;
+  }
+
+  function loop(ts) {
+    if (!lastTime) lastTime = ts;
+    const dt = Math.min(0.05, (ts - lastTime) / 1000);
+    lastTime = ts;
+    tGlobal += dt;
+    update(dt);
+    draw();
+    DEV.frames = (DEV.frames || 0) + 1;
+    requestAnimationFrame(loop);
+  }
+
+  // ---------- boot ----------
+  function init() {
+    layout();
+    window.addEventListener('resize', layout);
+    lastTime = 0;
+    requestAnimationFrame(loop);
+    setTimeout(() => { DEV.ready = true; }, 80);
+  }
+  init();
+})();
+</script>
+<script>
+window.DEMO_CREDITS = {
+  name: 'LANTERN RIVER', accent: '#f2d6a0',
+  builder: { tag: 'INKLING', model: 'Inkling-2-Mini-oQ4e-mtp', where: 'via opencode' },
+  issues: [3646], span: '~1 h', shipped: '2026-11-27',
+  assist: 'solo', note: 'Jon’s lantern-river brief: tap to launch lanterns, drift out over a moonlit river, cut-paper style, portrait first',
+};
+</script>
+<script src="credits.js"></script>
+<script src="feedback.js"></script>
+</body>
+</html>

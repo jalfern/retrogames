@@ -34,6 +34,7 @@
     "campfirecheck": "node scripts/campfirecheck.mjs",
     "fireflymeadowcheck": "node scripts/fireflymeadowcheck.mjs",
     "tidepoolcheck": "node scripts/tidepoolcheck.mjs",
+    "lanternrivercheck": "node scripts/lanternrivercheck.mjs",
     "mountainscheck": "node scripts/mountainscheck.mjs",
     "stormcheck": "node scripts/stormcheck.mjs",
     "reefcheck": "node scripts/reefcheck.mjs",
