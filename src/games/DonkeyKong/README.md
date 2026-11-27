@@ -2,8 +2,9 @@
 
 Williams-style tower climb (1981 lineage): five sloped girders plus the ape's
 floor, ladders (four broken ones flicker as bait), barrels that roll down-hill
-and randomly dive ladders, jump them for 100, reach her girder for the lap's
-1000. Fixed 224×256 world, integer-step physics at 60 Hz.
+and randomly dive ladders, jump them for 100, reach her girder, pull her four
+rivets and bank the bonus counter you beat. Fixed 224×256 world, integer-step
+physics at 60 Hz.
 
 ## Layout (since #1637 batch 27)
 - `sim.js` — the WHOLE rule set: `makeRun(seed)` builds the level, player,
@@ -49,7 +50,7 @@ Ports: the browser checks read `DEV_PORT` (slot a 5173 / slot b 5178 / QA 5176).
   ticks, deterministic — `gs.popups`, pinned by kongcheck §obstacle-bonus),
   so the bonus is readable on a muted phone.
 - Oil drum is decor; the arcade's flame kills (spec unverifiable against ROMs
-  in-repo). No score bonus timers; the timer-zero capture law is unmodelled.
+  in-repo).
 - **CLOSED by #3622:** barrels meet ladders mid-air — see Corner pair below.
   (Was: a barrel meeting a ladder mid-air kept rolling; the edge-check could
   never set `falling=true` — gravity beats it to `vy>0` — so no airborne
@@ -84,6 +85,27 @@ Ports: the browser checks read `DEV_PORT` (slot a 5173 / slot b 5178 / QA 5176).
 - **CLOSED by #3618:** broken ladders climbed part-way — see Half-rungs
   below. (Was: the original let Mario climb part-way some rounds; barrels and
   the player both refused them outright.)
+
+- **CLOSED by #3786 (timer-zero capture law):** the score bonus is now the
+  arcade's fuse (Wikipedia, Donkey Kong §Gameplay: points for "completing
+  each stage according to a steadily decreasing bonus counter"; "a life is
+  lost when … the bonus counter reaches zero"). `BONUS_START` 5000 lights
+  with every fresh board, `BONUS_DROP` 100 steps off every real second
+  (`BONUS_TICK` 60) while the board is live; the counter freezes with the
+  death/win/capture/collapse animations and never runs in attract (the title
+  demo must not gamble lives on it). Saving her banks what remains — the flat
+  1000 lap fee is gone, `WIN_SCORE` deleted, the payout pops `+<counter>` at
+  her perch — and zero fires the capture: `captured`/`captureTimer` 90 ticks
+  of the ape lifting Pauline off her girder (her HELP cuts off mid-grab),
+  then a life spent, board rebuilt with a fresh fuse, honest terminal at the
+  last one. The counter rides `stateHash` and `cloneWorld`; the WATCH seat
+  treats the grab as an honest wait, and the 24-seed sweep floors that the
+  proven route beats the fuse every lap (lap ≈ 850 ticks of the 3000-tick
+  run). Kongdrive proves it in Chrome: real-second countdown, live grab,
+  life paid, fresh fuse. The arcade's exact step rate (the ROM ticks the
+  counter faster than our once-a-second) is unverifiable in-repo; the LAWS
+  — decreasing counter, bank the remainder, zero takes the life — are the
+  spec, and all three ship.
 
 ## Hammer (#2018 — the attract promise kept)
 Two mallets ride the right-hand ends of the ground floor and DK's girder
