@@ -83,6 +83,20 @@ waves pays 100 per living city and 50 per spare missile, then reloads.
   be told to shoot anywhere) so outer-sector bombs are still defended; a
   covered-until-lapse retry loop covers the dodge. The gunner branch is inert
   below the gate, so the waves 1..5 sweep proof is byte-untouched.
+ - **FAIRNESS READ (#3698) — three cosmetic tells, zero dice, zero rule change.**
+   The counter-knowledge above lived only in the manual; it is now on the board.
+   (1) While `smartWave` is live the center battery's ABM trail paints azure
+   (`#4d8cff`, 2 px) — the 28-vs-15 speed split visible mid-flight, matching
+   the FAST silo label. (2) When an outer fireball passes a LIVE bomb's core
+   envelope the sim records one cyan shimmer per blast-bomb pair (`gs.resist`,
+   a 10-tick expanding ring; kills never shimmer, nor does a bomb already dead
+   from its own ground-burst — cyan means immunity, fire burns its own
+   language). (3) The attract screen advertises the threat the way it
+   advertises the ferry: `attractSmart` spawns a real smart bomb on a scripted
+   540-tick grid offset 270 (never dice; never on the ferry's 360 grid) with
+   the line `SMART BOMBS EVADE BLASTS`. All three are render-side or add-only
+   state: no `gs.rand` reads anywhere in the new paths (graded by a dice spy),
+   so waves 1..6 stay byte-identical and the noSmart isolation is untouched.
 - **TWO-PLAYER ALTERNATING (#3630 slice 2) — the manual's own hot-seat.** Atari
   1981 manual §6, games 18–34: players take the board one wave at a time and
   both scores display. Rules as built: `2` at attract or game-over opens the hot-

@@ -21,6 +21,7 @@ import { spawnSync } from 'node:child_process'
 import {
     chooseEnemySpawn, makeRun, tickMc, gunnerStep, citiesAlive, fireAt, fireBattery, startWave, winner,
     SCREEN_WIDTH, SAFE_Y, WAVE_BREAK_TICKS, PROVEN_WAVES, attractFerry, ATTRACT_FERRY_EVERY,
+    attractSmart, ATTRACT_SMART_EVERY,
     SAUCER_FIRST_WAVE, SAUCER_SCORE,
     SMART_FIRST_WAVE, SMART_SCORE, CENTER_SILO_X, CENTER_ABM_SPEED, ABM_SPEED,
     clusterMode,
@@ -579,6 +580,75 @@ console.log('smart bombs (#3630): the watch fights back with the center battery'
     ok(shot && shot.wid === 9, 'cities before exotics: the uncovered ICBM owns the shot ahead of the smart bomb', `wid ${shot && shot.wid}`)
 }
 
+// --------------------------------- #3698 fairness read: immunity shimmer + ad ----
+// QA #3698 items 2–3: the outer-immunity pass must READ as a rule (a cyan
+// shimmer marks the moment an outer fireball goes harmlessly through a smart
+// bomb), and the attract screen must advertise the wave-7 threat the way it
+// advertises the ferry — scripted by tick, never dice. Both are cosmetic by
+// contract: no dice, no events, no score, no movement, so the byte pins stay
+// exactly where #3630 left them.
+console.log('fairness read (#3698): the immune pass shimmers; the ad flies a scripted smart bomb')
+{
+    const gs = makeRun(77)
+    gs.wave = SMART_FIRST_WAVE; startWave(gs)
+    gs.smartLeftInWave = 0
+    gs.spawning = false; gs.missilesLeftInWave = 0; gs.saucersLeftInWave = 0 // quiet the ladder: only the scenario rolls
+    gs.warheads = [{ id: 5, x: 120, y: 200, startX: 120, startY: 0, targetX: 120, targetY: 550, speed: 0.001, color: '#f00', coverUntil: 0, smart: true, evTicks: 0, evadeX: 0, evadeY: 0, trail: [] }]
+    gs.blasts = [{ x: 120, y: 200, radius: 1, growing: true, center: false, color: '#fff' }]
+    let dice = 0 // spy on the dice: the immune-pass ticks must consume none
+    const rand0 = gs.rand
+    gs.rand = () => { dice++; return rand0() }
+    tickMc(gs, null)
+    ok(gs.resist.length === 1 && gs.warheads.some((m) => !m.dead),
+        'an outer fireball through the core marks a shimmer and the bomb survives', `resist ${gs.resist.length}`)
+    tickMc(gs, null)
+    ok(gs.resist.length === 1, 'one shimmer per blast-bomb pair — the mark never strobes', `${gs.resist.length}`)
+    ok(dice === 0, 'the immune pass consults no dice (the byte pins stay honest)', `${dice} rolls`)
+    gs.warheads[0].x = 120; gs.warheads[0].y = 200 // undo the evade drift before the kill tick
+    gs.blasts = [{ x: 120, y: 200, radius: 1, growing: true, center: true, color: '#fff' }]
+    tickMc(gs, null)
+    ok(gs.warheads.length === 0 && gs.resist.length === 1,
+        'a center blast KILLS — and a kill never shimmers (cyan = immunity, fire burns its own language)', `resist ${gs.resist.length}`)
+    for (let i = 0; i < 12; i++) tickMc(gs, null)
+    ok(gs.resist.length === 0, 'shimmers decay — cosmetic, never gates anything', `${gs.resist.length}`)
+    // below the gate nothing can shimmer: no smart exists, so no contact exists
+    const g1 = makeRun(4242)
+    let t1 = 0
+    while (g1.wave < SMART_FIRST_WAVE && !g1.over && t1++ < 40000) tickMc(g1, gunnerStep(g1))
+    ok(g1.resist.length === 0, 'no shimmers before the wave-7 gate (7 seeds ride: one seeded raid shown, gate law makes the rest impossible)', `${g1.resist.length}`)
+    // attract ad: scripted by tick like the ferry — first sighting lands exactly
+    // on the offset slot, whatever the seed, and sightings alternate sides.
+    let g2 = makeRun(5)
+    let firstSmartAt = 0
+    let n2 = 0
+    while (!firstSmartAt && n2++ < 600) { tickMc(g2, null); attractSmart(g2); if (g2.warheads.some((m) => m.attract)) firstSmartAt = g2.tick }
+    ok(firstSmartAt === ATTRACT_SMART_EVERY / 2, 'the attract smart bomb crosses at a scripted tick (no dice)', `tick ${firstSmartAt}`)
+    const firstSighting = (seed) => {
+        const g = makeRun(seed)
+        let n = 0
+        while (g.tick < 275 && n++ < 400) { tickMc(g, null); attractSmart(g) }
+        return g.warheads.filter((m) => m.attract).map((m) => `${Math.round(m.x)},${m.targetX}`).join('|')
+    }
+    ok(firstSighting(5) === firstSighting(99999) && firstSighting(5) !== '',
+        'identical first sightings whatever the seed — the ad is scripted, not seeded', firstSighting(5))
+    let g3 = makeRun(9)
+    let second = null
+    n2 = 0
+    // sighting #1 (tick 270) falls ~tick 630; the tick-810 slot spawns #2 —
+    // mirrored side, the ad alternating like the ferry's does
+    while (n2++ < 830 && !second) { tickMc(g3, null); attractSmart(g3); if (g3.attractSmarts === 2) second = { sx: Math.round(g3.warheads[g3.warheads.length - 1].startX) } }
+    ok(second && second.sx === 600, 'the second sighting crosses the other side of the board (advertising, not one frozen frame)', JSON.stringify(second))
+    // the ad never lies: a sighting IS a smart bomb — same flag, same physics
+    const g4 = makeRun(5)
+    n2 = 0
+    let isSmart = false
+    while (n2++ < 300 && !isSmart) { tickMc(g4, null); attractSmart(g4); isSmart = g4.warheads.some((m) => m.attract && m.smart) }
+    ok(isSmart, 'the advertised craft is a real smart bomb (smart flag, evade physics, the real tell paints it)')
+    // and the ad never breaks the game: an attract bomb must not hold a wave
+    ok(ATTRACT_SMART_EVERY % ATTRACT_FERRY_EVERY !== 0 && (ATTRACT_SMART_EVERY / 2) % ATTRACT_FERRY_EVERY !== 0,
+        'the smart offset never lands on the ferry grid — one advertised feature at a time', `${ATTRACT_SMART_EVERY}/2 vs ${ATTRACT_FERRY_EVERY}`)
+}
+
 // ------------------------------------------------- #3695: three-button law ----
 // The arcade's control law, exposed to the player (README gap 1). Wikipedia
 // §Gameplay (verbatim): the player moves the crosshair by trackball "and
@@ -1111,6 +1181,12 @@ if (process.argv.includes('--mutant')) {
         ['#3711: silo-first is gone (dead magazines under deficit)', S,
             `if (cluster) live.sort((a, b) => (isSiloTarget(b) ? 1 : 0) - (isSiloTarget(a) ? 1 : 0) || b.y - a.y)`,
             `if (cluster) live.sort((a, b) => b.y - a.y)`],
+        ['#3698: the immune pass stops marking (shimmer never fires)', S,
+            `gs.resist.push({ x: m.x, y: m.y, t: 10 })`,
+            `if (gs.resist) { /* shimmer never marks */ }`],
+        ['#3698: the attract smart ad never flies (the wave-7 threat is never taught)', S,
+            `if (gs.tick > 0 && gs.tick % ATTRACT_SMART_EVERY === ATTRACT_SMART_EVERY / 2) {`,
+            `if (false && gs.tick > 0) {`],
     ]
     let died = 0
     for (const [name, file, from, to] of MUTANTS) {

@@ -6,7 +6,7 @@ import WatchButton, { WatchToast, AttractWatchButton } from '../../components/Wa
 import { isWatchKey, isTakeoverKey, playWatchStart, playWatchStop, watchSfxLog, WATCH_ATTRACT_HINT } from '../../utils/watch'
 import { GAMES } from '../../config/games'
 import { attractFrame, DIM } from './attract.js'
-import { makeRun, tickMc, gunnerStep, fireAt, fireBattery, startWave, citiesAlive, attractFerry, winner, SCREEN_WIDTH, SCREEN_HEIGHT, GROUND_Y } from './sim.js'
+import { makeRun, tickMc, gunnerStep, fireAt, fireBattery, startWave, citiesAlive, attractFerry, attractSmart, winner, SCREEN_WIDTH, SCREEN_HEIGHT, GROUND_Y } from './sim.js'
 import { exposeFeedbackState, unexposeFeedbackState, seedFromQuery } from '../../utils/gameContract'
 import { mountDbg, unmountDbg } from '../../utils/DebugKit'
 
@@ -300,7 +300,7 @@ const MissileCommandGame = () => {
             tickMc(gs, cmd)
             // #3638 attract ad: after the tick so its announce event survives
             // tickMc's event reset (the warble plays on the live board).
-            if (attractUiRef.current) attractFerry(gs)
+            if (attractUiRef.current) { attractFerry(gs); attractSmart(gs) }
             // #3707 crowd-kill counter — 'multikill' events within this tick's
             // batch stack a rising arpeggio (each extra kill a higher note:
             // the sound of volume, matching the arcade's per-missile billing).
@@ -443,8 +443,15 @@ const MissileCommandGame = () => {
             })
 
             gs.abms.forEach((m) => {
-                ctx.strokeStyle = '#0000ff' // Blue trail
-                ctx.lineWidth = 1
+                // #3698 item 1 — fairness read of the blind spot: the answer
+                // to a smart bomb is the center battery (28 px/t vs the outer
+                // 15), and the speed split was only in the manual. While the
+                // fast law is live the center's shot wears a brighter, heavier
+                // trail — its line pulls ahead of every sibling on the way up,
+                // and 2 px survives the 600px phone letterbox (#3638 lesson).
+                const fast = m.center && gs.smartWave
+                ctx.strokeStyle = fast ? '#4d8cff' : '#0000ff' // Blue trail
+                ctx.lineWidth = fast ? 2 : 1
                 ctx.beginPath()
                 ctx.moveTo(m.startX, m.startY)
                 ctx.lineTo(m.x, m.y)
@@ -585,6 +592,28 @@ const MissileCommandGame = () => {
                 ctx.fill()
                 ctx.globalAlpha = 1
             }
+
+            // #3698 item 2 — outer-immunity clarity: when a harmless outer
+            // fireball passes through a smart bomb, the contact point shimmers
+            // cyan: an expanding ring with a blinking spark cross. It reads as
+            // "immune" — a rule being demonstrated, not a miss — and stays
+            // clear of the kill language (kills burn white, #3638's flash).
+            gs.resist.forEach((r) => {
+                const rr = 7 + (10 - r.t) * 1.8
+                ctx.globalAlpha = r.t / 10
+                ctx.strokeStyle = '#00e5ff'
+                ctx.lineWidth = 1.5
+                ctx.beginPath()
+                ctx.arc(r.x, r.y, rr, 0, Math.PI * 2)
+                ctx.stroke()
+                if (r.t % 4 < 2) {
+                    ctx.beginPath()
+                    ctx.moveTo(r.x - rr, r.y); ctx.lineTo(r.x + rr, r.y)
+                    ctx.moveTo(r.x, r.y - rr); ctx.lineTo(r.x, r.y + rr)
+                    ctx.stroke()
+                }
+                ctx.globalAlpha = 1
+            })
 
             ctx.strokeStyle = '#ff00ff'
             ctx.lineWidth = 2
@@ -751,6 +780,8 @@ const MissileCommandGame = () => {
                     cruise: gs.warheads.filter((m) => m.cruise).length, // #3638 trail probe
                     cruiseAt: gs.warheads.filter((m) => m.cruise).map((m) => ({ x: Math.round(m.x), y: Math.round(m.y), sx: Math.round(m.startX), sy: Math.round(m.startY) })),
                     juice: gs.debris.length + (gs.flash ? 1 : 0), // #3638 kill-juice probe
+                    resist: gs.resist.length, // #3698 outer-immunity shimmer probe
+                    attractSmarts: gs.attractSmarts, // #3698 scripted sighting counter
                     smarts: gs.warheads.filter((m) => m.smart && !m.dead).length,
                     smartAt: gs.warheads.filter((m) => m.smart && !m.dead)
                         .map((m) => ({ x: Math.round(m.x), y: Math.round(m.y), tx: m.targetX })),
@@ -783,6 +814,11 @@ const MissileCommandGame = () => {
                 toWave6: () => { gs.wave = 6; startWave(gs); return gs.wave },
                 // ...and the smart-bomb lift (#3630)
                 toWave7: () => { gs.wave = 7; startWave(gs); return gs.wave },
+                // #3698: harness-only stamp of one resist record, so the browser
+                // half can prove gs.resist REALLY paints the cyan immunity ring
+                // (the rule itself is graded against the real engine in
+                // missilecmdcheck — this hook only feeds the renderer).
+                resistFx: (x = 400, y = 250) => { gs.resist.push({ x, y, t: 10 }); return gs.resist.length },
                 // #3630 slice 2: open a hot-seat run like a player pressing 2,
                 // and a harness lift that empties the sky so the wave clears on
                 // the next tick (drives the turn flip without waiting minutes).
