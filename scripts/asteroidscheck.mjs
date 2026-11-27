@@ -727,8 +727,8 @@ console.log('look polish (#2001): jagged silhouettes, kill blooms, notched hull,
         gs.saucers = [{ big: true, x: 200, y: 200, vx: 0, vy: 0, phase: 0, amp: 0, cooldown: 999, life: 900 }]
         gs.bullets = [{ x: 200, y: 200, vx: 0, vy: 0, life: 60 }]
         const ev = tickAsteroids(gs, null)
-        ok(ev.saucerKilled === 'big' && ev.flash.length === 1 && ev.flash[0].r === SAUCER_RADIUS.big * 1.8,
-            'a downed saucer blooms wider than a rock', JSON.stringify(ev.flash))
+        ok(ev.saucerKilled === 'big' && ev.flash.length === 1 && ev.flash[0].r === SAUCER_RADIUS.big * 1.8 && ev.flash[0].kind === 'saucer',
+            'a downed saucer blooms wider than a rock, and the shell can find it by kind', JSON.stringify(ev.flash))
     }
     {
         const gs = makeRun(11, { width: 600, height: 800 })
@@ -773,6 +773,30 @@ console.log('look polish (#2001): jagged silhouettes, kill blooms, notched hull,
         ok(/gs\.respawnAt < 0 && gs\.tickN >= gs\.hyperUntil && !invulnBlink/.test(srcIndex),
             'the drawn ship honors dark + blink + hyper-hide in one gate')
     }
+}
+
+// --------------------------------------- bounty popup & who-is-flying tell ----
+// #3730 — a saucer kill banks the arcade's biggest money: 200/1000 — and the
+// board shows nothing. A brief digit popup at the kill point, sized by the
+// bounty, plus a ping layered on the boom at the saucer's own warble pitch.
+// And nothing says whether the pilot or the machine is flying: an ON AUTO /
+// MANUAL tell in the corner.
+console.log('bounty digits + who-is-flying tell (#3730): the bounty pays visibly')
+{
+    const srcIndex = readFileSync('src/games/Asteroids/index.jsx', 'utf8')
+    ok(/SAUCER_SCORE/.test(srcIndex), 'the shell reads the bounty table')
+    ok(/const bloom = ev\.flash\.find\(f => f\.kind === 'saucer'\)/.test(srcIndex),
+        'the popup finds the saucer bloom by kind, not by radius')
+    ok(/bounties\.push\(\{ x: bloom\.x, y: bloom\.y - 6, text: `\+\$\{bounty\}`, life: 1, size: bounty >= 1000 \? 17 : 13 \}\)/.test(srcIndex),
+        'the bounty digits pop at the kill point, sized by bounty')
+    ok(/audioController\.playTone\(ev\.saucerKilled === 'small' \? 560 : 470/.test(srcIndex),
+        'the kill layered a ping at the saucer\'s own warble pitch')
+    ok(/ctx\.arc\(21, py \+ 12, 3\.5/.test(srcIndex),
+        'the who-is-flying pill has its own dot')
+    ok(/const label = auto \? 'ON AUTO' : 'MANUAL'/.test(srcIndex),
+        'the pill tells you who is flying')
+    ok(/fillText\(b\.text, b\.x, b\.y\)/.test(srcIndex),
+        'the digits actually draw')
 }
 
 // ------------------------------------------------------------------ mutants ----
@@ -902,6 +926,12 @@ if (process.argv.includes('--mutant')) {
         ['#3706 hull flees at the old 75 — the dance margin is gone', S,
             `if (ttc < HULL_DANCE_TTC && ttc < tThreat)`,
             `if (ttc < 75 && ttc < tThreat)`],
+        ['the bounty pays invisibly (popup never pushed)', I,
+            `bounties.push({ x: bloom.x, y: bloom.y - 6, text: \`+\${bounty}\`, life: 1, size: bounty >= 1000 ? 17 : 13 })`,
+            `// popup deleted`],
+        ['the who-is-flying tell is gone (pill dropped)', I,
+            `const label = auto ? 'ON AUTO' : 'MANUAL'`,
+            `const label = auto ? 'FLYING' : 'STUCK'`],
         // #3568 tell mutants — the curve must stay visible and audible.
         ['the tell never warms (the curve goes invisible again)', S,
             `export function saucerTell(s) {
