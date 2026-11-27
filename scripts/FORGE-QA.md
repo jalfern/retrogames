@@ -140,6 +140,12 @@ confuse the two queues.
           sprites or artwork. Ship it like any pass (before/after per skin, `art(<slug>):`
           title); Jon decides whether it gets promoted to the default, and rolling back is
           simply not promoting it. Multi-session is fine (checkpoint per step 6).
+       0b. **`demo` next — also only the Inkling lane** (every other lane skips this rule and
+          never claims a `demo` issue). If no `reimagine` issue is open and an open issue carries
+          the `demo` label (Jon's call, only he adds it), claim it and build the demo its body
+          describes, following `docs/DEMO-BRIEF.md` (composition first, a committed stage per
+          step with screenshots, a real art pass, phone-first). Multi-session is fine
+          (checkpoint per step 6).
        1. **Pick** the shipped title (plays end to end; no open `building`/`building-qa`
           issue on it; no game-code PR to it in the last 3 days) whose last art pass is
           oldest: `git log -1 --format=%cs --grep '^art(<slug>)'` per game, never-passed
