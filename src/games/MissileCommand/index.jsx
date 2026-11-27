@@ -224,6 +224,17 @@ const MissileCommandGame = () => {
                     audioController.playTone(920, 0.12, 'square', 0.14)
                     audioController.playTone(1240, 0.14, 'square', 0.12, 0.1)
                 }
+                // #3630 smart bombs — a nervous double-warble announces one,
+                // and its kill crunches with a high interrogation ping.
+                else if (ev === 'smart') {
+                    audioController.playSweep(720, 300, 0.18, 'sawtooth', 0.06)
+                    audioController.playTone(300, 0.05, 'square', 0.05)
+                }
+                else if (ev === 'smartkill') {
+                    audioController.playNoise(0.18, 0.45)
+                    audioController.playTone(740, 0.12, 'square', 0.09)
+                    audioController.playTone(1180, 0.08, 'square', 0.06)
+                }
             }
             if (gs.over && !wasOver) release(false) // the raid ends in your hands (silent)
         }
@@ -322,6 +333,32 @@ const MissileCommandGame = () => {
                 ctx.stroke()
 
                 ctx.fillStyle = m.cruise ? '#ffd23d' : '#ffffff'
+                ctx.fillRect(m.x - 1, m.y - 1, 2, 2)
+            })
+
+            // #3630 smart bombs — the arcade said you'd know one by the bend:
+            // its path is a polyline of every sidestep, and the head burns a
+            // white-hot cyan core that pulses — the tell that this warhead is
+            // reading the sky. Same ICBM skeleton (it IS an ICBM), new paint.
+            gs.warheads.forEach((m) => {
+                if (!m.smart) return
+                ctx.strokeStyle = '#ff4040'
+                ctx.lineWidth = 1
+                ctx.beginPath()
+                ctx.moveTo(m.startX, m.startY)
+                for (const [tx, ty] of m.trail) ctx.lineTo(tx, ty)
+                ctx.lineTo(m.x, m.y)
+                ctx.stroke()
+                const pulse = Math.floor(gs.tick / 6) % 2 === 0
+                ctx.fillStyle = pulse ? '#ffffff' : '#9ff4ff' // hot core
+                ctx.beginPath() // diamond head, 45° to the warhead's square
+                ctx.moveTo(m.x, m.y - 4)
+                ctx.lineTo(m.x + 4, m.y)
+                ctx.lineTo(m.x, m.y + 4)
+                ctx.lineTo(m.x - 4, m.y)
+                ctx.closePath()
+                ctx.fill()
+                ctx.fillStyle = pulse ? '#00e5ff' : '#ff2020' // spark alternates with the pulse
                 ctx.fillRect(m.x - 1, m.y - 1, 2, 2)
             })
 
@@ -451,11 +488,12 @@ const MissileCommandGame = () => {
             getState: () => [
                 `score ${gs.score}  wave ${gs.wave}  state ${gs.state}`,
                 `cities ${citiesAlive(gs)}/6  ammo ${gs.silos.map((s) => (s.alive ? s.ammo : 'x')).join(',')}  warheads ${gs.warheads.length}  saucers ${gs.saucers.length}`,
-                `seed ${gs.seed}  tick ${gs.tick}  watch ${gs.watch}`,
+                `smarts ${gs.warheads.filter((m) => m.smart && !m.dead).length}  seed ${gs.seed}  tick ${gs.tick}  watch ${gs.watch}`,
             ],
             actions: [
                 { label: 'Fire at crosshair', run: () => fireAt(gs, gs.crosshair.x, gs.crosshair.y) },
                 { label: 'Skip to wave 6 (saucers)', run: () => { gs.wave = 6; startWave(gs) } },
+                { label: 'Skip to wave 7 (smart bombs)', run: () => { gs.wave = 7; startWave(gs) } },
                 { label: 'Force game over', run: () => { gs.cities.forEach((c) => { c.alive = false }); gs.over = true; gs.state = 'gameOver' } },
             ],
         })
@@ -474,12 +512,18 @@ const MissileCommandGame = () => {
                     cruise: gs.warheads.filter((m) => m.cruise).length, // #3638 trail probe
                     cruiseAt: gs.warheads.filter((m) => m.cruise).map((m) => ({ x: Math.round(m.x), y: Math.round(m.y), sx: Math.round(m.startX), sy: Math.round(m.startY) })),
                     juice: gs.debris.length + (gs.flash ? 1 : 0), // #3638 kill-juice probe
+                    smarts: gs.warheads.filter((m) => m.smart && !m.dead).length,
+                    smartAt: gs.warheads.filter((m) => m.smart && !m.dead)
+                        .map((m) => ({ x: Math.round(m.x), y: Math.round(m.y), tx: m.targetX })),
+                    abmSpeeds: gs.abms.map((a) => a.speed),
                     ammo: gs.silos.reduce((a, s) => a + (s.alive ? s.ammo : 0), 0),
                     watching: gs.watch, seed: gs.seed,
                 }),
                 // harness-only ferry lift (same cheat DebugKit offers) so a drive
                 // script doesn't sit through five waves at 60 fps
                 toWave6: () => { gs.wave = 6; startWave(gs); return gs.wave },
+                // ...and the smart-bomb lift (#3630)
+                toWave7: () => { gs.wave = 7; startWave(gs); return gs.wave },
                 // harness fallback for the seat (the pilot presses Y like a player)
                 seat: () => { if (!gs.watch) { seat(); } return gs.watch },
                 release: () => { release(); return gs.watch },
