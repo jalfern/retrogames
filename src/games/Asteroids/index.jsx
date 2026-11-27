@@ -168,6 +168,7 @@ const AsteroidsGame = () => {
         // the two-tone hover warble of any saucer on screen. Silent on
         // attract and at the terminal.
         let heartTick = 0
+        const kiteLog = [] // #3706 — DEV witness of saucer bounties the pilot banks live
         let heartHi = false
         // #2001 look polish — explosion blooms. The sim stamps a flash per kill
         // (radius scales with what died); the shell decays them on sim ticks so a
@@ -188,6 +189,7 @@ const AsteroidsGame = () => {
                 audioController.playSweep(120, 1400, 0.18, 'sine', 0.08)
             }
             if (ev.saucerKilled) {
+                kiteLog.push(ev.saucerKilled) // #3706 DEV witness: the seat's banked bounties, for asteroidsdrive
                 audioController.playNoise(0.3, 0.3)
                 audioController.playSweep(ev.saucerKilled === 'small' ? 700 : 400, 120, 0.25, 'square', 0.12)
             }
@@ -386,6 +388,7 @@ const AsteroidsGame = () => {
                 // #1637 b26 — the watch contract the pilot drives against.
                 watching: () => gs.watching,
                 watchSfx: watchSfxLog,
+                kills: () => kiteLog.slice(), // #3706 — sizes of bounties banked since mount
                 probe: () => ({
                     tick: gs.tickN, score: gs.score, wave: gs.wave, lives: gs.lives,
                     rocks: gs.asteroids.length, saucers: gs.saucers.length,

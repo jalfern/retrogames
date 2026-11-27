@@ -62,7 +62,38 @@ and the jump must outlive them all to be taken. It rides the run's seeded
 stream (cloneWorld carries `hyperReadyAt`/`hyperUntil`), so the sweep judges the
 exact teleport the seat makes. Effect: zero-death 24 → **38/40** (fast 9 →
 12/12), measured 13 jumps fast / 128 full — scarce, and spent only cornered.
-Deliberate kiting is still not modelled (honest gap below).
+Deliberate kiting shipped after it (#3706 below).
+
+## #3706 — the kiting dance
+
+The machine pays **200 large / 1000 small** for the saucers — the board's
+biggest money — but the WATCH pilot never saw it: `rollout()` paid rocks
+(`ev.smashed` × 120) and added nothing for `ev.saucerKilled`, and the eye fled
+a hull at ttc < 75 even though its gun is honestly tracked as bullets (±60
+ticks). Every rollout that killed a saucer valued the same as one that
+outran it — a bounty docked. Two dice-free moves open the dance:
+
+- **the ledger pays** — `rollout()` credits `SAUCER_SCORE[size] × 1.2` onto
+  the rocks' scale (a small rock = 100 arcade = 120 units, so small UFO
+  +1200, big +240 — the machine's own 10×/2× ratios). The horizon×10000
+  survival floor swamps any bounty, so no candidate is ever *bought* into a
+  death; the bounty ranks among survivors, which is exactly where the dance
+  lives. A dead saucer also erases its future fire, so survival already leans
+  toward the pilot that banks it; this makes the bank explicit.
+- **the margin is the rock law** — a hull is a flee-threat only inside
+  `HULL_DANCE_TTC = 45`, the same "does it actually reach the hull" horizon
+  the rocks already use. Past the margin, greedy no longer turns its back:
+  the nd bounty discount (−120 px past 160) already ranks the hull first, so
+  the pilot keeps the crosshair on it and fires on the lead window — sidestep
+  the weave, answer the gun, bank the 1000. Rocks and bullets keep the
+  verbatim flee law; the panic reserve still catches a point-blank hull.
+
+Measured, ten seeds × 2400 ticks seated: **14 saucer kills, zero deaths**
+(the docked law banked 5 on the same seeds). Gated in asteroidscheck §kiting
+(14 gates: margin reuse, ledger + threat source pins, three banked-bounty
+seeds, the fleet bank ≥10 with zero suicide, the cornered hull still buys the
+jump, the rock flee never fires) plus two mutants — bounty docked again, old
+75 margin restored — both die.
 
 ## Flying saucers (#2001)
 The 1979 machine's signature threat. Alarms arrive every 8–14 s while rocks
@@ -141,8 +172,8 @@ probe would need the live seat).
 
 ## Verify
 ```
-npm run asteroidscheck            # determinism + 1979 law + wiring + driver sweep + seat/saucer/hyper/look/panic/learning rules (113 gates)
-npm run asteroidscheck -- --mutant  # 29 mutants (6 b16 + 7 b26 driver + 6 saucer/heartbeat + 3 hyperspace + 3 look polish + 2 panic reserve + 2 learning curve), all must die
+npm run asteroidscheck            # determinism + 1979 law + wiring + driver sweep + seat/saucer/hyper/look/panic/learning/kiting rules (136 gates)
+npm run asteroidscheck -- --mutant  # 31 mutants (6 b16 + 7 b26 driver + 6 saucer/heartbeat + 3 hyperspace + 3 look polish + 2 panic reserve + 2 learning curve + 2 kiting dance), all must die
 ASTEROID_SWEEP=fast npm run asteroidscheck  # 12-seed × 60 s sweep (what the mutant children run)
 npm run watchcheck -- --only asteroids      # live seat: seat/blips/takeover/re-seat
 npm run lint:asteroids
@@ -153,8 +184,10 @@ npm run lint:asteroids
 - **CLOSED by #3553:** Small saucers ease their aim over time in the original;
   ours were locked at ±0.15 rad. The learning curve is now modelled — see
   "#3553 — the small saucer learning curve" below.
-- Deliberate kiting (drawing the saucer, beating its fire back) is not
-  modelled; the panic reserve (#2001 pt4) stopped the tight-wave bleed, but the
-  driver flees honestly rather than playing for the docked-bounty dance.
+- **CLOSED by #3706:** Deliberate kiting (drawing the saucer, beating its fire
+  back) is not modelled; the panic reserve (#2001 pt4) stopped the tight-wave
+  bleed, but the driver flees honestly rather than playing for the
+  docked-bounty dance. See "#3706 — the kiting dance" below: the pilot now
+  banks the 200/1000 money instead of outrunning it.
 - `snapshot/restore` stay omitted (#391): the seeded stream rides `gs.rngState`
   and mid-rollout JSON round-trips would fork dice the live world never rolled.
