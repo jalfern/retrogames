@@ -245,17 +245,31 @@ const SonarGame = () => {
             for (let i = 0; i < W * H; i++) {
                 if (!known(gs, i)) continue
                 const age = gs.mem[i] < 0 ? 999 : t - gs.mem[i]
-                const inten = age > CFG.fade ? 0 : 1 - age / CFG.fade
+                // #3693 item 2: a linear fade put every cell a ping had lit within
+                // ~13 % of each other mid-reveal — the signature read flat. A
+                // perceptual power curve keeps the lit end LIT while the tail sinks,
+                // and a fresh shell (cells the front touched ≈0.35 s ago) rides the
+                // wavefront so "light radiates, the map forgets" is visible at a
+                // glance. Knowledge-only: both terms read mem arrival age, never truth.
+                const inten = age > CFG.fade ? 0 : Math.pow(1 - age / CFG.fade, 1.9)
+                const fr = age <= CFG.frontFresh ? 1 - age / CFG.frontFresh : 0
                 const x = i % W, y = (i - x) / W
                 const px = x * TS, py = y * TS
                 if (gs.grid[i] === ROCK) {
-                    const base = 40 + Math.floor(inten * 70) + (speck(x, y) > 0.5 ? 8 : 0)
+                    // #3693 item 3: one 2-dot stamp repeated on every cell read as a
+                    // grid of identical tiles. Offsets and brightness now ride the
+                    // speck hash, so each rock face carries its own grain.
+                    const sp = speck(x, y)
+                    const sp2 = speck(y + 5, x + 3)
+                    const sp3 = speck(x * 3 + 1, y * 5 + 7)
+                    const base = 40 + Math.floor(inten * 70 + fr * 40 + sp * 10)
                     ctx.fillStyle = `rgb(${Math.floor(base * 0.5)},${Math.floor(base * 0.8)},${base})`
                     ctx.fillRect(px, py, TS, TS)
-                    ctx.fillStyle = `rgba(120,180,220,${(inten * 0.25).toFixed(3)})`
-                    ctx.fillRect(px + 2, py + 2, 3, 2); ctx.fillRect(px + 10, py + 9, 3, 2)
+                    ctx.fillStyle = `rgba(120,180,220,${(inten * 0.25 + fr * 0.4).toFixed(3)})`
+                    ctx.fillRect(px + 1 + Math.floor(sp2 * (TS - 5)), py + 1 + Math.floor(sp3 * (TS - 4)), 3, 2)
+                    ctx.fillRect(px + 1 + Math.floor(sp3 * (TS - 4)), py + 2 + Math.floor(sp2 * (TS - 6)), 2, 2)
                 } else {
-                    ctx.fillStyle = `rgba(20,${60 + Math.floor(inten * 60)},${90 + Math.floor(inten * 70)},${(0.16 + inten * 0.4).toFixed(3)})`
+                    ctx.fillStyle = `rgba(20,${60 + Math.floor(inten * 60 + fr * 30)},${90 + Math.floor(inten * 70 + fr * 40)},${(0.16 + inten * 0.4 + fr * 0.15).toFixed(3)})`
                     ctx.fillRect(px + 1, py + 1, TS - 2, TS - 2)
                 }
                 if (age <= 1) {                                    // the frontier itself

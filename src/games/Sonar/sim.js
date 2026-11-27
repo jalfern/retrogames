@@ -55,6 +55,7 @@ export const CFG = {
     cue: true,           // #2365: a contact's ring maps to heat/pitch (false = frozen cue)
     ventRipple: true,    // #2367: the vent swirl RIPPLES only on fresh vent knowledge (false = old always-on swirl)
     swirlFresh: 6,       // #2367: ticks a wavefront arrival still counts as fresh (≈300 ms — a readable beat at 60 fps)
+    frontFresh: 7,       // #3693: ticks a cell still rides the wavefront's bright shell (≈350 ms) — painter-only, the sim never reads it
     attractJoin: true,   // #2383: the attract joins its proven replay just before the first NEAR contact (false = always start at tick 0)
     pearlGhost: true,    // #2594: a heard pearl stays as a dim ghost past the fade, like the vent ghost (false = remembered treasure goes black)
     pearlEcho: true,     // #2601: re-hearing a GHOSTED pearl rings the low-memory tone (false = the dim→bright flip is silent)
