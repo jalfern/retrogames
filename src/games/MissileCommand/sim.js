@@ -87,6 +87,12 @@ export function chooseEnemySpawn(rand, targets, width = SCREEN_WIDTH) {
 const CITY_X = [120, 200, 280, 520, 600, 680]
 const SILO_X = [40, 400, 760]
 
+// #3753 — the arcade's bonus city: every 10,000 points a destroyed city is
+// redrawn (the README pinned the threshold; the original refills a hole as it
+// counts the wave bonus). The fx is the rise-in tell the shell draws.
+export const CITY_EVERY = 10000
+export const REVIVE_FX_TICKS = 40
+
 // ------------------------------------------------------------------ world ----
 // #3630 slice 2 — two-player alternating play (Atari 1981 manual §6, games
 // 18–34): players take the board one wave at a time, both scores are shown,
@@ -110,6 +116,14 @@ export function makeRun(seed, opts = {}) {
         p2cpu: opts.p2cpu !== false,
         wave: START_WAVE,
         cities: CITY_X.map((x) => ({ x, y: GROUND_Y, alive: true })),
+        // #3753 — the bonus-city ledger. The threshold rides the books the run
+        // actually earned (solo: score; hot-seat: both books, cities are shared).
+        // The redraw pick rides its OWN stream: gs.rand never shifts, so every
+        // byte pin below the threshold replays untouched.
+        cityNext: CITY_EVERY,
+        revivePending: 0,
+        reviveFx: [],
+        cityRand: seedRng(((seed >>> 0) ^ 0xB0C4) || 1),
         silos: SILO_X.map((x) => ({ x, y: GROUND_Y - 20, ammo: 10, alive: true })),
         abms: [],
         warheads: [],
@@ -146,6 +160,15 @@ export const citiesAlive = (gs) => gs.cities.filter((c) => c.alive).length
 export function addScore(gs, n) {
     if (gs.twoP && gs.turn === 2) gs.score2 += n
     else gs.score += n
+    // #3753 — the arcade's bonus-city law: every 10,000 points the run earns
+    // banks one destroyed-city redraw for the next wave break. Combined books:
+    // hot-seat shares the cities, so either partner's shooting can earn one
+    // back. No dice here, and nothing moves below the threshold — every byte
+    // pin under 10k replays untouched.
+    while (gs.score + gs.score2 >= gs.cityNext) {
+        gs.cityNext += CITY_EVERY
+        gs.revivePending++
+    }
 }
 
 // The 2P board reads the winner at THE END (0 = draw).
@@ -193,6 +216,24 @@ function nextWave(gs) {
     if (gs.twoP) {
         gs.turn = gs.turn === 1 ? 2 : 1
         gs.events.push('turn')
+    }
+    // #3753 — the redraw, AFTER the bonus above: the arcade pays for the
+    // cities you saved, and the earned city joins the board for the NEXT
+    // wave (back in the spawn target pool — fidelity, not a cheat). One
+    // redraw per break; a full board banks the credit until a hole exists
+    // (crossing twice inside one wave is arithmetically impossible — one
+    // wave's income caps ~2.1k — so banking only ever covers the full-board
+    // case). The pick rides gs.cityRand: gs.rand and every existing dice
+    // pin are untouched.
+    if (gs.revivePending > 0) {
+        const holes = gs.cities.filter((c) => !c.alive)
+        if (holes.length > 0) {
+            const c = holes[Math.floor(gs.cityRand() * holes.length)]
+            c.alive = true
+            gs.revivePending--
+            gs.reviveFx.push({ x: c.x, t: REVIVE_FX_TICKS })
+            gs.events.push('revive')
+        }
     }
 }
 
@@ -640,6 +681,12 @@ export function tickMc(gs, cmd = null) {
     // #3638 cosmetic layers: the flash fades on the sim clock, sparks fall
     // with light gravity. Neither ever joins the wave-clear law.
     if (gs.flash && --gs.flash.t <= 0) gs.flash = null
+    // #3753: the bonus-city rise-in tell decays on the sim clock — cosmetic,
+    // never gates anything (the debris/flash law).
+    if (gs.reviveFx.length > 0) {
+        gs.reviveFx.forEach((f) => f.t--)
+        gs.reviveFx = gs.reviveFx.filter((f) => f.t > 0)
+    }
     if (gs.debris.length > 0) {
         gs.debris.forEach((d) => { d.x += d.vx; d.y += d.vy; d.vy += 0.08; d.life-- })
         gs.debris = gs.debris.filter((d) => d.life > 0)
