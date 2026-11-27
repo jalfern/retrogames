@@ -46,6 +46,13 @@ other axis; a 180 is instant; turns start up to 4px early).
   the eat hook the kind. A `speedStage` climb fires one sweep + a HUD ROUND
   pulse (`stageFlash`, 30t) so the ladder is legible mid-play. `__pacTest`
   reports `phase/phaseT`; DebugKit gains a Clear-maze cheat.
+- **Tunnel-crawl audio (#3677 item 1):** the half-speed law now has a voice.
+  `stepTunnelRumble` (pure, in `move.js`) fires on the tick a ghost ENTERS the
+  crawl zone and re-pulses every `RUMBLE_PULSE` (30t) while one stays in; the
+  component answers each fire with two filtered-noise bursts (320 Hz body + a
+  220 Hz sub-shadow) — a low rumble that reads on phone speakers. The tracker
+  never writes ghost state and rolls no dice, so the round-1 identity floor and
+  the seeded stream are untouched. Pinned in `pacmancheck §rumble`.
 - Score fidelity: the score is no longer zeroed when the last life is lost —
   it stays on the GAME OVER screen like the arcade and clears only at restart.
 - **Fruit (#1517):** bonus fruit drops at the 70th and 170th pellet (once per

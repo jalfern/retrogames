@@ -13,7 +13,7 @@
 
 import { readFileSync, writeFileSync } from 'node:fs'
 import { spawnSync } from 'node:child_process'
-import { MAP, COLS, ROWS, CORNER_PX, makePacman, stepPlayer, tileOpen, cloneMap, stepGhost, scaredSkin, SCARED_FLASH_AT, SCARED_BLINK, POWER_TICKS, makeFruitTracker, stepFruit, FRUIT_TICKS, FRUIT_AT, FRUIT_POS, FRUIT_BLINK, SPEED_STAGES, speedStage, pacSpeedForScore, ghostSlowsAt, FRUIT_TABLE, fruitForRound, energizerTicks, TUNNEL_ROW, mazeCleared, briefForRound, CLEAR_FREEZE, BRIEF_TICKS, intermissionFrame, fruitEatTones } from '../src/games/Pacman/move.js'
+import { MAP, COLS, ROWS, CORNER_PX, makePacman, stepPlayer, tileOpen, cloneMap, stepGhost, scaredSkin, SCARED_FLASH_AT, SCARED_BLINK, POWER_TICKS, makeFruitTracker, stepFruit, FRUIT_TICKS, FRUIT_AT, FRUIT_POS, FRUIT_BLINK, SPEED_STAGES, speedStage, pacSpeedForScore, ghostSlowsAt, FRUIT_TABLE, fruitForRound, energizerTicks, TUNNEL_ROW, mazeCleared, briefForRound, CLEAR_FREEZE, BRIEF_TICKS, intermissionFrame, fruitEatTones, makeTunnelRumble, stepTunnelRumble, RUMBLE_PULSE } from '../src/games/Pacman/move.js'
 import { seedRng, seedFromQuery } from '../src/utils/gameContract.js'
 import { plant, pull } from './lib/mutateguard.mjs'
 
@@ -482,6 +482,46 @@ console.log('progression: score stages, tunnel crawl, round-keyed fruit, energiz
     ok(/speedStage\(gs\.score\)/.test(src), 'the report/debug read the live score stage')
 }
 
+// --------------------------------------------- tunnel-crawl rumble (#3677) ----
+console.log('tunnel-crawl rumble: rising edge, pulse cadence, house silence (#3677)')
+{
+    const mk = (x, y, state = 'chase') => ({ id: 1, x, y, color: '#ff0000', path: [], progress: 0, speed: 0.08, state, type: 'blinky', penTimer: 0 })
+    // rising edge: the tick a ghost enters the crawl zone is the first voice
+    const tr1 = makeTunnelRumble()
+    ok(stepTunnelRumble(tr1, [mk(3, TUNNEL_ROW)]) === true, 'a ghost on the mouth fires the rumble at once')
+    ok(stepTunnelRumble(tr1, [mk(3, TUNNEL_ROW)]) === false, 'the second tick stays quiet (entering is the event, not hovering)')
+    // sustained crawl: with a 30-tick pulse the 0.5 s bursts never gap — 60
+    // ticks inside must give exactly the two scheduled pulses, no spam
+    const tr2 = makeTunnelRumble()
+    const fires = []
+    for (let t = 0; t < 60; t++) if (stepTunnelRumble(tr2, [mk(4, TUNNEL_ROW)])) fires.push(t)
+    ok(RUMBLE_PULSE === 30, 'the pulse period matches the rumble burst length', `PULSE=${RUMBLE_PULSE}`)
+    ok(fires.join(',') === '0,30', 'a ghost riding the mouth pulses once per 0.5 s', `fires at ${fires.join(',') || 'never'}`)
+    // silence conditions: no ghosts, house interior, other rows
+    const tr3 = makeTunnelRumble()
+    ok(stepTunnelRumble(tr3, []) === false, 'empty world stays silent')
+    ok(stepTunnelRumble(tr3, [mk(13, TUNNEL_ROW)]) === false, 'the ghost-house span of row 14 never rumbles')
+    ok(stepTunnelRumble(tr3, [mk(3, 12)]) === false, 'a ghost off the tunnel row never rumbles')
+    // exit and re-entry is a NEW edge — the law re-voices
+    const tr4 = makeTunnelRumble()
+    stepTunnelRumble(tr4, [mk(3, TUNNEL_ROW)])          // enter (fires)
+    for (let t = 0; t < 40; t++) stepTunnelRumble(tr4, [mk(3, TUNNEL_ROW)]) // crawl (quiet, then pulse)
+    for (let t = 0; t < 10; t++) ok(stepTunnelRumble(tr4, [mk(3, 12)]) === false, `off-tunnel tick ${t} stays silent`)
+    ok(stepTunnelRumble(tr4, [mk(24, TUNNEL_ROW)]) === true, 're-entering the mouth fires a fresh edge')
+    // the crawl law is state-uniform, so is its voice: dead eyes crossing
+    // the tunnel still count (they DO crawl — 0.5 stacks on the 3× boost)
+    ok(stepTunnelRumble(makeTunnelRumble(), [mk(3, TUNNEL_ROW, 'dead')]) === true, 'a dead ghost in the tunnel voices too')
+    // purity: the tracker reads ghosts, never writes them (sim identity)
+    const g5 = mk(3, TUNNEL_ROW)
+    const snap = JSON.stringify(g5)
+    stepTunnelRumble(makeTunnelRumble(), [g5])
+    ok(JSON.stringify(g5) === snap, 'the tracker never mutates ghost state (round-1 identity safe)')
+    // component wiring: the live loop rides the tracker and the rumble exists
+    const src = readFileSync('src/games/Pacman/index.jsx', 'utf8')
+    ok(/stepTunnelRumble\(rumbleTr, ghosts\)/.test(src), 'the live loop drives the rumble tracker every tick')
+    ok(/playFilteredNoise\(/.test(src), 'the rumble is synthesized (AudioController filtered noise)')
+}
+
 // ------------------------------------- clear, briefs, cues & tell (#3667) ----
 console.log('round clear, intermission briefs, fruit cues & stage tell (#3667)')
 {
@@ -675,6 +715,12 @@ if (process.argv.includes('--mutate')) {
         ['#3667: the fruit cue ignores the kind', 'src/games/Pacman/index.jsx',
             `fruitEatTones(kind).forEach((f, i) =>`,
             `fruitEatTones('cherry').forEach((f, i) =>`],
+        ['#3677: the rumble fires every tick (edge/cadence lost)', 'src/games/Pacman/move.js',
+            `if (now && (!tr.crawling || tr.cd <= 0)) {`,
+            `if (now) {`],
+        ['#3677: the rumble never fires', 'src/games/Pacman/move.js',
+            `if (now && (!tr.crawling || tr.cd <= 0)) {`,
+            `if (false) {`],
     ]
     let died = 0
     for (const [name, file, from, to] of MUTANTS) {

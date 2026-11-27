@@ -113,6 +113,28 @@ export function ghostSlowsAt(x, y) {
     return y === TUNNEL_ROW && (x <= TUNNEL_X_MAX || x >= TUNNEL_X_MIN)
 }
 
+// #3677 item 1: tunnel-crawl audio. The half-speed law above is otherwise only
+// visible; this pure tracker tells the component when to pulse a low rumble —
+// on the tick a ghost ENTERS the crawl zone, then every RUMBLE_PULSE ticks
+// while at least one ghost stays in (the bursts are ~0.5 s, so the crawl reads
+// as a sustained rumble). Ghost state is untouched and no dice roll here: the
+// round-1 identity pins and the seeded stream stay byte-identical.
+export const RUMBLE_PULSE = 30 // 0.5 s at the fixed 60 Hz timestep
+export function makeTunnelRumble() {
+    return { crawling: false, cd: 0 }
+}
+export function stepTunnelRumble(tr, ghosts) {
+    const now = ghosts.some(g => ghostSlowsAt(Math.round(g.x), Math.round(g.y)))
+    if (tr.cd > 0) tr.cd--
+    let fire = false
+    if (now && (!tr.crawling || tr.cd <= 0)) {
+        fire = true
+        tr.cd = RUMBLE_PULSE
+    }
+    tr.crawling = now
+    return fire
+}
+
 // Energizer duration decays with the round and vanishes entirely from round 14
 // (the pellet still scores — the fright does not come back). Round 1 = the old
 // POWER_TICKS exactly.
