@@ -1009,7 +1009,10 @@ const IronKeepGame = () => {
         // ------------------------------------------------------------- screens
         function drawScreens() {
             if (mode === 'attract') {
-                ctx.fillStyle = 'rgba(4,4,8,0.62)'
+                // A live backdrop over the attract overlay: keep the dim light enough
+                // that the moving dungeon reads through the title. Text contrast comes
+                // from the title shadow, not from a blacking-out.
+                ctx.fillStyle = 'rgba(4,4,8,0.34)'
                 ctx.fillRect(0, 0, RW, RH)
                 const t = Math.sin(clock * 2.2) > -0.55
                 drawText(ctx, 'IRONKEEP', RW / 2, 34, { scale: 6, align: 'center', color: CSS.gold, shadow: '#000000', shadowOff: 3 })
