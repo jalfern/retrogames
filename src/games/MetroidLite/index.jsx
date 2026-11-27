@@ -329,31 +329,65 @@ const MetroidGame = () => {
                 ctx.fillStyle = '#fff'
                 ctx.fillRect(px + (s.vx > 0 ? 5 : 0), py + 1, 3, 1)
             }
-            // the hunter
+            // the hunter — #3685 art pass: silhouette outline + two-tone armor
+            // so the figure reads against the navy cave at play scale. Drawing
+            // only — hitbox, physics and every rate live in sim.js untouched.
             {
                 const p = gs.p
                 const px = Math.round(p.x - c.x), py = Math.round(p.y - c.y)
                 const blink = gs.invuln > 0 && gs.tick % 6 < 3
                 if (!blink && !(gs.dead > 0)) {
                     const f = p.face
-                    ctx.fillStyle = '#e67e22'                       // suit torso
-                    ctx.fillRect(px + 1, py + 7, 8, 8)
-                    ctx.fillStyle = '#c0392b'
-                    ctx.fillRect(px + 1, py + 12, 8, 2)
-                    ctx.fillStyle = '#dfe6ee'                       // helmet
-                    ctx.fillRect(px + 1, py, 8, 7)
-                    ctx.fillStyle = '#39d2ff'                       // visor
-                    ctx.fillRect(f > 0 ? px + 5 : px + 1, py + 2, 4, 3)
-                    ctx.fillStyle = '#8d5524'                       // legs
+                    const OUT = '#0b1220'                           // 1px silhouette rim
+                    const ol = (x, y, w, h) => { ctx.fillStyle = OUT; ctx.fillRect(x - 1, y - 1, w + 2, h + 2) }
                     const run = gs.tick % 12 < 6 && Math.abs(p.vx) > 0.4
-                    if (p.onGround) {
-                        ctx.fillRect(px + (run ? 2 : 1), py + 15, 3, 5)
-                        ctx.fillRect(px + (run ? 6 : 5), py + 15, 3, 4)
-                    } else {
-                        ctx.fillRect(px + 2, py + 15, 3, 4); ctx.fillRect(px + 5, py + 14, 3, 4)
-                    }
-                    ctx.fillStyle = '#9aa7b8'                       // arm cannon
-                    ctx.fillRect(f > 0 ? px + 7 : px - 2, py + 8, 5, 3)
+                    // legs first so the torso plate overlaps their tops
+                    const legL = p.onGround ? px + (run ? 2 : 1) : px + 2
+                    const legR = p.onGround ? px + (run ? 6 : 5) : px + 5
+                    const legH = p.onGround ? 5 : 4
+                    const kneeUp = !p.onGround || run                // boots lift on stride/air
+                    ol(legL, py + 15, 3, legH)
+                    ol(legR, py + 14 + (kneeUp && p.onGround ? 1 : 0), 3, p.onGround ? 4 : 4)
+                    ol(px + 1, py + 7, 8, 8)                        // torso
+                    ol(px + 1, py, 8, 7)                            // helmet
+                    ol(f > 0 ? px + 7 : px - 2, py + 8, 5, 3)      // cannon
+                    // suit: lit shoulder over dark side plate
+                    ctx.fillStyle = '#e67e22'
+                    ctx.fillRect(px + 1, py + 7, 8, 8)
+                    ctx.fillStyle = '#f7a24b'
+                    ctx.fillRect(px + 1, py + 7, 8, 1)
+                    ctx.fillStyle = '#a34e0e'
+                    ctx.fillRect(f > 0 ? px + 1 : px + 7, py + 8, 2, 7)
+                    ctx.fillStyle = '#c0392b'                        // belt
+                    ctx.fillRect(px + 1, py + 12, 8, 2)
+                    ctx.fillStyle = '#ffd257'
+                    ctx.fillRect(px + 4, py + 12, 2, 2)
+                    // helmet: crown lit, jaw band shaded, visor with dark keyline
+                    ctx.fillStyle = '#dfe6ee'
+                    ctx.fillRect(px + 1, py, 8, 7)
+                    ctx.fillStyle = '#b9c4d2'
+                    ctx.fillRect(px + 1, py + 5, 8, 2)
+                    ctx.fillStyle = '#173a52'
+                    ctx.fillRect(f > 0 ? px + 4 : px, py + 1, 6, 5)
+                    ctx.fillStyle = '#39d2ff'
+                    ctx.fillRect(f > 0 ? px + 5 : px + 1, py + 2, 4, 3)
+                    ctx.fillStyle = '#bdf3ff'
+                    ctx.fillRect(f > 0 ? px + 5 : px + 4, py + 2, 1, 1)
+                    // leggings + boots: suit-adjacent tones, boots brightest
+                    ctx.fillStyle = '#cf6a1c'
+                    ctx.fillRect(legL, py + 15, 3, legH - 2)
+                    ctx.fillRect(legR, py + 14 + (kneeUp && p.onGround ? 1 : 0), 3, 2)
+                    ctx.fillStyle = '#f0b429'
+                    ctx.fillRect(legL, py + 15 + legH - 2, 3, 2)
+                    ctx.fillRect(legR, py + 14 + (kneeUp && p.onGround ? 1 : 0) + 2, 3, 2)
+                    // cannon: gunmetal with shaded underside and lit muzzle
+                    const cx = f > 0 ? px + 7 : px - 2
+                    ctx.fillStyle = '#9aa7b8'
+                    ctx.fillRect(cx, py + 8, 5, 3)
+                    ctx.fillStyle = '#66707d'
+                    ctx.fillRect(cx, py + 10, 5, 1)
+                    ctx.fillStyle = '#d3dce6'
+                    ctx.fillRect(f > 0 ? cx + 4 : cx, py + 8, 1, 2)
                 }
             }
         }
