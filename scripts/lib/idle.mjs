@@ -36,6 +36,7 @@ const norm = (s) => String(s || '').toLowerCase().replace(/\s+/g, ' ').trim()
 // A bullet marked "**CLOSED by #<n>**" is shipped work, not a gap: keeping it
 // re-kicks free lanes onto closed work (#961: Emberwood's portrait gap #0,
 // closed by #959/#960, kept getting kicked because the marker was decorative).
+// The by-less twin `CLOSED (#<n>)` declines the same way — #3813, at the filter.
 // A bullet marked "**BLOCKED**" is the mirror case: fidelity-blocked work —
 // behaviour whose spec is the original, where the original material that would
 // define it is not in the repo and FORGE.md's network boundary ("GitHub, npm,
@@ -84,7 +85,16 @@ export function parseGaps(md) {
     // top-level bullet that STARTS with ~~ is shipped work, not a gap;
     // a mid-bullet ~~ must not close the rest (the strikethroughs stay in
     // the README as history — the parser declines, the prose remains).
-    return out.filter((g) => !/CLOSED by #\d+/i.test(g) && !/\*\*BLOCKED\*\*/.test(g) && !/\*\*DISCLAIMER\*\*/.test(g)
+    // #3813: `CLOSED (#NNNN` is the by-less twin of CLOSED by #NNNN — the hash
+    // carries the meaning, the preposition is decorative. Evidence (2026-11-27):
+    // Pinball's shipped #3789-item-1 bullet (ball ghosts, live in index.jsx,
+    // three pinballcheck pins, sibling issues closed) starts `**CLOSED (#3789
+    // item 1)` and was the ONLY thing keeping idle-kick at `KICK PINBALL 0 weak`
+    // on an otherwise fully-owned shelf — a free lane would file POLISH against
+    // completed work. Same class as #961/#3672. The hash stays required: a bare
+    // `CLOSED (` names nothing and must not decline.
+    return out.filter((g) => !/CLOSED by #\d+/i.test(g) && !/CLOSED \(#\d+/i.test(g)
+        && !/\*\*BLOCKED\*\*/.test(g) && !/\*\*DISCLAIMER\*\*/.test(g)
         && !/Restored (in|by)( the)? #\d+/i.test(g)
         && !/^~~/.test(g.trim()))
 }

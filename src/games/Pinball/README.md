@@ -524,7 +524,7 @@ npm run dev -- --port 5173 --strictPort      # then /retrogames/pinball
   re-dress — is polish-pass work, routed to the QA lane as #3789 (the
   kickback save sweep + grapple voice shipped with #3468 + #3766 — see
   "#3766 — the rescue shows").
-- **CLOSED (#3789 item 1): the ball drags its own speed.** The same v-law the
+- **CLOSED by #3789 (item 1): the ball drags its own speed.** The same v-law the
   blade rides now grades the ball: `ballGhosts(v)` (count, capped 12) and
   `ballGhostA(v)` (burn, capped 0.5) read `v = hypot(vx, vy)` per frame, and
   the history is a per-puck WeakMap — so a rail-bound orbit run smears a
