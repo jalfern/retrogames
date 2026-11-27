@@ -6,7 +6,7 @@ import WatchButton, { WatchToast, AttractWatchButton } from '../../components/Wa
 import { isWatchKey, isTakeoverKey, playWatchStart, playWatchStop, watchSfxLog, WATCH_ATTRACT_HINT } from '../../utils/watch'
 import { GAMES } from '../../config/games'
 import { attractFrame, DIM } from './attract.js'
-import { makeRun, tickMc, gunnerStep, fireAt, fireBattery, startWave, citiesAlive, attractFerry, attractSmart, winner, SCREEN_WIDTH, SCREEN_HEIGHT, GROUND_Y } from './sim.js'
+import { makeRun, tickMc, gunnerStep, fireAt, fireBattery, startWave, citiesAlive, attractFerry, attractSmart, winner, addScore, CITY_EVERY, REVIVE_FX_TICKS, SCREEN_WIDTH, SCREEN_HEIGHT, GROUND_Y } from './sim.js'
 import { exposeFeedbackState, unexposeFeedbackState, seedFromQuery } from '../../utils/gameContract'
 import { mountDbg, unmountDbg } from '../../utils/DebugKit'
 
@@ -364,6 +364,16 @@ const MissileCommandGame = () => {
                         audioController.playTone(262, 0.12, 'square', 0.11, 0.1)
                     }
                 }
+                // #3753 bonus city — the windfall voice: a bright climb over a
+                // soft build-hum, rising because the game is putting something
+                // back (everything else that sweeps up is a threat arrival —
+                // the ferry's warble; nothing else climbs twice like this).
+                else if (ev === 'revive') {
+                    audioController.playSweep(220, 330, 0.24, 'triangle', 0.10)
+                    audioController.playTone(660, 0.09, 'square', 0.12, 0.12)
+                    audioController.playTone(880, 0.09, 'square', 0.12, 0.22)
+                    audioController.playTone(1320, 0.14, 'square', 0.10, 0.32)
+                }
             }
             if (gs.over && !wasOver) release(false) // the raid ends in your hands (silent)
         }
@@ -395,6 +405,18 @@ const MissileCommandGame = () => {
             ctx.fillStyle = '#0000ff' // Blue cities
             gs.cities.forEach((c) => {
                 if (c.alive) {
+                    // #3753 — the bonus city rises in over the wave break:
+                    // scale-up from the ground plus a cyan ring and a label.
+                    // The rebuild language is construction (cyan, upward);
+                    // destruction stays red/white.
+                    const fx = gs.reviveFx.find((f) => f.x === c.x)
+                    if (fx) {
+                        const p = 1 - fx.t / REVIVE_FX_TICKS
+                        ctx.save()
+                        ctx.translate(c.x, GROUND_Y)
+                        ctx.scale(1, Math.max(0.15, p))
+                        ctx.translate(-c.x, -GROUND_Y)
+                    }
                     ctx.beginPath()
                     ctx.moveTo(c.x - 15, GROUND_Y)
                     ctx.lineTo(c.x - 15, GROUND_Y - 10)
@@ -404,6 +426,23 @@ const MissileCommandGame = () => {
                     ctx.lineTo(c.x + 15, GROUND_Y - 10)
                     ctx.lineTo(c.x + 15, GROUND_Y)
                     ctx.fill()
+                    if (fx) {
+                        ctx.restore()
+                        const rr = 8 + fx.t * 0.6
+                        ctx.globalAlpha = Math.min(1, fx.t / 20)
+                        ctx.strokeStyle = '#00e5ff'
+                        ctx.lineWidth = 1.5
+                        ctx.beginPath()
+                        ctx.arc(c.x, GROUND_Y - 12, rr, 0, Math.PI * 2)
+                        ctx.stroke()
+                        if (fx.t % 8 < 5) {
+                            ctx.font = '9px monospace'
+                            ctx.textAlign = 'center'
+                            ctx.fillStyle = '#00e5ff'
+                            ctx.fillText('CITY RESTORED', c.x, GROUND_Y - 34)
+                        }
+                        ctx.globalAlpha = 1
+                    }
                 }
             })
 
@@ -753,6 +792,7 @@ const MissileCommandGame = () => {
                 `score ${gs.score}  wave ${gs.wave}  state ${gs.state}`,
                 `cities ${citiesAlive(gs)}/6  ammo ${gs.silos.map((s) => (s.alive ? s.ammo : 'x')).join(',')}  warheads ${gs.warheads.length}  saucers ${gs.saucers.length}`,
                 `smarts ${gs.warheads.filter((m) => m.smart && !m.dead).length}  seed ${gs.seed}  tick ${gs.tick}  watch ${gs.watch}`,
+                `bonus-city bank ${gs.revivePending} (next ${gs.cityNext})  rising ${gs.reviveFx.length}`,
                 gs.twoP ? `2P  turn P${gs.turn}  p1 ${gs.score}  p2 ${gs.score2}  p2 ${gs.p2cpu ? 'CPU' : 'human'}` : `solo`,
             ],
             actions: [
@@ -763,6 +803,11 @@ const MissileCommandGame = () => {
                 // keyboard human without leaving the panel.
                 { label: 'P2 seat: CPU <-> human', run: () => { if (gs.twoP) gs.p2cpu = !gs.p2cpu } },
                 { label: 'Force game over', run: () => { gs.cities.forEach((c) => { c.alive = false }); gs.over = true; gs.state = 'gameOver' } },
+                // #3753 — bank a bonus city through the REAL credit path and
+                // open a hole to redraw it into (the redraw still waits for
+                // the wave break, the cheat only accelerates nothing).
+                { label: '+10k score (bank a bonus city)', run: () => { addScore(gs, CITY_EVERY); return gs.revivePending } },
+                { label: 'Burn a city (hole for the redraw)', run: () => { const c = gs.cities.find((x) => x.alive); if (c) c.alive = false; return citiesAlive(gs) } },
             ],
         })
 
@@ -781,6 +826,9 @@ const MissileCommandGame = () => {
                     cruiseAt: gs.warheads.filter((m) => m.cruise).map((m) => ({ x: Math.round(m.x), y: Math.round(m.y), sx: Math.round(m.startX), sy: Math.round(m.startY) })),
                     juice: gs.debris.length + (gs.flash ? 1 : 0), // #3638 kill-juice probe
                     resist: gs.resist.length, // #3698 outer-immunity shimmer probe
+                    reviveBank: gs.revivePending, // #3753 bonus-city bank
+                    reviveFx: gs.reviveFx.length, // #3753 rise-in tell live?
+                    cityNext: gs.cityNext,
                     attractSmarts: gs.attractSmarts, // #3698 scripted sighting counter
                     smarts: gs.warheads.filter((m) => m.smart && !m.dead).length,
                     smartAt: gs.warheads.filter((m) => m.smart && !m.dead)
@@ -819,6 +867,11 @@ const MissileCommandGame = () => {
                 // (the rule itself is graded against the real engine in
                 // missilecmdcheck — this hook only feeds the renderer).
                 resistFx: (x = 400, y = 250) => { gs.resist.push({ x, y, t: 10 }); return gs.resist.length },
+                // #3753: harness lifts for the bonus-city drive — bank through
+                // the real addScore path and open a hole; the redraw itself is
+                // played out for real at the next wave break (endWave above).
+                score10k: () => { addScore(gs, CITY_EVERY); return gs.revivePending },
+                hole: () => { const c = gs.cities.find((x) => x.alive); if (c) c.alive = false; return citiesAlive(gs) },
                 // #3630 slice 2: open a hot-seat run like a player pressing 2,
                 // and a harness lift that empties the sky so the wave clears on
                 // the next tick (drives the turn flip without waiting minutes).

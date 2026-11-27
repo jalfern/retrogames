@@ -24,7 +24,7 @@ import {
     attractSmart, ATTRACT_SMART_EVERY,
     SAUCER_FIRST_WAVE, SAUCER_SCORE,
     SMART_FIRST_WAVE, SMART_SCORE, CENTER_SILO_X, CENTER_ABM_SPEED, ABM_SPEED,
-    clusterMode,
+    clusterMode, addScore, CITY_EVERY, REVIVE_FX_TICKS,
 } from '../src/games/MissileCommand/sim.js'
 import { seedRng, seedFromQuery } from '../src/utils/gameContract.js'
 import { plant, pull } from './lib/mutateguard.mjs'
@@ -1042,17 +1042,122 @@ console.log('component wiring: pin, report, restart, seat')
         'P1 arrows aim the crosshair — the pad stick finally has a load')
     ok(/twoP: gs\.twoP, turn: gs\.turn, p1: gs\.score, p2: gs\.score2/.test(src),
         'the production report carries the hot-seat picture')
+    // #3753 — bonus-city wiring: the windfall voice and the rise-in tell.
+    ok(/ev === 'revive'/.test(src), '#3753: the bonus-city jingle is wired to the event loop')
+    ok(/gs\.reviveFx\.find\(\(f\) => f\.x === c\.x\)/.test(src), '#3753: the rise-in tell renders on the living city')
     ok(/PLAYER \$\{w\} WINS/.test(src) && /A DRAW/.test(src),
         'THE END names the hot-seat winner over both books')
     const simSrc = readFileSync('src/games/MissileCommand/sim.js', 'utf8')
     ok(/if \(gs\.twoP\) \{\s*gs\.turn = gs\.turn === 1 \? 2 : 1/.test(simSrc),
         'the flip lives in nextWave and is gated by the mode')
+    ok(/gs\.cityRand\(\)/.test(simSrc), '#3753: the redraw pick rides gs.cityRand — never gs.rand')
     // the registry advertises the seat (gameHasWatch gates the pill/PauseOverlay)
     const reg = readFileSync('src/config/games.js', 'utf8')
     const mc = reg.match(/path: '\/missilecommand'[\s\S]*?\n    \},/)
     ok(!!mc && /WATCH_HELP/.test(mc[0]), 'the registry carries the WATCH line for /missilecommand')
     ok(!!mc && /never lets the fire touch the ground/.test(mc[0]),
         'the registry line names the doctrine the sweep proves')
+}
+
+// #3753 — the arcade's bonus city: every 10,000 points a destroyed city is
+// redrawn. Graded four ways: the bank arithmetic, where the redraw lands in
+// the bonus order (after the bonus pays, alive for the NEXT wave), what it
+// refuses to do (full board banks, no double draw in one break, nothing ever
+// redraws below the threshold), and that the pick rides a DEDICATED dice
+// stream so every byte pin under 10k replays untouched.
+console.log('bonus city (#3753): bank, arcade order, dedicated stream')
+{
+    // bank arithmetic — nothing moves below the threshold; crossings stack.
+    const g = makeRun(777)
+    ok(g.revivePending === 0 && g.cityNext === CITY_EVERY, 'fresh run: bank empty, next crossing at 10k')
+    addScore(g, CITY_EVERY - 1)
+    ok(g.revivePending === 0, '9,999 points bank nothing — the original draws at 10k, not before')
+    addScore(g, 1)
+    ok(g.revivePending === 1 && g.cityNext === 2 * CITY_EVERY, 'the 10k crossing banks one redraw')
+    addScore(g, 2 * CITY_EVERY)
+    ok(g.revivePending === 3 && g.cityNext === 4 * CITY_EVERY, 'a big credit banks every crossing it passes')
+
+    // hot-seat: combined books — either partner can earn the town back.
+    const h = makeRun(778, { twoPlayer: true })
+    h.turn = 2
+    addScore(h, CITY_EVERY)
+    ok(h.revivePending === 1 && h.score === 0 && h.score2 === CITY_EVERY,
+        'P2\'s book earns the bank too — cities are shared')
+
+    // full board: the bank waits for a hole (a crossing on six living cities
+    // must not vanish, and must not redraw over a living one).
+    const f = makeRun(779)
+    addScore(f, CITY_EVERY)
+    let ticks = 0
+    while (f.state !== 'gameOver' && f.wave === 1 && ticks < 20000) { tickMc(f, gunnerStep(f)); ticks++ }
+    ok(f.revivePending === 1, 'six cities standing: the bank waits, it never redraws over the living')
+
+    // redraw lands at the break, alive for the next wave, with one pick, and
+    // NEVER pays itself into the bonus that was already counted.
+    const r = makeRun(780)
+    r.cities[1].alive = false
+    r.cities[3].alive = false
+    addScore(r, CITY_EVERY)
+    let tt = 0
+    while (r.state !== 'gameOver' && r.wave === 1 && tt < 20000) { tickMc(r, gunnerStep(r)); tt++ }
+    ok(r.state === 'waveEnd' && r.revivePending === 0, 'the wave break spends the bank — one redraw per break')
+    ok(r.reviveFx.length === 1 && r.reviveFx[0].t >= REVIVE_FX_TICKS - 1, 'the redraw carries the rise-in tell')
+    const aliveAfter = citiesAlive(r)
+    ok(aliveAfter === 5, 'the board refills by exactly one — never a double draw', `${aliveAfter}`)
+    const holesLeft = r.cities.filter((c) => !c.alive).length
+    ok(holesLeft === 1, 'exactly one hole remains standing after the break', `${holesLeft}`)
+    const waveAt = r.wave
+    while (r.state !== 'gameOver' && r.wave === waveAt && tt < 40000) { tickMc(r, gunnerStep(r)); tt++ }
+    ok(citiesAlive(r) >= aliveAfter, 'the redrawn city survives into the next wave (it defended)', `${citiesAlive(r)}`)
+
+    // arcade order, exact: a crafted quiet break (no spawns, no kills) pays
+    // 4 living cities + full magazines = 1900 — the redraw must NOT count
+    // into the bonus it follows.
+    const o = makeRun(786)
+    addScore(o, CITY_EVERY)
+    o.cities[1].alive = false
+    o.cities[3].alive = false
+    o.spawning = false; o.missilesLeftInWave = 0
+    o.saucersLeftInWave = 0; o.smartLeftInWave = 0
+    tickMc(o, null)
+    ok(o.wave === 2 && o.score === CITY_EVERY + 1900,
+        'the bonus counts only the cities saved — the redraw pays nothing into it', `${o.score}`)
+    ok(citiesAlive(o) === 5 && o.revivePending === 0,
+        'board refills exactly one at the break', `${citiesAlive(o)}`)
+
+    // below-threshold runs never redraw: a fresh deep loss stays lost.
+    const n = makeRun(781)
+    n.cities[0].alive = false
+    let nt = 0
+    while (n.state !== 'gameOver' && n.wave === 1 && nt < 20000) { tickMc(n, gunnerStep(n)); nt++ }
+    ok(n.revivePending === 0 && n.reviveFx.length === 0 && citiesAlive(n) <= 5,
+        'an unbanked hole stays a hole — no free refill below 10k')
+
+    // dedicated stream: the pick consumes gs.cityRand, NOT gs.rand — the
+    // spawn script of an identical raid (same seed, same holes, same
+    // commands) must replay roll-for-roll even though the target POOLS
+    // diverge after the redraw (the revived city joins the wave-2 pool).
+    const traceOf = (seed, holes, banked) => {
+        const t = makeRun(seed)
+        holes.forEach((i) => { t.cities[i].alive = false })
+        if (banked) addScore(t, CITY_EVERY)
+        let rolls = 0
+        const real = t.rand
+        t.rand = () => { rolls++; return real() }
+        let k = 0
+        while (t.state !== 'gameOver' && t.wave <= 2 && k < 40000) { tickMc(t, gunnerStep(t)); k++ }
+        return { k, rolls, cities: citiesAlive(t), wave: t.wave, score: t.score }
+    }
+    const a = traceOf(783, [1, 4], true)
+    const b = traceOf(783, [1, 4], false)
+    ok(a.rolls === b.rolls && a.k === b.k,
+        'the redraw costs gs.rand no roll — waves 1..2 dice replay roll-for-roll', `${a.rolls} vs ${b.rolls}`)
+    ok(a.cities === b.cities + 1, 'the banked run ends wave 2 with exactly one more city', `${a.cities} vs ${b.cities}`)
+    ok(a.score > b.score, 'the banked run paid its 10k — the redraw was earned, not free')
+    const p1 = traceOf(784, [0], true)
+    const p2 = traceOf(784, [0], true)
+    ok(JSON.stringify(p1) === JSON.stringify(p2),
+        'banked raids replay byte-equal from the seed (cityRand is seeded too)', `${JSON.stringify(p1)} vs ${JSON.stringify(p2)}`)
 }
 
 if (process.argv.includes('--mutant')) {
@@ -1131,8 +1236,11 @@ if (process.argv.includes('--mutant')) {
             `    const silo = gs.silos[idx]\n    if (!silo) return false\n    return fireFrom(gs, silo, x, y, null)`,
             `    const silo = gs.silos[idx]\n    if (!silo) return false\n    return silo.alive && silo.ammo > 0 ? fireFrom(gs, silo, x, y, null) : fireAt(gs, x, y)`],
         ['outer fire kills smart bombs too (the counter-rule is inverted)', S,
-            `if (m.smart && !e.center) return`,
-            `if (m.smart && e.center) return`],
+            // anchor #3698 drift: the early-return gained the shimmer block and
+            // changed shape; the mutant never re-anchored (mutants don't run in
+            // CI, so it stayed a local red nobody saw until the #3753 run).
+            `if (m.smart && !e.center) {`,
+            `if (m.smart && e.center) {`],
         ['smart bombs see nothing (the §6 evade is gone)', S,
             `if (tx !== null) { m.evadeX = tx`,
             `if (false && tx !== null) { m.evadeX = tx`],
@@ -1187,6 +1295,27 @@ if (process.argv.includes('--mutant')) {
         ['#3698: the attract smart ad never flies (the wave-7 threat is never taught)', S,
             `if (gs.tick > 0 && gs.tick % ATTRACT_SMART_EVERY === ATTRACT_SMART_EVERY / 2) {`,
             `if (false && gs.tick > 0) {`],
+        // #3753 — the bonus-city law
+        ['#3753: the bank is deaf (crossings earn nothing)', S,
+            `gs.cityNext += CITY_EVERY
+        gs.revivePending++`,
+            `gs.cityNext += CITY_EVERY`],
+        ['#3753: the redraw never fires (the bank spends, the city stays dead)', S,
+            `if (holes.length > 0) {`,
+            `if (false && holes.length > 0) {`],
+        ['#3753: every break refills whether earned or not (free city)', S,
+            `if (gs.revivePending > 0) {`,
+            `if (true) {`],
+        ['#3753: the pick rides gs.rand (every byte pin shatters)', S,
+            `holes[Math.floor(gs.cityRand() * holes.length)]`,
+            `holes[Math.floor(gs.rand() * holes.length)]`],
+        ['#3753: the redraw pays itself into the bonus (arcade order inverted)', S,
+            `gs.cities.forEach((c) => { if (c.alive) bonus += 100 })`,
+            `if (gs.revivePending > 0) { const hz = gs.cities.filter((c) => !c.alive); if (hz.length > 0) { hz[0].alive = true; gs.revivePending-- } }
+    gs.cities.forEach((c) => { if (c.alive) bonus += 100 })`],
+        ['#3753: the rise-in tell never draws (the windfall is invisible)', S,
+            `gs.reviveFx.push({ x: c.x, t: REVIVE_FX_TICKS })`,
+            `/* mutant: no tell */`],
     ]
     let died = 0
     for (const [name, file, from, to] of MUTANTS) {

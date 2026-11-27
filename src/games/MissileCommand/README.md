@@ -5,6 +5,21 @@ warheads picks targets off the board; explosions clear the sky. Bonus between
 waves pays 100 per living city and 50 per spare missile, then reloads.
 
 ## Engine notes
+- **BONUS CITY (#3753) — one town back every 10,000 points.** The arcade's
+  revive law (the README pinned it; the original redraws a destroyed city as
+  it counts the wave bonus). Rules as built: crossing every 10k in the books
+  the run actually earns banks one redraw (`addScore`, combined books in
+  hot-seat — cities are shared). The redraw pays AFTER the bonus (the bonus
+  counts the cities you saved; the earned town is alive for the NEXT wave and
+  rejoins the spawn target pool — fidelity, not a cheat), one redraw per wave
+  break, a full board banks the credit until a hole exists. Which hole: seeded
+  pick on a DEDICATED stream (`gs.cityRand`) — no repo source pins WHICH city
+  the arcade redraws, and a separate stream keeps every existing `gs.rand`
+  byte pin untouched (the check grades it roll-for-roll: banked and unbanked
+  twins replay identical dice while the target pools differ). The tell: the
+  city rises in over 40 world ticks with a cyan rebuild ring and `CITY
+  RESTORED`, over a rising windfall jingle (nothing else in the palette
+  climbs twice — the threat arrivals descend or warble).
 - **Whole-tick sim (#1637 batch 29):** `sim.js` holds the ENTIRE world —
   `makeRun(seed)` builds it, `tickMc(gs, cmd)` advances exactly one fixed
   tick. No `setTimeout`, no `Math.random` inside (the wave break is
@@ -188,7 +203,7 @@ waves pays 100 per living city and 50 per spare missile, then reloads.
 
 ## Verify
 ```
-npm run missilecmdcheck             # 133 checks: raid replay, sweep 24 seeds waves 1-5 clean,
+npm run missilecmdcheck             # 170 checks: raid replay, sweep 24 seeds waves 1-5 clean,
                                   #   doctrine pins (safe altitude, urgency, cover), saucers
                                   #   (byte-exact gate, entry/launch/kill/hold), deep doctrine
                                   #   A/B waves 6-10, #3711 deep-wave cluster (deficit gate
@@ -200,10 +215,13 @@ npm run missilecmdcheck             # 133 checks: raid replay, sweep 24 seeds wa
                                   #   wave hold, watch center doctrine), three-button law
                                   #   (#3695: fireBattery names its battery from any sector,
                                   #   per-battery speed, duds, click-law regression),
+                                  #   bonus city (#3753: bank arithmetic, hot-seat combined
+                                  #   books, full-board banking, arcade bonus order exact,
+                                  #   one draw per break, dedicated-dice roll-for-roll spy),
                                   #   2P alternating (flip seq, bonus attribution, shared
                                   #   board, per-seat credits, dice-parity trace, CPU-seat
                                   #   defense), wiring
-npm run missilecmdcheck -- --mutant # 39 mutants, all must die
+npm run missilecmdcheck -- --mutant # 47 mutants, all must die
 npm run mcbatterydrive            # live browser three-button drive (13 checks): FAST pad
                                   #   declared, KeyB spends ONLY the center magazine, keys
                                   #   1/2/3 launch their battery from a foreign sector and
@@ -213,6 +231,10 @@ npm run mc2pdrive                 # live browser hot-seat drive (needs the dev s
                                   #   key opens the mode, real keys fire P1's wave only, turn
                                   #   flips after wave 1, the CPU defends P2's wave, real WASD
                                   #   + F join, dual-score HUD pixels, winner card, zero errors
+npm run mcbonusdrive              # live browser bonus-city drive (#3753, needs the dev server):
+                                  #   unbanked break never redraws, a banked 10k refills at the
+                                  #   break with the cyan rise-in pixels, full board banks the
+                                  #   credit without drawing over the living, zero errors
 npm run mcsaucerdrive             # live browser ferry drive (11 checks): gate negative, probe↔pixels,
                                   #   attract ad, orange cruise-trail pixels, real mouse+Space 125
                                   #   kill with kill-juice sighting (needs the dev server)
@@ -240,7 +262,10 @@ npm run attractcheck              # attract screen rule 6
   (`KeyB` → center battery), all firing at the crosshair from any sector; see
   Engine notes #3695. Human clicks keep the nearest-battery law; per-battery
   field-of-fire arcs (below) would replace both.
-- Cities revive only between games (original revives every 10k points).
+- **CLOSED by #3753** Cities revive only between games (original revives every
+  10k points) — the bonus-city law is shipped: every 10,000 points banked by
+  the run's books redraws one destroyed city at the next wave break, after the
+  bonus, on its own dice stream. See Engine notes #3753.
 - The gunner is proven clean to wave 5 (the sweep's bar) and the deep waves
   stay volume losses — #3711 measured the ceiling from three directions (knots,
   sacrifice, ferry-chain; see Engine notes) and it is the port's own spawn law,
