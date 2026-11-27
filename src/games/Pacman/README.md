@@ -32,6 +32,20 @@ other axis; a 180 is instant; turns start up to 4px early).
   → 1, cleared maze → +1) and paints the round's fruit as a HUD icon.
   Round 1 below 700 outside the tunnels is byte-identical to pre-#3661 (the
   identity floor is pinned in `pacmancheck §progression`).
+- **Round lift & briefs (#3667):** a cleared maze is now LIVE — the tick the
+  last pellet/energizer goes (`mazeCleared`, dots AND power) the world enters
+  `freeze` (90t wall flash), then after rounds 1-2 (the arcade's two shorts,
+  `briefForRound`) screens `intermissionFrame(t)`: our Pac runs down Blinky,
+  arcs over the tripped ghost (hop peaks mid-leap), and coasts ahead while he
+  rights himself — scripted by WORLD ticks, dice-free, so the seed stream rides
+  through and `?seed=N` replays include the brief. The attract demo rides the
+  same machine. The scene glyphs are our own drawings; the old game-over-only
+  clear path in `resetGame` stays as a backstop. `FRUIT_TONES` gives every kind
+  its own rising arpeggio (cherry keeps the EXACT old two-tone — identity;
+  note count and top pitch only climb with the value); `stepFruit` now hands
+  the eat hook the kind. A `speedStage` climb fires one sweep + a HUD ROUND
+  pulse (`stageFlash`, 30t) so the ladder is legible mid-play. `__pacTest`
+  reports `phase/phaseT`; DebugKit gains a Clear-maze cheat.
 - Score fidelity: the score is no longer zeroed when the last life is lost —
   it stays on the GAME OVER screen like the arcade and clears only at restart.
 - **Fruit (#1517):** bonus fruit drops at the 70th and 170th pellet (once per
@@ -44,8 +58,8 @@ other axis; a 180 is instant; turns start up to 4px early).
 
 ## Verify
 ```
-npm run pacmancheck            # 102 checks: input rules, maze, attract, seed replay, fruit, eyes-home, #3661 progression
-npm run pacmancheck -- --mutate  # 31 mutants, all must die
+npm run pacmancheck            # 128 checks: input rules, maze, attract, seed replay, fruit, eyes-home, #3661 progression, #3667 clear/briefs/cues/tell
+npm run pacmancheck -- --mutate  # 36 mutants, all must die
 npm run pacprogressiondrive  # real Chrome: HUD fruit paint vs probe, ladder cheats, restart (advisory #737)
 npm run feedbackcheck          # pin law + rollout floor (48)
 ```
@@ -56,7 +70,10 @@ npm run feedbackcheck          # pin law + rollout floor (48)
   open).~~ #3661 shipped the ladder: score-stage speeds, tunnel-mouth crawl,
   round-keyed fruit kinds/values, energizer decay to nothing at r14. The exact
   rate tables are this repo's pinned spec (UNVERIFIED against arcade ROMs).
-- No intermission ("brief") cutscenes between rounds (#3667 item 1) — the
-  arcade's humorous Pac-vs-Blinky shorts stay unwitnessed in-repo.
+- ~~No intermission ("brief") cutscenes between rounds (#3667 item 1) — the
+  arcade's humorous Pac-vs-Blinky shorts stay unwitnessed in-repo.~~ #3667
+  shipped the lift: live round clear, freeze flash, wordless chase shorts after
+  rounds 1-2, per-kind fruit arpeggios and the stage-lift tell. Shorts beyond
+  r2 and the arcade's exact gag scripts stay UNVERIFIED in-repo.
 - Chrome on this dev box aborts (#737), so browser-tier drive is advisory;
   the Node gate carries the proof.
