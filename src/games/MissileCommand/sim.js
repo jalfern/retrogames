@@ -62,7 +62,7 @@ export const CENTER_SILO_X = 400 // the battery of the "much greater speed"
 export const CENTER_ABM_SPEED = 28
 export const SMART_DETECT_R = 60 // a live blast inside this line is sensed
 export const SMART_SENSOR_R = 70 // an incoming ABM is only detected this close — the slow outer missile loiters in range, the fast center blips past before the bomb can run
-export const SMART_PERFECT_R = 16 // blind spot (§7 hint 3): aim on the bomb and it never sees the shot
+export const SMART_PERFECT_R = 32 // blind spot (§7 hint 3): aim on the bomb and it never sees the shot. 32 px — not the head, but the lead window: it must swallow the bomb's own travel while the ABM flies, which is why fast center shots thread it where careful outer ones never can.
 export const SMART_EV_TICKS = 12
 export const SMART_EV_SPEED = 2.6
 export const SMART_CORE_R = 4 // blast-meets-core envelope, the saucer rule at warhead scale
@@ -613,6 +613,11 @@ export function gunnerStep(gs, opts = {}) {
             for (let j = 1; j <= 500; j++) {
                 const p = stepWarhead(w, j)
                 if (p.y > SAFE_Y) break
+                // Only blind solutions (§7 hint 3): the aim must sit inside the
+                // blind radius of the bomb at launch, else the seen shot gets
+                // dodged and the ammo is just noise. The center battery's speed
+                // is what makes such a point exist at range — the arcade proof.
+                if (Math.hypot(w.x - p.x, w.y - p.y) > SMART_PERFECT_R) continue
                 const d = Math.hypot(p.x - center.x, p.y - center.y)
                 const k = abmArrivalTicks(d, CENTER_ABM_SPEED)
                 if (k <= j) {
