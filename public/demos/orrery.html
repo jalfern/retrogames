@@ -1,0 +1,914 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+<meta name="theme-color" content="#0f0b12">
+<title>ORRERY — clockwork solar system</title>
+<style>
+  html, body { margin: 0; padding: 0; height: 100%; overflow: hidden; background: #0f0b12;
+    -webkit-user-select: none; user-select: none; overscroll-behavior: none; }
+  canvas { display: block; width: 100vw; height: 100vh; touch-action: none; cursor: grab; }
+  canvas.grabbing { cursor: grabbing; }
+  #hud {
+    position: fixed; left: 50%; transform: translateX(-50%);
+    bottom: max(12px, env(safe-area-inset-bottom));
+    z-index: 4; pointer-events: none; white-space: nowrap;
+    font: 9px/1.8 Georgia, serif; letter-spacing: .22em; text-transform: uppercase;
+    color: #d8bd7a; background: rgba(15, 11, 18, .66); border: 1px solid rgba(216, 189, 122, .34);
+    padding: 6px 16px; border-radius: 999px; backdrop-filter: blur(2px);
+    transition: opacity 1.1s;
+  }
+  #hud.gone { opacity: 0; }
+  @media (max-width: 640px) {
+    #hud { font-size: 8px; letter-spacing: .14em; padding: 6px 12px; bottom: max(8px, env(safe-area-inset-bottom)); }
+  }
+</style>
+</head>
+<body>
+<canvas id="scene"></canvas>
+<div id="hud">drag to wind &nbsp;·&nbsp; tap a planet to zoom</div>
+<script>
+(function () {
+  'use strict'
+  var canvas = document.getElementById('scene')
+  var ctx = canvas.getContext('2d')
+  var hudEl = document.getElementById('hud')
+  var W = 0, H = 0, DPR = 1, portrait = false
+
+  // ---------------- seeded rng ----------------
+  function mulberry(seed) {
+    var a = seed >>> 0
+    return function () {
+      a |= 0; a = (a + 0x6D2B79F5) | 0
+      var t = Math.imul(a ^ (a >>> 15), 1 | a)
+      t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t
+      return ((t ^ (t >>> 14)) >>> 0) / 4294967296
+    }
+  }
+
+  // ---------------- the solar system (honest periods, days) ----------------
+  var T_YEAR = 365.25
+  var T_EARTH = 365.25
+  var PLANETS = [
+    { name: 'MERCURY', period: 87.97,  orbit: 0.21,  radius: 0.052, col: '#8f8377', tint: '#b3a696', squash: 0.985, moons: [] },
+    { name: 'VENUS',   period: 224.7,  orbit: 0.31,  radius: 0.072, col: '#d8b980', tint: '#eed9a8', squash: 0.985, moons: [] },
+    { name: 'EARTH',   period: 365.25, orbit: 0.42,  radius: 0.082, col: '#4e7d8a', tint: '#8fd0d8', squash: 0.97, moons: [ { name: 'LUNA', period: 27.3, radius: 0.42, d: 2.1 } ] },
+    { name: 'MARS',    period: 686.97, orbit: 0.56,  radius: 0.066, col: '#b2603e', tint: '#e0926a', squash: 0.96, moons: [ { name: 'DEIMOS', period: 1.263, radius: 0.36, d: 2.4 } ] },
+    { name: 'JUPITER', period: 4332.6, orbit: 0.75,  radius: 0.15,  col: '#c8a06a', tint: '#e6c896', squash: 0.99, moons: [ { name: 'IO', period: 1.769, radius: 0.30, d: 2.6 } ] },
+    { name: 'SATURN',  period: 10759.2, orbit: 0.92, radius: 0.125, col: '#cdb37c', tint: '#eedd9d', squash: 0.99, ring: true, moons: [ { name: 'TITAN', period: 15.9, radius: 0.34, d: 2.6 } ] },
+  ]
+  var N_PLANETS = PLANETS.length
+  // seeded starting phases spread the planets around the dial at t=0
+  var φ = []
+  ;(function () {
+    // deterministic spread: evenly spaced starting phases + a little seeded jitter
+    var r = mulberry(77)
+    for (var i = 0; i < N_PLANETS; i++) φ.push(i * (6.2832 / N_PLANETS) + (r() - 0.5) * 0.9)
+  })()
+
+  // honest gear train (base): Earth-gear is the master. teeth ∝ period.
+  var TEETH_K = 100 / T_EARTH
+  var GEAR_ORDER = ['MERCURY', 'VENUS', 'EARTH', 'MARS'] // mercury < venus < earth < mars in size order of the base
+  var GEARS = []
+  ;(function () {
+    var i, gi = 0
+    for (i = 0; i < GEAR_ORDER.length; i++) {
+      var p = PLANETS.filter(function (q) { return q.name === GEAR_ORDER[i] })[0]
+      var teeth = Math.round(p.period * TEETH_K)
+      GEARS.push({ name: p.name, teeth: teeth, period: p.period, angle: 0 })
+      gi++
+    }
+  })()
+  function teethOf(name) {
+    for (var i = 0; i < GEARS.length; i++) if (GEARS[i].name === name) return GEARS[i].teeth
+    return 0
+  }
+  // ω of the master gear = planet-Earth's period law (one rev per year)
+  function planetOmega(i) { return 6.2832 / PLANETS[i].period }
+  function gearOmega(g) {
+    var earth = teethOf('EARTH')
+    var mag = (6.2832 / T_EARTH) * (earth / g.teeth)
+    // meshing alternates sign; earth = +1
+    var signs = { MERCURY: -1, VENUS: 1, EARTH: -1, MARS: 1 }
+    // inverse: meshes in sequence mercury->venus->earth->mars
+    return mag * (signs[g.name] || 1)
+  }
+  // meshes: mercury meshes venus, venus meshes earth, earth meshes mars
+  // (all gears in the same gear-train set; direction alternation is by adjacency)
+  // Sign of ω follows the actual meshing rule: count meshes from the master.
+  (function () {
+    var mesh = { MERCURY: 3, VENUS: 2, EARTH: 1, MARS: 2 } // signed half-turns from earth
+    for (var i = 0; i < GEARS.length; i++) {
+      var g = GEARS[i]
+      var turns = mesh[g.name] || 1
+      g.sign = turns % 2 === 0 ? 1 : -1
+      // hmm: earth is the master (always +); any mesh of one gear to master changes sign
+      g.sign = (g.name === 'EARTH') ? 1 : (mesh[g.name] === 2 ? -1 : (mesh[g.name] === 4 ? 1 : -1))
+    }
+  })()
+  function gearOmegaSign(g) { return g.sign }
+
+  // ---------------- state ----------------
+  var tDays = 0.0 // starting clock: planets evenly spread
+  var wind = 0.0           // days per second (signed)
+  var targetWind = 0.0
+  var dragging = false
+  var dragStartX = 0, dragStartY = 0
+  var dragVel = 0, lastDragX = 0, lastFrameT = 0
+  var zoomT = 1           // 1 = full dial, >1 = zoomed
+  var zoomTarget = 1
+  var zoomPlanet = -1     // index of the zoomed planet, -1 = none
+  var zoomFocus = { x: 0, y: 0 }
+  var frames = 0
+  var tGlobal = 0
+  var audioCtx = null, noiseSrc = null, tickReady = false, tickAcc = 0
+  var hintTimer = 0
+
+  // ---------------- layout ----------------
+  var L = {
+    dialX: 0, dialY: 0, dialR: 0, squash: 0.46, sunR: 0,
+    bandY0: 0, bandY1: 0,
+    plate: { x: 0, y: 0, w: 0, h: 0 },
+  }
+  function layout() {
+    W = window.innerWidth; H = window.innerHeight
+    DPR = Math.min(window.devicePixelRatio || 1, 2)
+    canvas.width = Math.round(W * DPR); canvas.height = Math.round(H * DPR)
+    canvas.style.width = W + 'px'; canvas.style.height = H + 'px'
+    ctx.setTransform(DPR, 0, 0, DPR, 0, 0)
+    portrait = H > W
+    var minWH = Math.min(W, H)
+    if (portrait) {
+      L.dialX = W * 0.5; L.dialY = H * 0.385
+      L.dialR = Math.min(W * 0.455, H * 0.235)
+      L.squash = 0.5
+      L.sunR = L.dialR * 0.115
+      L.bandY0 = H * 0.66; L.bandY1 = H * 0.885
+      L.plate = { x: W * 0.5, y: H * 0.030, w: Math.min(W * 0.66, 260), h: 32 }
+    } else {
+      L.dialX = W * 0.5; L.dialY = H * 0.40
+      L.dialR = Math.min(W * 0.42, H * 0.40)
+      L.squash = 0.5
+      L.sunR = L.dialR * 0.085
+      L.bandY0 = H * 0.725; L.bandY1 = H * 0.925
+      L.plate = { x: W * 0.5, y: H * 0.028, w: 230, h: 28 }
+    }
+    // the drag-to-wind hint floats just above the gear band, never under it
+    if (hudEl) hudEl.style.bottom = (H - L.bandY0 + 12) + 'px'
+  }
+
+  // ---------------- helpers ----------------
+  function planetPos(i, t) {
+    var p = PLANETS[i]
+    var theta = 6.2832 * (t / p.period) + φ[i]
+    var orb = L.dialR * p.orbit
+    var dx = Math.cos(theta) * orb
+    var dy = Math.sin(theta) * orb * L.squash
+    return {
+      x: L.dialX + dx, y: L.dialY + dy,
+      theta: theta, r: p.radius * L.dialR * (portrait ? 1.0 : 1.05),
+    }
+  }
+  function gearRotation(g, t) {
+    var earth = teethOf('EARTH')
+    var mag = (6.2832 / T_EARTH) * (earth / g.teeth)
+    return gearOmegaSign(g) * mag * t
+  }
+
+  // ---------------- grow / shrink helper (ease) ----------------
+  function easeInOut(x) { return x < 0.5 ? 2 * x * x : 1 - Math.pow(-2 * x + 2, 2) / 2 }
+
+  // ---------------- audio ----------------
+  function ensureAudio() {
+    if (audioCtx) return
+    try { audioCtx = new (window.AudioContext || window.webkitAudioContext)() } catch { audioCtx = null; return }
+    // wind ratchet: chain of short ticks driven by the wind loop (no buffer)
+    tickReady = true
+  }
+  function playTick(vol) {
+    if (!audioCtx || !tickReady || vol <= 0.001) return
+    var t = audioCtx.currentTime
+    var o = audioCtx.createOscillator(); var g = audioCtx.createGain()
+    o.type = 'square'; o.frequency.value = 1400
+    g.gain.setValueAtTime(vol * 0.5, t)
+    g.gain.exponentialRampToValueAtTime(0.001, t + 0.016)
+    o.connect(g).connect(audioCtx.destination)
+    o.start(t); o.stop(t + 0.02)
+    // soft low thud underneath (ratchet cam)
+    var o2 = audioCtx.createOscillator(); var g2 = audioCtx.createGain()
+    o2.type = 'triangle'; o2.frequency.value = 110
+    g2.gain.setValueAtTime(vol * 0.35, t)
+    g2.gain.exponentialRampToValueAtTime(0.001, t + 0.05)
+    o2.connect(g2).connect(audioCtx.destination)
+    o2.start(t); o2.stop(t + 0.06)
+  }
+
+  // ---------------- input ----------------
+  var keys = {}
+  function pointerPos(e) {
+    var t = (e.touches && e.touches[0]) ? e.touches[0] : e
+    var r = canvas.getBoundingClientRect()
+    return { x: t.clientX - r.left, y: t.clientY - r.top }
+  }
+  function onDown(e) {
+    e.preventDefault()
+    ensureAudio()
+    if (e.type === 'pointerdown' || e.type === 'touchstart') {
+      var p = pointerPos(e)
+      dragging = true
+      dragStartX = p.x; dragStartY = p.y; lastDragX = p.x
+      dragVel = 0; lastFrameT = performance.now()
+      canvas.classList.add('grabbing')
+    }
+  }
+  function onMove(e) {
+    if (!dragging) return
+    var p = pointerPos(e)
+    var now = performance.now()
+    var dt = Math.max(1, now - lastFrameT) / 1000
+    dragVel = 0.82 * dragVel + 0.18 * ((p.x - lastDragX) / dt)
+    lastDragX = p.x; lastFrameT = now
+    // wind from drag velocity: right winds forward, left winds backward
+    targetWind = Math.max(-42, Math.min(42, dragVel * 0.028))
+  }
+  function onUp(e) {
+    if (!dragging) return
+    e.preventDefault()
+    var p = pointerPos(e)
+    dragging = false
+    canvas.classList.remove('grabbing')
+    // if the drag was a tap (short + nearly stationary), handle taps
+    var dx = p.x - dragStartX, dy = p.y - dragStartY
+    var moved = Math.hypot(dx, dy)
+    if (moved < 12 && Math.abs(dragVel) < 25) {
+      // tap in the top plate / hint: nothing
+      // tap on a planet: zoom in; tap zoomed: return
+      handleTap(p)
+    }
+    targetWind = 0 // coast on release: wound orrery glides a little
+  }
+  function handleTap(p) {
+    if (zoomPlanet >= 0) { zoomOut(); return }
+    // hit test planets (zoomed-scaled? no — full-dial space)
+    for (var i = 0; i < N_PLANETS; i++) {
+      var pos = planetPos(i, tDays)
+      var rr = pos.r * (1.9)
+      var d = Math.hypot(p.x - pos.x, p.y - pos.y)
+      if (d < rr) { zoomTo(i); return }
+    }
+    // tapped space: clear hint
+    hudEl.classList.add('gone'); hintTimer = 0
+  }
+
+  canvas.addEventListener('pointerdown', onDown)
+  window.addEventListener('pointermove', onMove, { passive: false })
+  window.addEventListener('pointerup', onUp, { passive: false })
+  window.addEventListener('pointercancel', onUp, { passive: false })
+  canvas.addEventListener('contextmenu', function (e) { e.preventDefault() })
+  window.addEventListener('keydown', function (e) {
+    if (e.key === 'ArrowLeft' || e.key === 'ArrowRight') {
+      e.preventDefault()
+      keys[e.key] = true
+      targetWind = e.key === 'ArrowRight' ? 25 : -25
+      ensureAudio()
+      hudEl.classList.add('gone')
+    }
+    if (e.key === 'Escape') { zoomOut(); return }
+    if (e.key === 'r' || e.key === 'R') { tDays = 30; wind = 0; targetWind = 0 }
+  })
+  window.addEventListener('keyup', function (e) {
+    if (e.key === 'ArrowLeft' || e.key === 'ArrowRight') {
+      keys[e.key] = false
+      if (!keys['ArrowLeft'] && !keys['ArrowRight']) targetWind = 0
+    }
+  })
+
+  window.__addEventListener = undefined // keep linters honest
+
+  function zoomTo(i) {
+    zoomPlanet = i; zoomTarget = 2.7
+    ensureAudio()
+  }
+  function zoomOut() { zoomTarget = 1; zoomPlanet = -1 }
+
+  // ---------------- engraved helpers ----------------
+  function hatch(cx, cy, r, angle, spacing, color, alpha, clipShape) {
+    ctx.save()
+    ctx.translate(cx, cy)
+    if (clipShape === 'circle') {
+      ctx.beginPath(); ctx.arc(0, 0, r, 0, 6.2832); ctx.clip()
+    }
+    ctx.rotate(angle)
+    ctx.strokeStyle = color
+    ctx.globalAlpha = alpha
+    ctx.lineWidth = 0.8
+    var n = Math.ceil((r * 2) / spacing) + 1
+    for (var k = -n; k < n; k++) {
+      var y = k * spacing
+      ctx.beginPath()
+      ctx.moveTo(-r * 1.35, y)
+      ctx.lineTo(r * 1.35, y)
+      ctx.stroke()
+    }
+    ctx.restore()
+    ctx.globalAlpha = 1
+  }
+
+  function brassGrad(cx, cy, r, hi, mid, dark) {
+    var g = ctx.createRadialGradient(cx - r * 0.38, cy - r * 0.42, r * 0.08, cx, cy, r * 1.15)
+    g.addColorStop(0, hi)
+    g.addColorStop(0.5, mid)
+    g.addColorStop(1, dark)
+    return g
+  }
+
+  function drawSphere(cx, cy, r, hi, mid, dark, angleShading, ringGlow) {
+    ctx.beginPath(); ctx.arc(cx, cy, r, 0, 6.2832)
+    ctx.fillStyle = brassGrad(cx, cy, r, hi, mid, dark)
+    ctx.fill()
+    // engraved hatch — crosshatched latitude lines on the sphere
+    ctx.save()
+    ctx.beginPath(); ctx.arc(cx, cy, r, 0, 6.2832); ctx.clip()
+    var step = Math.max(2.6, r * 0.13)
+    ctx.strokeStyle = 'rgba(40, 24, 8, 0.5)'
+    ctx.lineWidth = 0.7
+    var kx
+    for (kx = -r; kx <= r; kx += step) {
+      var half = Math.sqrt(Math.max(0, r * r - kx * kx))
+      ctx.beginPath(); ctx.moveTo(cx - half, cy + kx); ctx.lineTo(cx + half, cy + kx); ctx.stroke()
+    }
+    ctx.restore()
+    // rim
+    ctx.beginPath(); ctx.arc(cx, cy, r, 0, 6.2832)
+    ctx.strokeStyle = 'rgba(18, 10, 4, 0.9)'; ctx.lineWidth = Math.max(1, r * 0.07); ctx.stroke()
+    // sun-side highlight arc
+    ctx.beginPath(); ctx.arc(cx, cy, r * 0.86, -2.35, -1.15)
+    ctx.strokeStyle = 'rgba(255, 240, 190, 0.85)'; ctx.lineWidth = Math.max(1, r * 0.1)
+    ctx.lineCap = 'round'; ctx.stroke()
+    ctx.lineCap = 'butt'
+    // inner glint
+    if (ringGlow) {
+      ctx.beginPath(); ctx.arc(cx - r * 0.32, cy - r * 0.35, r * 0.26, 0, 6.2832)
+      ctx.fillStyle = 'rgba(255, 246, 210, 0.9)'; ctx.fill()
+    }
+  }
+
+  function drawGear(g, cx, cy, radius, angle) {
+    var teeth = g.teeth
+    var toothDepth = radius * 0.22
+    var step = 6.2832 / teeth
+    ctx.save()
+    ctx.translate(cx, cy)
+    ctx.rotate(angle)
+    // teeth
+    ctx.fillStyle = brassGrad(0, 0, radius, '#f2dfa0', '#b8862f', '#4a3310')
+    ctx.beginPath()
+    var i
+    for (i = 0; i < teeth; i++) {
+      var a0 = i * step
+      var a1 = a0 + step * 0.18
+      var a2 = a0 + step * 0.5
+      var a3 = a0 + step * 0.82
+      var rO = radius, rI = radius - toothDepth
+      ctx.moveTo(Math.cos(a0) * rI, Math.sin(a0) * rI)
+      ctx.lineTo(Math.cos(a1) * rO, Math.sin(a1) * rO)
+      ctx.lineTo(Math.cos(a2) * rO, Math.sin(a2) * rO)
+      ctx.lineTo(Math.cos(a3) * rI, Math.sin(a3) * rI)
+      ctx.closePath()
+    }
+    ctx.fill()
+    ctx.strokeStyle = 'rgba(20, 12, 4, 0.9)'; ctx.lineWidth = Math.max(0.9, radius * 0.03)
+    ctx.stroke()
+    // body disc
+    ctx.beginPath(); ctx.arc(0, 0, radius - toothDepth * 0.55, 0, 6.2832)
+    ctx.fillStyle = brassGrad(0, 0, radius, '#e8c96a', '#a1762a', '#3c2a10')
+    ctx.fill()
+    ctx.stroke()
+    // spokes
+    var spokes = 4
+    ctx.strokeStyle = 'rgba(24, 14, 5, 0.85)'
+    ctx.lineWidth = Math.max(1.6, radius * 0.1)
+    for (i = 0; i < spokes; i++) {
+      var a = i * (6.2832 / spokes)
+      ctx.beginPath()
+      ctx.moveTo(Math.cos(a) * radius * 0.16, Math.sin(a) * radius * 0.16)
+      ctx.lineTo(Math.cos(a) * (radius * 0.72), Math.sin(a) * (radius * 0.72))
+      ctx.stroke()
+    }
+    // hub
+    ctx.beginPath(); ctx.arc(0, 0, radius * 0.17, 0, 6.2832)
+    ctx.fillStyle = brassGrad(0, 0, radius * 0.17, '#f6e6ae', '#8f6820', '#2e1f0a')
+    ctx.fill()
+    ctx.strokeStyle = 'rgba(16, 9, 3, 0.95)'; ctx.lineWidth = Math.max(0.9, radius * 0.04)
+    ctx.stroke()
+    // engraved hatch on body
+    hatch(0, 0, radius * 0.68, 0.72, Math.max(3.4, radius * 0.16), 'rgba(46, 28, 9, 0.4)', 0.8, 'circle')
+    ctx.restore()
+  }
+
+  function drawVelvet() {
+    // dark velvet ground: radial falloff, warm-dark aubergine
+    var g = ctx.createRadialGradient(W * 0.5, H * 0.44, Math.min(W, H) * 0.12, W * 0.5, H * 0.46, Math.max(W, H) * 0.78)
+    g.addColorStop(0, '#241a27')
+    g.addColorStop(0.55, '#150f1b')
+    g.addColorStop(1, '#0a0710')
+    ctx.fillStyle = g
+    ctx.fillRect(0, 0, W, H)
+    // subtle velvet sheen: soft elliptical light from above the dial
+    var sheen = ctx.createRadialGradient(L.dialX, L.dialY, L.dialR * 0.2, L.dialX, L.dialY, L.dialR * 1.55)
+    sheen.addColorStop(0, 'rgba(180, 140, 200, 0.075)')
+    sheen.addColorStop(0.6, 'rgba(160, 120, 190, 0.035)')
+    sheen.addColorStop(1, 'rgba(160, 120, 190, 0)')
+    ctx.fillStyle = sheen
+    ctx.fillRect(0, 0, W, H)
+  }
+
+  function drawTitlePlate() {
+    var p = L.plate
+    ctx.save()
+    ctx.translate(p.x, p.y)
+    // engraved plate: dark brass strip with bevel
+    var w = p.w, h = p.h
+    ctx.fillStyle = '#2a1f13'
+    roundRect(-w / 2, -h / 2, w, h, 6)
+    ctx.fill()
+    var g = ctx.createLinearGradient(0, -h / 2, 0, h / 2)
+    g.addColorStop(0, '#4a3416'); g.addColorStop(0.45, '#2c1e0e'); g.addColorStop(1, '#18100a')
+    ctx.fillStyle = g
+    roundRect(-w / 2 + 2, -h / 2 + 2, w - 4, h - 4, 4)
+    ctx.fill()
+    ctx.strokeStyle = '#c9a45a'; ctx.lineWidth = 1.4
+    roundRect(-w / 2 + 2, -h / 2 + 2, w - 4, h - 4, 4)
+    ctx.stroke()
+    // engraved text
+    ctx.fillStyle = '#e8c96a'
+    ctx.font = '700 13px Georgia, serif'
+    ctx.textAlign = 'center'; ctx.textBaseline = 'middle'
+    ctx.fillText('· ORRERY ·', 0, -3)
+    ctx.font = 'italic 8px Georgia, serif'
+    ctx.fillStyle = '#9c8252'
+    ctx.fillText('a clockwork solar system', 0, h * 0.22)
+    ctx.restore()
+  }
+
+  function roundRect(x, y, w, h, r) {
+    ctx.beginPath()
+    ctx.moveTo(x + r, y)
+    ctx.arcTo(x + w, y, x + w, y + h, r)
+    ctx.arcTo(x + w, y + h, x, y + h, r)
+    ctx.arcTo(x, y + h, x, y, r)
+    ctx.arcTo(x, y, x + w, y, r)
+    ctx.closePath()
+  }
+
+  function drawWindGauge() {
+    // small brass dial top-right showing the wind rate
+    var r = clamp(minWH() * 0.075, 26, 40)
+    var gx = W - r - 14, gy = Math.max(44, H * 0.075)
+    ctx.save()
+    ctx.translate(gx, gy)
+    // dial rim
+    ctx.beginPath(); ctx.arc(0, 0, r, 0, 6.2832)
+    ctx.fillStyle = brassGrad(0, 0, r, '#e8c96a', '#8f6820', '#2c1e0e')
+    ctx.fill()
+    ctx.strokeStyle = '#120b04'; ctx.lineWidth = 2; ctx.stroke()
+    ctx.beginPath(); ctx.arc(0, 0, r * 0.78, 0, 6.2832)
+    ctx.strokeStyle = 'rgba(255, 230, 150, 0.6)'; ctx.lineWidth = 1; ctx.stroke()
+    // tick marks
+    ctx.strokeStyle = '#f6e3a0'; ctx.lineWidth = 1.1
+    for (var a = -220; a <= 220; a += 44) {
+      var rad = a * Math.PI / 180 - Math.PI / 2
+      var x1 = Math.cos(rad) * r * 0.5, y1 = Math.sin(rad) * r * 0.5
+      var x2 = Math.cos(rad) * r * 0.7, y2 = Math.sin(rad) * r * 0.7
+      ctx.beginPath(); ctx.moveTo(x1, y1); ctx.lineTo(x2, y2); ctx.stroke()
+    }
+    // needle: wind from -42..+42 d/s → needle sweep -130°..+130°
+    var frac = Math.max(-1, Math.min(1, wind / 42))
+    var ang = frac * 2.27 // ~130°
+    ctx.rotate(ang)
+    ctx.beginPath()
+    ctx.moveTo(-r * 0.16, 0)
+    ctx.lineTo(r * 0.56, -3.4)
+    ctx.lineTo(r * 0.56, 3.4)
+    ctx.closePath()
+    ctx.fillStyle = '#f6d97a'
+    ctx.fill()
+    ctx.strokeStyle = 'rgba(20, 11, 4, 0.85)'; ctx.lineWidth = 1; ctx.stroke()
+    ctx.beginPath(); ctx.arc(0, 0, r * 0.13, 0, 6.2832)
+    ctx.fillStyle = '#120b04'; ctx.fill()
+    ctx.restore()
+  }
+
+  function clamp(v, a, b) { return Math.max(a, Math.min(b, v)) }
+  function minWH() { return Math.min(W, H) }
+
+  // ---------------- draw the dial (orrery) ----------------
+  // the dial reads as a real orrery face: a brass rim with graduations and a
+  // fine sunburst kept behind the planets — the frame is never empty paper
+  function drawDialFace() {
+    var rx = L.dialR * 1.055, ry = rx * L.squash
+    ctx.save()
+    // sunburst behind the planets (clipped to the rim)
+    ctx.beginPath()
+    ctx.ellipse(L.dialX, L.dialY, rx, ry, 0, 0, 6.2832)
+    ctx.clip()
+    ctx.strokeStyle = 'rgba(216, 189, 122, 0.10)'
+    ctx.lineWidth = 1
+    for (var i = 0; i < 72; i++) {
+      var a = i * (6.2832 / 72)
+      var rIn = L.dialR * 0.16, rOut = L.dialR * 1.0
+      ctx.beginPath()
+      ctx.moveTo(L.dialX + Math.cos(a) * rIn, L.dialY + Math.sin(a) * rIn * L.squash)
+      ctx.lineTo(L.dialX + Math.cos(a) * rOut, L.dialY + Math.sin(a) * rOut * L.squash)
+      ctx.stroke()
+    }
+    ctx.restore()
+    // rim: thick engraved band + thin inner line with graduation ticks
+    ctx.save()
+    ctx.beginPath()
+    ctx.ellipse(L.dialX, L.dialY, rx, ry, 0, 0, 6.2832)
+    ctx.strokeStyle = '#2a1f13'; ctx.lineWidth = 9
+    ctx.stroke()
+    ctx.beginPath()
+    ctx.ellipse(L.dialX, L.dialY, rx - 5, (rx - 5) * L.squash, 0, 0, 6.2832)
+    ctx.strokeStyle = 'rgba(232, 198, 106, 0.7)'; ctx.lineWidth = 1.2
+    ctx.stroke()
+    ctx.beginPath()
+    ctx.ellipse(L.dialX, L.dialY, rx + 5, (rx + 5) * L.squash, 0, 0, 6.2832)
+    ctx.strokeStyle = 'rgba(232, 198, 106, 0.35)'; ctx.lineWidth = 1
+    ctx.stroke()
+    // graduation ticks between the rim bands
+    ctx.strokeStyle = 'rgba(232, 198, 106, 0.5)'; ctx.lineWidth = 1.1
+    for (var k = 0; k < 48; k++) {
+      var a2 = k * (6.2832 / 48)
+      var r1 = rx - 4, r2 = rx + 4
+      ctx.beginPath()
+      ctx.moveTo(L.dialX + Math.cos(a2) * r1, L.dialY + Math.sin(a2) * r1 * L.squash)
+      ctx.lineTo(L.dialX + Math.cos(a2) * r2, L.dialY + Math.sin(a2) * r2 * L.squash)
+      ctx.stroke()
+    }
+    ctx.restore()
+  }
+
+  function drawDial(t) {
+    drawDialFace()
+    // subtle engraved orbit rings
+    ctx.save()
+    ctx.globalAlpha = 1
+    for (var i = 0; i < N_PLANETS; i++) {
+      var p = PLANETS[i]
+      var orb = L.dialR * p.orbit
+      ctx.beginPath()
+      ctx.ellipse(L.dialX, L.dialY, orb, orb * L.squash, 0, 0, 6.2832)
+      ctx.strokeStyle = 'rgba(216, 189, 122, 0.26)'
+      ctx.lineWidth = 1
+      ctx.stroke()
+      // small tick marks around the orbit (dial graduations)
+      ctx.strokeStyle = 'rgba(216, 189, 122, 0.30)'
+      ctx.lineWidth = 1
+      for (var k = 0; k < 24; k++) {
+        var a = k * (6.2832 / 24)
+        var ex = L.dialX + Math.cos(a) * orb
+        var ey = L.dialY + Math.sin(a) * orb * L.squash
+        ctx.beginPath()
+        ctx.moveTo(ex, ey)
+        ctx.lineTo(ex + Math.cos(a) * 3.2, ey + Math.sin(a) * 3.2 * L.squash * 0.9)
+        ctx.stroke()
+      }
+    }
+    // the dial center piece: thin engraved brass circle under the sun
+    ctx.beginPath()
+    ctx.ellipse(L.dialX, L.dialY, L.dialR * 0.135, L.dialR * 0.135 * L.squash, 0, 0, 6.2832)
+    ctx.strokeStyle = 'rgba(216, 189, 122, 0.5)'
+    ctx.lineWidth = 1.4
+    ctx.stroke()
+    ctx.restore()
+
+    var zoomed = zoomT > 1.01 && zoomPlanet >= 0
+    if (!zoomed) {
+      // arms (rods from sun to each planet)
+      for (var i2 = 0; i2 < N_PLANETS; i2++) {
+        var pos = planetPos(i2, t)
+        ctx.strokeStyle = 'rgba(214, 178, 92, 0.55)'
+        ctx.lineWidth = 2.2
+        ctx.beginPath(); ctx.moveTo(L.dialX, L.dialY); ctx.lineTo(pos.x, pos.y); ctx.stroke()
+        ctx.strokeStyle = 'rgba(255, 226, 158, 0.5)'
+        ctx.lineWidth = 0.7
+        ctx.beginPath(); ctx.moveTo(L.dialX, L.dialY); ctx.lineTo(pos.x, pos.y); ctx.stroke()
+      }
+
+      // the sun (brass sphere + engraved)
+      drawSphere(L.dialX, L.dialY, L.sunR, '#ffe9a0', '#d8a742', '#5c3d10', 0, true)
+
+      // planets
+      for (var j = 0; j < N_PLANETS; j++) {
+        var p2 = PLANETS[j]
+        var pos2 = planetPos(j, t)
+        drawPlanet(j, pos2, t)
+      }
+    } else {
+      // magnifier view: only the focused planet + moons, centered on the dial
+      var pos = planetPos(zoomPlanet, t)
+      var zpx = pos.x, zpy = pos.y
+      ctx.save()
+      // a soft brass glow behind the focused planet
+      var gl = ctx.createRadialGradient(zpx, zpy, 4, zpx, zpy, pos.r * 3.2)
+      gl.addColorStop(0, 'rgba(255, 226, 150, 0.20)')
+      gl.addColorStop(1, 'rgba(255, 226, 150, 0)')
+      ctx.fillStyle = gl
+      ctx.beginPath(); ctx.arc(zpx, zpy, pos.r * 3.2, 0, 6.2832); ctx.fill()
+      ctx.restore()
+      drawPlanet(zoomPlanet, pos, t)
+    }
+  }
+
+
+  function drawPlanet(idx, pos, t) {
+    var p = PLANETS[idx]
+    var r = pos.r
+    // ambient glow toward the sun
+    ctx.save()
+    ctx.beginPath(); ctx.arc(pos.x, pos.y, r * 1.5, 0, 6.2832)
+    var gl = ctx.createRadialGradient(pos.x, pos.y, r * 0.3, pos.x, pos.y, r * 1.5)
+    gl.addColorStop(0, 'rgba(255, 226, 150, 0.30)')
+    gl.addColorStop(1, 'rgba(255, 226, 150, 0)')
+    ctx.fillStyle = gl; ctx.fill()
+    ctx.restore()
+    drawSphere(pos.x, pos.y, r, p.tint, p.col, '#241a14', 0, false)
+    if (p.ring) drawSaturnRing(pos.x, pos.y, r)
+    // belt band on jupiter (a couple of engraved lines)
+    if (p.name === 'JUPITER') drawJupiterBand(pos.x, pos.y, r)
+    if (p.name === 'SATURN') drawSaturnSpokes(pos.x, pos.y, r)
+    // small label (zoomed only, zoomed planet only)
+    if (zoomT > 1.35 && zoomPlanet === idx) {
+      ctx.font = 'italic 11px Georgia, serif'
+      ctx.textAlign = 'center'; ctx.textBaseline = 'middle'
+      ctx.fillStyle = '#e8c96a'
+      ctx.shadowColor = 'rgba(0,0,0,0.7)'; ctx.shadowBlur = 6
+      ctx.fillText(p.name, pos.x, pos.y + r * 1.9 + 6)
+      ctx.shadowBlur = 0
+    }
+  }
+
+  function drawSaturnRing(cx, cy, r) {
+    ctx.save()
+    ctx.translate(cx, cy)
+    ctx.rotate(-0.32)
+    ctx.scale(1, 0.32)
+    ctx.beginPath(); ctx.arc(0, 0, r * 1.75, 0, 6.2832)
+    ctx.strokeStyle = 'rgba(232, 214, 155, 0.85)'
+    ctx.lineWidth = r * 0.28
+    ctx.stroke()
+    ctx.beginPath(); ctx.arc(0, 0, r * 1.42, 0, 6.2832)
+    ctx.strokeStyle = 'rgba(58, 40, 14, 0.75)'
+    ctx.lineWidth = r * 0.09
+    ctx.stroke()
+    ctx.restore()
+  }
+
+  function drawJupiterBand(cx, cy, r) {
+    ctx.save()
+    ctx.beginPath(); ctx.arc(cx, cy, r, 0, 6.2832); ctx.clip()
+    ctx.strokeStyle = 'rgba(96, 58, 20, 0.5)'
+    ctx.lineWidth = r * 0.16
+    ctx.beginPath(); ctx.moveTo(cx - r, cy + r * 0.3); ctx.lineTo(cx + r, cy + r * 0.28); ctx.stroke()
+    ctx.strokeStyle = 'rgba(255, 230, 160, 0.4)'
+    ctx.lineWidth = r * 0.09
+    ctx.beginPath(); ctx.moveTo(cx - r, cy - r * 0.18); ctx.lineTo(cx + r, cy - r * 0.2); ctx.stroke()
+    ctx.restore()
+  }
+
+  function drawSaturnSpokes(cx, cy, r) {
+    ctx.save()
+    ctx.strokeStyle = 'rgba(52, 36, 12, 0.5)'
+    ctx.lineWidth = Math.max(0.7, r * 0.045)
+    ctx.beginPath(); ctx.arc(cx, cy, r * 0.62, 0, 6.2832); ctx.stroke()
+    ctx.restore()
+  }
+
+  // ---------------- moons (drawn in zoom) ----------------
+  function drawMoons(idx, t) {
+    var p = PLANETS[idx]
+    if (!p.moons || p.moons.length === 0) return
+    var pos = planetPos(idx, t)
+    for (var m = 0; m < p.moons.length; m++) {
+      var moon = p.moons[m]
+      var theta = 6.2832 * (t / moon.period) + φ[idx] + m * 2.1
+      var orbitR = pos.r * moon.d
+      var mx = pos.x + Math.cos(theta) * orbitR
+      var my = pos.y + Math.sin(theta) * orbitR * 0.46
+      var mr = pos.r * moon.radius * 0.62
+      drawSphere(mx, my, mr, '#d8d4c8', '#9a958a', '#2a2620', 0, false)
+      // orbit line
+      ctx.beginPath()
+      ctx.ellipse(pos.x, pos.y, orbitR, orbitR * 0.46, 0, 0, 6.2832)
+      ctx.strokeStyle = 'rgba(216, 189, 122, 0.28)'
+      ctx.lineWidth = 0.8
+      ctx.stroke()
+    }
+  }
+
+  // ---------------- gears band ----------------
+  function gearRowLayout(bandH) {
+    var totalW = 0
+    var baseR = clamp(L.dialR * 0.30, 26, 46)
+    var maxR = Math.min(baseR * 2.1, (L.bandY1 - L.bandY0) * 0.335)
+    var radii = GEARS.map(function (g) {
+      return Math.min(baseR * (g.teeth / TEETH_K_MAX()), maxR)
+    })
+    for (var i = 0; i < radii.length; i++) totalW += radii[i] * 2
+    var gap = Math.max(6, W * 0.02)
+    var total = totalW + gap * (GEARS.length - 1)
+    var startX = W * 0.5 - total / 2
+    var out = []
+    var x = startX
+    for (var j = 0; j < radii.length; j++) {
+      out.push({ cx: x + radii[j], cy: (L.bandY0 + L.bandY1) / 2, r: radii[j], g: GEARS[j] })
+      x += radii[j] * 2 + gap
+    }
+    return out
+  }
+  // the largest base-gear is Earth (100 teeth); normalize so it lands at baseR
+  function TEETH_K_MAX() {
+    return teethOf('EARTH') // 100
+  }
+
+  function drawGears() {
+    var rows = gearRowLayout(0)
+    // engraved band plate
+    var bh = (L.bandY1 - L.bandY0) * 0.82
+    var bx = W * 0.03, bw = W * 0.94
+    var by = L.bandY0 + (L.bandY1 - L.bandY0 - bh) / 2
+    ctx.fillStyle = '#0a0710'
+    ctx.fillRect(0, L.bandY0 - 4, W, L.bandY1 - L.bandY0 + 8)
+    ctx.beginPath(); ctx.moveTo(0, L.bandY0); ctx.lineTo(W, L.bandY0)
+    ctx.strokeStyle = 'rgba(216, 189, 122, 0.4)'; ctx.lineWidth = 1.4; ctx.stroke()
+    ctx.beginPath(); ctx.moveTo(0, L.bandY0 + 3); ctx.lineTo(W, L.bandY0 + 3)
+    ctx.strokeStyle = 'rgba(216, 189, 122, 0.18)'; ctx.lineWidth = 1; ctx.stroke()
+
+    for (var i = 0; i < rows.length; i++) {
+      var row = rows[i]
+      var angle = gearRotation(row.g, tDays)
+      drawGear(row.g, row.cx, row.cy, row.r, angle)
+      // label under the gear (kept clear of the caption line)
+      ctx.font = 'italic 8px Georgia, serif'
+      ctx.textAlign = 'center'; ctx.textBaseline = 'top'
+      ctx.fillStyle = 'rgba(216, 189, 122, 0.66)'
+      ctx.fillText(row.g.name, row.cx, Math.min(row.cy + row.r + 4, L.bandY1 - 14))
+    }
+    // caption
+    ctx.font = 'italic 8px Georgia, serif'
+    ctx.textAlign = 'center'; ctx.textBaseline = 'bottom'
+    ctx.fillStyle = 'rgba(160, 130, 76, 0.75)'
+    ctx.fillText('gear ratios: period ∝ teeth · master = year', W * 0.5, L.bandY1 - 2)
+  }
+
+  // ---------------- camera / zoom ----------------
+  var zoomAnim = { from: 1, to: 1, t: 0, dur: 0.55 }
+  function startZoom(to) {
+    zoomAnim = { from: zoomT, to: to, t: 0, dur: 0.55 }
+  }
+
+  // ---------------- update / render ----------------
+  function update(dt) {
+    // wind: ease toward target (drag), coast after release
+    var lerp = dragging || Object.keys(keys).some(function (k) { return keys[k] }) ? 0.22 : 0.055
+    wind += (targetWind - wind) * Math.min(1, lerp * (60 * dt))
+    // coast toward 0 slowly when released
+    if (!dragging && !Object.keys(keys).some(function (k) { return keys[k] })) {
+      wind *= Math.exp(-dt / 12)
+      if (Math.abs(wind) < 0.004) wind = 0
+    }
+    tDays += wind * dt
+
+    // zoom easing
+    if (Math.abs(zoomT - zoomTarget) > 0.001) {
+      zoomT += (zoomTarget - zoomT) * Math.min(1, dt * 7.2)
+      if (Math.abs(zoomT - zoomTarget) < 0.004) zoomT = zoomTarget
+    }
+
+    // ticking: rate ∝ |wind| — ratchet clicks
+    var aw = Math.abs(wind)
+    if (aw > 0.15) {
+      tickAcc += dt
+      var interval = 1 / (1.8 + aw / 4.6)
+      var vol = Math.min(0.8, 0.16 + aw / 52)
+      while (tickAcc >= interval) {
+        tickAcc -= interval
+        playTick(vol * (0.6 + 0.4 * Math.min(1, aw / 20)))
+      }
+    } else {
+      tickAcc = 0.999 // wait for the wind to build before first tick
+    }
+
+    frames++
+    tGlobal += dt
+  }
+
+  function draw() {
+    ctx.clearRect(0, 0, W, H)
+    drawVelvet()
+    if (zoomT <= 1.08) drawTitlePlate()
+
+    var z = zoomT
+    var planetIdx = zoomPlanet
+    if (z > 1.08) { /* frame cleaned for zoom */ }
+    var planetPosZ = planetIdx >= 0 ? planetPos(planetIdx, tDays) : { x: L.dialX, y: L.dialY }
+    var camX = planetPosZ.x, camY = planetPosZ.y
+
+    // ---- dial layer (zooms) ----
+    ctx.save()
+    if (z > 1.01) {
+      ctx.translate(L.dialX, L.dialY)
+      ctx.scale(z, z)
+      ctx.translate(-camX, -camY)
+    }
+    drawDial(tDays)
+    if (z > 1.01 && planetIdx >= 0) drawMoons(planetIdx, tDays)
+    ctx.restore()
+
+    // planets' unzoomed pass when zoomed (subtle: skip — we drew via drawDial)
+
+    drawGears()
+    drawWindGauge()
+
+    // zoom rim: a brass magnifier ring hugging the focused planet
+    if (z > 1.22 && planetIdx >= 0) {
+      var ringR = Math.max(64, planetPos(planetIdx, tDays).r * z * 1.42)
+      var alpha = Math.min(1, (z - 1.22) / 0.5)
+      ctx.save()
+      ctx.globalAlpha = alpha * 0.95
+      ctx.beginPath()
+      ctx.ellipse(W / 2, L.dialY, ringR, ringR * 1.18, 0, 0, 6.2832)
+      ctx.strokeStyle = '#d8bd7a'
+      ctx.lineWidth = 3
+      ctx.stroke()
+      ctx.globalAlpha = alpha * 0.5
+      ctx.lineWidth = 1.4
+      ctx.strokeStyle = '#f6e3a0'
+      ctx.beginPath()
+      ctx.ellipse(W / 2, L.dialY, ringR + 5, (ringR + 5) * 1.18, 0, 0, 6.2832)
+      ctx.stroke()
+      ctx.restore()
+    }
+  }
+
+  function loop(ts) {
+    if (!lastTime2) lastTime2 = ts
+    var dt = Math.min(0.05, (ts - lastTime2) / 1000)
+    lastTime2 = ts
+    update(dt)
+    draw()
+    DEV.frames = frames
+    requestAnimationFrame(loop)
+  }
+
+  var lastTime2 = 0
+
+  // ---------------- boot ----------------
+  var DEV = {
+    ready: false,
+    frames: 0,
+    timeDays: function () { return tDays },
+    wind: function () { return wind },
+    planets: function () {
+      return PLANETS.map(function (p, i) {
+        var pos = planetPos(i, tDays)
+        return { name: p.name, teeth: teethOf(p.name), theta: pos.theta, x: pos.x, y: pos.y, r: pos.r }
+      })
+    },
+    gears: function () {
+      return GEARS.map(function (g) { return { name: g.name, teeth: g.teeth, angle: gearRotation(g, tDays) } })
+    },
+    zoom: function () { return { active: zoomPlanet >= 0, target: zoomPlanet, scale: zoomT, planet: zoomPlanet } },
+    setWind: function (v) { targetWind = v; wind = v },
+    setTime: function (d) { tDays = d },
+    zoomTo: function (i) { zoomTo(i) },
+    zoomOut: function () { zoomOut() },
+    reset: function () { tDays = 30; wind = 0; targetWind = 0; zoomOut() },
+  }
+  window.__orreryTest = DEV
+
+  function init() {
+    layout()
+    window.addEventListener('resize', layout)
+    lastTime2 = 0
+    requestAnimationFrame(loop)
+    setTimeout(function () { DEV.ready = true }, 80)
+  }
+  init()
+})()
+</script>
+<script>
+window.DEMO_CREDITS = {
+  name: 'ORRERY', accent: '#e8c96a',
+  builder: { tag: 'INKLING', model: 'Inkling-2-Mini-oQ4e-mtp', where: 'via opencode' },
+  issues: [3647], span: '~1 h', shipped: '2026-11-27',
+  assist: 'solo', note: 'Jon’s orrery brief: drag to wind time, honest gear ratios, tap a planet to zoom into its moons',
+};
+</script>
+<script src="credits.js"></script>
+<script src="feedback.js"></script>
+</body>
+</html>

@@ -33,6 +33,7 @@
     "shorewebkit": "node scripts/shorewebkit.mjs",
     "campfirecheck": "node scripts/campfirecheck.mjs",
     "fireflymeadowcheck": "node scripts/fireflymeadowcheck.mjs",
+    "orrerycheck": "node scripts/orrerycheck.mjs",
     "tidepoolcheck": "node scripts/tidepoolcheck.mjs",
     "lanternrivercheck": "node scripts/lanternrivercheck.mjs",
     "mountainscheck": "node scripts/mountainscheck.mjs",
