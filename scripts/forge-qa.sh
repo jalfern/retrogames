@@ -63,8 +63,8 @@ esac
 case "$NODE" in builder|mbp) ;; *)
     ART=" When step 2 leaves you nothing (no feedback, no queue item, idle-kick NONE), do one art & fidelity pass per FORGE-QA.md step 2 e″ instead of stopping: screenshot, critique against docs/ART.md, fix the top gap, re-screenshot. All art stays original; never copy or move closer to an original game's sprites or characters."
     case "$MODEL" in
-        *Inkling*) EXTRA="$EXTRA$ART Your model is the reimagine model: an open \`reimagine\` issue (e″ rule 0) is yours and comes first." ;;
-        *)         EXTRA="$EXTRA$ART Skip e″ rule 0: \`reimagine\` issues belong to the lane whose model is Inkling." ;;
+        *Inkling*) EXTRA="$EXTRA$ART Your model is the reimagine model: an open \`reimagine\` issue (e″ rule 0) is yours and comes first, then an open \`demo\` issue (rule 0b, docs/DEMO-BRIEF.md)." ;;
+        *)         EXTRA="$EXTRA$ART Skip e″ rules 0 and 0b: \`reimagine\` and \`demo\` issues belong to the lane whose model is Inkling." ;;
     esac ;;
 esac
 export DEV_PORT=$DEV
