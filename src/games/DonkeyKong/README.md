@@ -42,12 +42,28 @@ Ports: the browser checks read `DEV_PORT` (slot a 5173 / slot b 5178 / QA 5176).
   sourceable in-repo, so it stays shipped history, not a spec. The prose
   below is kept for the record.
 - **CLOSED by #3754 (walk-past 50):** the obstacle bonus now pays both halves
-  of the arcade's pair (Wikipedia §Scoring) — a barrel crossing Mario's column
-  below his feet while grounded and alive pays 50, once per barrel
-  (`passedBarrels` witness, rides the hash); the airborne crossing keeps its
-  100.
+  of our pair — a barrel crossing Mario's column below his feet while grounded
+  and alive pays 50, once per barrel (`passedBarrels` witness, rides the
+  hash); the airborne crossing keeps its 100. #3761: each half now also POPS
+  its `+50`/`+100` at the barrel (cyan 7px mono, rises and fades over 48
+  ticks, deterministic — `gs.popups`, pinned by kongcheck §obstacle-bonus),
+  so the bonus is readable on a muted phone.
 - Oil drum is decor; the arcade's flame kills (spec unverifiable against ROMs
   in-repo). No score bonus timers; the timer-zero capture law is unmodelled.
+
+## Scoring honesty (#3761)
+
+Every point value here (jump arc 100, walk-past 50, rivet 100, lap 1000) is
+OUR house scoreboard law, pinned by kongcheck — NOT the arcade's ledger. The
+1981 §Scoring values could not be verified from sources this lane reaches:
+Wikipedia (current + 2023 revisions) lists the scoring CATEGORIES with no
+values; the DK fandom, the wiki.gg mirror, StrategyWiki and the operation-
+manual PDF (no text layer this harness can read) all refused or failed —
+full outputs on #3761. Community folklore prices hammer hits far above our
+100, so until ROM-grade material is cited in-repo: do NOT re-price on
+folklore, and never sell a number here as "the arcade's". The one scoring
+fact Wikipedia does carry: bonus life at 7,000 (unmodelled — we start with
+three lives and no bonus life; honest gap, #3761 item 3's family).
 - **CLOSED by #3622:** barrels meet ladders mid-air — see Corner pair below.
   (Was: a barrel meeting a ladder mid-air kept rolling; the edge-check could
   never set `falling=true` — gravity beats it to `vy>0` — so no airborne
@@ -89,7 +105,7 @@ Two mallets ride the right-hand ends of the ground floor and DK's girder
 grounded picks it up; carried, Space SWINGS instead of jumping (up / flat /
 down, the original's sequence, `gs.swingSeq % 3`) and the ladders refuse you
 (the original's trade). A live swing (12 ticks) deletes a barrel in its lane
-for the arcade 100 — the kill box is untouched, the hammer extends reach,
+for our house 100 — the kill box is untouched, the hammer extends reach,
 never safety. Five swings and it shatters (`HAMMER_SWINGS`); death/lap reset
 puts fresh mallets back on the girders. The WATCH route never walks within
 reach of a mallet (route centre x ≤ ~185 vs pickup x ≈ 205): the seated

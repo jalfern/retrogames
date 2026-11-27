@@ -244,6 +244,7 @@ console.log('rules: gravity, jump, crush, dive, arc, lap, terminal')
     tickDonkeyKong(g2, null)
     g2.barrels.push({ x: g2.player.x - 30, y: 232 - 10, w: 10, h: 10, vx: BARREL_SPEED, vy: 0, rot: 0, onLadder: false, falling: false })
     let scoreEv = 0
+    let jumpPop = null
     for (let i = 0; i < 60 && !scoreEv; i++) {
         const b = g2.barrels[0]
         if (!b) break
@@ -251,12 +252,15 @@ console.log('rules: gravity, jump, crush, dive, arc, lap, terminal')
         const ev = tickDonkeyKong(g2, { jump: g2.player.grounded && gap > -14 && gap < -8 })
         if (ev.died) break
         scoreEv = ev.jumpedBarrel
+        if (scoreEv && g2.popups.length) jumpPop = { ...g2.popups[g2.popups.length - 1] } // #3761
     }
-    ok(scoreEv === 1 && g2.score === 100, 'clearing a barrel underfoot scores the arcade 100', `score=${g2.score}`)
+    ok(scoreEv === 1 && g2.score === 100, 'clearing a barrel underfoot scores our house 100 (#3761: the arcade price could not be verified)', `score=${g2.score}`)
+    ok(!!jumpPop && jumpPop.text === '+100' && jumpPop.age === 0, 'the jump-over books its +100 as a popup at the barrel (#3761)', JSON.stringify(jumpPop))
 
-    // #3754 §obstacle-bonus — the arcade pays BOTH halves of the obstacle
-    // bonus (Wikipedia §Scoring): jump-over 100 (pinned just above) and
-    // WALK-PAST 50. Law (sim.js): a barrel crossing Mario's column below his
+    // #3754 §obstacle-bonus — our scoreboard pays BOTH halves of the obstacle
+    // bonus: jump-over 100 (pinned just above) and WALK-PAST 50. #3761: the
+    // arcade's exact prices are UNVERIFIED from sources this lane reaches, so
+    // the labels say "house", never "arcade". Law (sim.js): a barrel crossing Mario's column below his
     // feet (dy −48..−10 — clear of the |dy|<10 kill box, spanning the 24/32/40
     // px girder gaps) while grounded and alive pays +50 once per barrel.
     {
@@ -269,8 +273,15 @@ console.log('rules: gravity, jump, crush, dive, arc, lap, terminal')
         ok(wb.player.grounded, 'walk-past rig: the runner settles grounded on a girder')
         wb.barrels.push({ x: 120, y: 222, w: 10, h: 10, vx: BARREL_SPEED, vy: 0, rot: 0, onLadder: false, falling: false })
         let wbPaid = 0
-        for (let i = 0; i < 80; i++) wbPaid += (tickDonkeyKong(wb, null).passedBarrel || 0)
-        ok(wbPaid === 1 && wb.score === 50, 'a barrel rolling past below the feet pays the arcade 50 — exactly once', `paid=${wbPaid} score=${wb.score}`)
+        let wbPop = null
+        for (let i = 0; i < 80; i++) {
+            const evw = tickDonkeyKong(wb, null)
+            wbPaid += evw.passedBarrel || 0
+            if (evw.passedBarrel && wb.popups.length) wbPop = { ...wb.popups[wb.popups.length - 1] } // #3761
+        }
+        ok(wbPaid === 1 && wb.score === 50, 'a barrel rolling past below the feet pays our house 50 — exactly once', `paid=${wbPaid} score=${wb.score}`)
+        ok(!!wbPop && wbPop.text === '+50' && wbPop.age === 0, 'the walk-past books its +50 as a popup at the barrel (#3761)', JSON.stringify(wbPop))
+        ok(wb.popups.length === 0, 'popups expire with the loop — the board never litters old bonuses (#3761)', `left=${wb.popups.length}`)
 
         // Spawn-behind silence: a barrel already astern, rolling away, is not
         // an obstacle cleared.
@@ -366,7 +377,7 @@ console.log('rules: gravity, jump, crush, dive, arc, lap, terminal')
 // ---------------------------------------------------------- rivet finale ----
 // #3598: fairness + mechanics. Four rivets ride her girder at the joints,
 // clear of the ladder mouths and reachable from the deck. Walking onto one
-// grounded starts the yank: PULL_TICKS of frozen feet, then the arcade 100
+// grounded starts the yank: PULL_TICKS of frozen feet, then our house 100
 // banks and a dark hole stays. The pull refuses feet on the girder below,
 // the ape stops throwing once the finale is armed, the collapse takes both
 // top girders out of the collision (the runner steps DOWN one level, never
@@ -402,7 +413,7 @@ console.log('#3598 rivet finale: fairness, pull mechanics, collapse, honesty')
     }
     ok(froze, 'the pull freeze locks the feet (input held, no movement)')
     const evB = tickDonkeyKong(f, null)
-    ok(evB.rivet && f.score === RIVET_SCORE && f.rivets.some((r) => r.pulled), 'the yank banks the arcade 100 and leaves a hole')
+    ok(evB.rivet && f.score === RIVET_SCORE && f.rivets.some((r) => r.pulled), 'the yank banks our house 100 and leaves a hole')
     ok(f.rivets.filter((r) => r.pulled).length === 1 && f.collapse === 0, 'three holes left before the crash')
 
     // Honesty: a pull never fires from the girder below.
@@ -525,7 +536,7 @@ console.log('hammer: pickup, swing-not-jump, smash, limits, seat hands-free')
     ok(ev1.swing && ev1.hammered === 0 && c.barrels.length === 1 && c.score === 0, 'up-phase swings over a rolling barrel')
     const ev2 = tickDonkeyKong(c, null)
     const ev3 = tickDonkeyKong(c, { jump: true }) // swing 2: flat-phase, dead ahead
-    ok(ev3.hammered === 1 && c.barrels.length === 0 && c.score === 100, 'flat-phase smash deletes the barrel for the arcade 100',
+    ok(ev3.hammered === 1 && c.barrels.length === 0 && c.score === 100, 'flat-phase smash deletes the barrel for our house 100',
         `hammered=${ev3.hammered} score=${c.score}`)
 
     // The hammer never makes contact safe: a behind-back barrel still kills.
@@ -1213,7 +1224,7 @@ if (process.argv.includes('--mutant')) {
         ['#3618 the rivet-screen phantom returns (README CLOSED marker stripped)', 'src/games/DonkeyKong/README.md',
             '**CLOSED by #3598, phantom-retired in #3618:**',
             '**Gap:**'],
-        ['#3754 the walk-past goes deaf (the arcade 50 vanishes)', S,
+        ['#3754 the walk-past goes deaf (our house 50 vanishes)', S,
             `                    gs.score += 50`,
             `                    gs.score += 0`],
         ['#3754 the walk-past pays every tick it overlaps (once-law gone)', S,
@@ -1227,6 +1238,15 @@ if (process.argv.includes('--mutant')) {
         ['#3754 the walk-past band reaches into the kill box (dying pays 50)', S,
             `dy <= -10 && dy > -48`,
             `dy <= 0 && dy > -48`],
+        ['#3761 the +100 popup never prints (jump wins go invisible on a muted phone)', S,
+            `                    gs.popups.push({ x: b.x + b.w / 2, y: b.y, text: '+100', age: 0 }) // #3761\n`,
+            ``],
+        ['#3761 the +50 popup never prints (walk-pasts go invisible again)', S,
+            `                    gs.popups.push({ x: b.x + b.w / 2, y: b.y, text: '+50', age: 0 }) // #3761\n`,
+            ``],
+        ['#3761 popups never expire (the board litters stale bonuses forever)', S,
+            `if (gs.popups[i].age >= POPUP_LIFE) gs.popups.splice(i, 1)`,
+            `if (false && gs.popups[i].age >= POPUP_LIFE) gs.popups.splice(i, 1)`],
     ]
     let died = 0
     for (const [name, file, from, to] of MUTANTS) {
