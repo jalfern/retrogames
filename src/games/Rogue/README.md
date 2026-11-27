@@ -243,6 +243,12 @@ snake's line + blip (mutants: unplugged emit → 2 red; deleted line → 1 red).
   cart's golden (roguecheck pins them). And dlvl 20 still kills — the harness
   pins both halves: six seeds pick up and win, two die honest en route. The
   guide (WATCH) hunts it when you dare the depth.
+  - #3601 polish: the pack names it (`Amulet of Yendor`, not `?`) and the
+    glyph shimmers gold ↔ bright white on the sim turn clock (a pure
+    function, no timer); the WIN card carries a one-shot golden bloom
+    (pure CSS, reduced-motion-aware); and every descent into dlvl ≥ 18
+    rings `deep-descend` — a slow low drone — alongside the plain
+    `descend` sweep. All pinned in roguecheck.
 - Level-up is xp-table + hp gain only — no class-based gain rolls, no hit dice
   display, no intelligence/charisma/wisdom spread (str only, per the port).
 - Food is the only light-source clock; no lamp/oil and torch-lit radius.

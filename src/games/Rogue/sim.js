@@ -584,6 +584,9 @@ export function doorIsHidden(state, x, y) {
 }
 
 export function getItemName(item, state) {
+  // #3601 — the amulet's own name (it was '?' — the cart never names it in
+  // the pack, and the inventory row drew the '%' placeholder in stairs cyan).
+  if (item.amulet) return 'Amulet of Yendor'
   if (item.type === '!') {
     if (state.identifiedPotions[item.subtype]) return `potion of ${POTION_TYPES[item.subtype].name}`
     return `${state.potionColorMap[item.subtype]} potion`
@@ -647,7 +650,11 @@ export function buildGrid(state) {
           } else if (itm) {
             char = itm.type
             // #3592 — the Amulet wears gold even among the other % glyphs.
-            color = itm.amulet ? '#ffd700' : (COLORS[itm.type] || '#aaaaaa')
+            // #3601 — two-frame shimmer: gold ↔ bright white, a pure
+            // function of the sim turn clock (no timer, no state).
+            color = itm.amulet
+              ? (Math.floor(state.turn / 2) % 2 ? '#fff2a0' : '#ffd700')
+              : (COLORS[itm.type] || '#aaaaaa')
           } else {
             // #1502: an unfound hidden door draws as wall — it is found,
             // not seen. #3579: a sprung trap marks the map with the
@@ -1306,7 +1313,7 @@ export function handleDescend(state) {
   const newLevel = state.dungeonLevel + 1
   const d = generateDungeon(newLevel)
   revealAround(d.startX, d.startY, d.map, d.visible, d.explored, d.rooms)
-  const s = emitFx({
+  let s = emitFx({
     ...state,
     dungeonLevel: newLevel,
     map: d.map, rooms: d.rooms, doors: d.doors, hiddenDoors: d.hiddenDoors,
@@ -1316,6 +1323,9 @@ export function handleDescend(state) {
     falls: 0,
     player: { ...player, x: d.startX, y: d.startY },
   }, 'descend')
+  // #3601 — below the halfway mark the stairs ring lower and longer: the
+  // dungeon's deep floors feel authored, not just deeper.
+  if (newLevel >= 18) s = emitFx(s, 'deep-descend')
   return addMsg(s, `You descend to dungeon level ${newLevel}.`)
 }
 
