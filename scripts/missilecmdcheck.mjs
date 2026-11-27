@@ -1236,8 +1236,11 @@ if (process.argv.includes('--mutant')) {
             `    const silo = gs.silos[idx]\n    if (!silo) return false\n    return fireFrom(gs, silo, x, y, null)`,
             `    const silo = gs.silos[idx]\n    if (!silo) return false\n    return silo.alive && silo.ammo > 0 ? fireFrom(gs, silo, x, y, null) : fireAt(gs, x, y)`],
         ['outer fire kills smart bombs too (the counter-rule is inverted)', S,
-            `if (m.smart && !e.center) return`,
-            `if (m.smart && e.center) return`],
+            // anchor #3698 drift: the early-return gained the shimmer block and
+            // changed shape; the mutant never re-anchored (mutants don't run in
+            // CI, so it stayed a local red nobody saw until the #3753 run).
+            `if (m.smart && !e.center) {`,
+            `if (m.smart && e.center) {`],
         ['smart bombs see nothing (the §6 evade is gone)', S,
             `if (tx !== null) { m.evadeX = tx`,
             `if (false && tx !== null) { m.evadeX = tx`],

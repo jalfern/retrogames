@@ -221,7 +221,7 @@ npm run missilecmdcheck             # 170 checks: raid replay, sweep 24 seeds wa
                                   #   2P alternating (flip seq, bonus attribution, shared
                                   #   board, per-seat credits, dice-parity trace, CPU-seat
                                   #   defense), wiring
-npm run missilecmdcheck -- --mutant # 45 mutants, all must die
+npm run missilecmdcheck -- --mutant # 47 mutants, all must die
 npm run mcbatterydrive            # live browser three-button drive (13 checks): FAST pad
                                   #   declared, KeyB spends ONLY the center magazine, keys
                                   #   1/2/3 launch their battery from a foreign sector and
