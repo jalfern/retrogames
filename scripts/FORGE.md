@@ -23,10 +23,15 @@ AGENTS.md wins.
    a parallel slot's step 1 can revert STATE.md and re-park stale content before
    you finish reading. If STATE.md already matches HEAD when you meant to be
    reading a report, run `node scripts/statepark.mjs read` — it prints the
-   newest park whose content differs from HEAD, or `NO-REPORT` (none pending). **Anything else dirty IS a corpse:**
-   `git status --porcelain -- . ':(exclude)STATE.md'` must print nothing —
-   if it does, STOP and report (the previous session died mid-edit; do not
-   guess what was in flight). Never build in this checkout — after the claim,
+   newest park whose content differs from HEAD, or `NO-REPORT` (none pending).
+   **Anything else dirty IS a corpse — park it, don't guess (#3735):**
+   `node scripts/lib/plumbguard.mjs park` preserves every foreign file verbatim
+   under `/tmp/forge/corpse-<stamp>/` (path-intact copies + status + diff),
+   restores the tree to HEAD truth, and names what it moved; `STATE.md` is the
+   only allowance. Then READ the parked diff: if it matches an open issue's plan,
+   comment the park path on that issue so the owning lane can recover its flight.
+   Never commit parked content yourself. If parking reports PARK INCOMPLETE, that
+   is the old STOP case — report and exit; never build on it. Never build in this checkout — after the claim,
    every edit happens in the lane worktree opened in step 1b or step 2.
  1b. **Resume before you claim.** Look for a `building` issue with a pushed
     `forge/<slug>` branch — a dead session's corpse. If one exists: open it in
