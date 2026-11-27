@@ -81,7 +81,11 @@ identical seeded drives answer identically including what was seen en route.
   the seeded stream, remainder scattered; formations draw no extra dice, so
   `?seed=N` replays unchanged. Authentic per-wave *layouts* (fixed tables)
   stay UNVERIFIED in-repo — ours are seeded shapes, not the machine's map.
-- One centipede per wave with no speed ladder across waves.
+- ~~One centipede per wave with no speed ladder across waves.~~ #3631: each
+  cleared wave spawns ×1.08 faster (capped at ×2) and the rear sub-chain behind
+  every cut compounds ×1.25 — dice-free, so `?seed=N` replays the whole ladder.
+  The exact rates are this repo's pinned spec; the monotone climb and the
+  cut-accelerates-the-rear law are the arcade's.
 - Sound is a tone sketch; no arcade munch/click sequence.
 - The menagerie passes *through* the centipede column (the arcade's exact
   bug-vs-bug collisions are unwitnessed); cadences, spider bounce grammar
