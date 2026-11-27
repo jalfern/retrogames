@@ -137,5 +137,34 @@ rep.check('death screen + any key -> new run', !a5.attract && !a5.over, `attract
     rep.check('walk-past pays the arcade 50 live, exactly once', wpr.paid === 1 && wpr.delta === 50 && wpr.witnesses === 1, JSON.stringify(wpr))
 }
 
+// #3786 — the fuse in the browser: the counter burns in real seconds on a
+// live board, and when it hits zero the ape takes Pauline — the grab arms,
+// the life pays, and the next attempt lights a fresh fuse.
+{
+    // The earlier scripted sections closed the contract loop lock (step owns
+    // the clock); the fuse law is a WALL-CLOCK law, so hand the rAF loop back
+    // before measuring real seconds.
+    await page.evaluate(() => window.__game && window.__game.release())
+    const f0 = await p()
+    await sleep(1300)
+    const f1 = await p()
+    rep.check('BONUS counts down in real seconds while the board is live',
+        typeof f0.bonus === 'number' && f0.bonus - f1.bonus >= 100 && f1.bonus > 0,
+        `${f0.bonus} -> ${f1.bonus}`)
+    const l0 = f1.lives
+    await page.evaluate(() => window.__dkTest.burnFuse())
+    let capSeen = false
+    for (let k = 0; k < 12 && !capSeen; k++) { await sleep(200); capSeen = (await p()).cap === 1 }
+    rep.check('zero bonus arms the capture live (the grab is on the board)', capSeen, `cap=${capSeen}`)
+    let healed = false
+    const heal0 = Date.now()
+    while (!healed && Date.now() - heal0 < 6000) {
+        const q = await p()
+        healed = q.lives === l0 - 1 && q.cap === 0 && q.bonus === 5000 && !q.over
+        if (!healed) await sleep(200)
+    }
+    rep.check('the grab spends the life and rebuilds with a fresh fuse', healed, JSON.stringify(await p()))
+}
+
 rep.check('zero page errors across the drive', errors === 0, `${errors}`)
 rep.exit(browser)

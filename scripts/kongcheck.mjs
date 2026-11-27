@@ -175,6 +175,8 @@ console.log('half-rungs: broken ladders climb part-way (#3618)')
         'the rivet-screen phantom stays retired (CLOSED marker reaches parseGaps)')
     ok(!gaps.some(g => /double-board drop onto a span|sharing one span.*simplified/i.test(g)),
         'the double-board gap is closed with the span body law (CLOSED marker reaches parseGaps)')
+    ok(!gaps.some(g => /timer-zero capture law is unmodelled/i.test(g)),
+        '#3786 closed the timer-zero gap — the fuse, the bank and the capture ship (CLOSED marker reaches parseGaps)')
     ok(gaps.length === 1, 'one honest gap remains (oil drum flame)', `gaps=${gaps.length}`)
 }
 

@@ -823,6 +823,9 @@ const DonkeyKongGame = () => {
                 // honest death for the drive (idling on the start corner is not
                 // reliably lethal here — barrels roll away from it).
                 kill: () => { gs.deathTimer = 90; gs.lives = 1 },
+                // #3786 — burn the fuse to one step from zero so the drive can
+                // watch the capture law fire inside two seconds, no 50-second wait.
+                burnFuse: () => { gs.bonus = 100; gs.bonusTick = 0 },
                 // #3754 — deterministic live proof of the walk-past 50: same
                 // rig as kongcheck §obstacle-bonus (runner settled on a girder,
                 // one barrel rolling past on the floor below), driven against
