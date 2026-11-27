@@ -1,64 +1,70 @@
-# STATE — forge board snapshot (slot b, 2026-11-27 — MC SAUCER POLISH SHIPPED `d6b7d36`)
+# STATE — forge board snapshot (slot a, 2026-11-26 — SMART BOMBS SHIPPED `038a986`)
 
-## This session (slot b)
-- TARGET #3638 (warden-assigned, QA polish pass on #3629's cruise saucers)
-  CLAIMED first try → **SHIPPED via PR #3654 (`d6b7d36`)**. All five asks:
-  - **Reserve rule** (the ask's heart): the watch buys the 125-point ferry only
-    when the magazine left after the shot still covers every warhead the wave
-    can still field (spawns left + cruise launches of ferries OTHER than the
-    target; killing the target cancels its launches — the expert trade).
-    §deep A/B sweep, 12 seeds × waves 6–10, bonus on vs off: the bonus never
-    costs a city or a point; waves 6–8 pay every seed (36/36); 60/60 raids
-    clear. At waves 9–10 the reserve never frees a shell — honest arithmetic,
-    documented in README's honest gaps.
-  - **Legibility**: cruise launches = orange 2px trails + warm tip (ICBM stays
-    red); hull rx 18→21, dome r6→7, rim lights 4×3. Judged on real
-    screenshots at device scale 1 AND pinned by pixel probes.
-  - **Sound mix**: two-part warble at 0.16 (was buried 0.07), 180 Hz sawtooth
-    cruise growl, 125 kill = deep thud + long noise + rising chirps (bigger
-    than a warhead boom, the game's own hierarchy).
-  - **Kill juice**: white flash 4 ticks + 6 seeded debris sparks; dice roll
-    only on kills (impossible below wave 6) and juice never joins the
-    wave-clear law — both pinned; waves 1..5 byte pins unchanged.
-  - **Attract ad**: `attractFerry` crosses a ferry every 360 ticks
-    (side/altitude alternate); the attract pilot leads it. Scripted by tick,
-    NOT dice (seed-independence is a check) — determinism story intact.
-- Proof: missilecmdcheck **60/0** (+11), `--mutant` **17/17 dead** (5 new),
-  **mcsaucerdrive 11/11** (extended: attract-ad paint under DIM needs its own
-  dim-shifted pixel family; a 1px trail at scale ~0.71 is AA blend — orange
-  needed lineWidth 2; live 125 kill with juice sighting), watchcheck
-  missilecommand **322/322**. eslint + lint:mario/fps/ai + build green.
-- Prod verified (bundle hash carries the pass); #3638 closed as completed.
+## This session (slot a)
+- TARGET #3630 CLAIMED (warden assignment). Shipped **slice 1: smart bombs +
+  center-battery speed** → PR #3656, merged `038a986`. Slice 2 (2P alternating)
+  re-queued on #3630 (game-queue) with a full handoff comment.
+- Rules (manual+Wikipedia pinned, README §SMART BOMBS): entry wave 7 (§6 "after
+  the 6th wave", one behind the ferry; die never rolls below the gate → waves
+  1..6 byte-identical). Smart bomb senses blasts (60px) + incoming ABMs (70px),
+  sidesteps 12 ticks, bends its trail. Blind spot §7 hint 3: aim ≤32px of the
+  core at launch = undetectable = killable — the lead window a 28px/tick center
+  ABM threads, a 15px/tick outer never can. Hard rule: ONLY center fireballs
+  kill (25 pts). Watch answers smart bombs center-only, blind-solutions-only,
+  via arcade 3-button law (`cmd.silo` cross-sector reach).
+- **Integration with QA #3654 (landed mid-session):** `startWave(gs,
+  {noSmart:true})` skips the arrivals AND their DIE — QA's deep-doctrine A/B
+  (60 raids waves 6-10) replays bit-exact; their numbers stand untouched
+  (stalls 0, cityCost 0, 36/36 paid). Center-speed is a wave flag (`smartWave`),
+  not a wave compare, so it rides the same opt-out.
+- Proof at merged head: missilecmdcheck **83/0** (+23 §smart), `--mutant`
+  **24/24 dead** (7 new), **mcsmartdrive 10/10** live Chrome (real mouse
+  blind-kill pays 25; probe↔core pixels; speed split 28/15), mcsaucerdrive
+  11/11, watchcheck missilecommand **322/322**, lints + build green.
+- Filed **#3665** `QA — MISSILE COMMAND: smart-bomb polish` (phone legibility
+  of the bend, sound identity vs ferry, center-speed visibly-faster, pass-
+  through sell, attract ad for the threat).
+- Lesson kept hot: an extra seeded roll inside `startWave` is NOT isolated by
+  zeroing the counters alone — dice move the stream (two deep-doctrine
+  game-overs before the noSmart opt-out).
 
 ## BOARD facts at close
-- main GREEN at `9d0f4ce` (my `d6b7d36` + one later merge). building:
-  **#3630** (MC smart-bomb evasion + 2P — the mc-smartbomb lane, was at its
-  merge). building-qa: #3649 (KOI portrait). game-queue: EMPTY — a free
-  builder lands on the feedback borrow or the flagship/idle-kick rung (#1571).
-- Rule-4 satisfied: game code merged as #3654.
+- main GREEN at `038a986` (nightly success; my merge is tip).
+- building: #3661 (PAC-MAN progression), #3664 (CENTIPEDE mushroom revival).
+  building-qa: #3657, #3645 (QA MASTER owns).
+- game-queue: **#3630** = MC slice 2 (2P alternating; README Honest gaps item 1
+  says how: manual §6 games 18-34, CPU default via gunnerStep, desktop-keyboard
+  2P, both scores shown).
+- Rule-4 satisfied: game code merged (#3656).
 
 ## PLAYABLE on main right now
-- MISSILE COMMAND — shoot the wave-6 satellite ferry: orange trails, crunch
-  kill, and it crosses the ATTRACT screen as an ad:
+- MISSILE COMMAND — wave 7+ sends evasive smart bombs; only the fast center
+  battery can down them, crosshair ON them beats the dodge:
   https://jalfern.com/retrogames/missilecommand
-- DONKEY KONG corner-pair ladders. CENTIPEDE arcade sound grammar.
+- Saucer ferries wave 6+ (#3629/#3638 polish). DK corners, CENTIPEDE ladder.
 
 ## Open questions (links only — #605)
-- #3335 — QA music-bus low-pass (AWAITING, deadline Nov 27).
 - #3516 — Arkanoid art rung (AWAITING, Nov 28).
-- #3244 — (AWAITING, Nov 27). #2971 — contra polish. #1712 — PLAICRAFT S2.
-- No new jonq questions this session (all calls measured, none of taste).
+- #3335 — QA music-bus low-pass (lane:qa, AWAITING Nov 27).
+- #3244, #2971, #1712 — unchanged since last STATE.
+- No new jonq questions this session (doctrine calls were measured, not taste).
 
 ## Next claims (for whoever is free)
-1. If #3630 merges, its QA follow-up files itself; otherwise game-queue is
-   empty — run the ladder (feedback borrow → flagship → idle-kick).
-2. Remaining MC honest gaps after #3630: bonus city every 10,000 (manual §5,
-   fully sourced), field-of-fire arcs per battery.
-3. Attract pilot now leads ferries with a 0.03 trigger — if QA wants the ad
-   to hit the ferry reliably on screen, that knob is the dial.
+1. game-queue #3630 slice 2 — 2P alternating (issue body holds the spec;
+   gunnerStep is the ready-made CPU for the default seat; watch seat needs a
+   per-player handoff at wave turns).
+2. MC honest gaps after that: bonus city every 10k (manual §5 — fully sourced:
+   reserve, end-of-wave deploy, jingle) — cheapest strong stage; then
+   field-of-fire arcs per battery (replaces the |dx| click law wholesale).
+3. #3615 (DK finale polish) stays QA's first grab.
 
 ## Slot state at handoff
-- Slot-b dev server :5178 stopped via `scripts/devstop.sh` at close.
-- Worktree ~/Dev/retrogames-forge-mc-saucer-polish DONE (#3654 merged; safe
-  to prune — node_modules there is a symlink into the main checkout).
-- This STATE ships via the docs PR; parked with `statepark.mjs park b`.
+- Slot-a dev server :5173 stopped via `scripts/devstop.sh` at close.
+- Worktree ~/Dev/retrogames-forge-mc-smartbomb DONE (#3656 merged; safe to
+  prune — node_modules is a symlink into the main checkout). Older
+  ~/Dev/retrogames-forge-mc-saucers also prune-safe (STATE handoff last round).
+- Main checkout detached at origin/main; STATE.md ships via the docs PR this
+  park accompanies, and parks with `statepark.mjs park a`.
+- Slip this session: one `pkill -f "5173"` — WRONG tool (lane prompts carry the
+  port; AGENTS.md forbids pattern kills). Session survived; use devstop.sh
+  only, always.
