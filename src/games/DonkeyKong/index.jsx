@@ -7,7 +7,7 @@ import { isWatchKey, isTakeoverKey, playWatchStart, playWatchStop, watchSfxLog, 
 import { mountDbg, unmountDbg } from '../../utils/DebugKit'
 import { GAMES } from '../../config/games'
 import { exposeGame, unexposeGame, exposeFeedbackState, unexposeFeedbackState, seedFromQuery, contractHoldsLoop } from '../../utils/gameContract'
-import { GW, GH, TOP_PLAT, makeRun, tickDonkeyKong, stateHash } from './sim.js'
+import { GW, GH, TOP_PLAT, makeRun, tickDonkeyKong, stateHash, BRACE_WIDTH, BRACE_PLATE, BRACE_PAD, barrelRideFrame } from './sim.js'
 import { attractFrame, DIM } from './attract.js'
 
 // DONKEY KONG — shell only since #1637 b27: canvas, sound, chrome, seat.
@@ -268,13 +268,25 @@ const DonkeyKongGame = () => {
             // arcade's end-of-girder ladders bolted to the last metre of steel.
             if (l.braceFrom) {
                 ctx.strokeStyle = COL_LADDER
-                ctx.lineWidth = 1.5
+                ctx.lineWidth = BRACE_WIDTH
                 ctx.beginPath()
                 ctx.moveTo(l.braceFrom.x - 3, l.braceFrom.y + 2)
                 ctx.lineTo(l.x - 3, l.yTop + 2)
                 ctx.moveTo(l.braceFrom.x + 3, l.braceFrom.y + 2)
                 ctx.lineTo(l.x + 3, l.yTop + 2)
                 ctx.stroke()
+                // #3651 — bolted anchors: a gusset plate under the girder at the
+                // anchor and a foot pad at the ladder head, so the "this ladder
+                // belongs to that girder" story reads at a glance on a phone.
+                // Dark holes in the plates ride the same rivet idiom the girders
+                // use. Purely visual — the physics never reads them.
+                ctx.fillStyle = COL_LADDER
+                ctx.fillRect(l.braceFrom.x - BRACE_PLATE.w / 2, l.braceFrom.y + 1, BRACE_PLATE.w, BRACE_PLATE.h)
+                ctx.fillRect(l.x - BRACE_PAD.w / 2, l.yTop + 1, BRACE_PAD.w, BRACE_PAD.h)
+                ctx.fillStyle = '#00707d' // holes: cyan in the shadow tone of the rail
+                ctx.fillRect(l.braceFrom.x - 1, l.braceFrom.y + 2, 2, 2)
+                ctx.fillRect(l.x - 1, l.yTop + 2, 2, 2)
+                ctx.fillStyle = COL_LADDER // the uprights and rungs below draw in rail colour
             }
             // #3618 half-rungs: a broken ladder is drawn as what it is — the
             // span survives from its base to breakY, the rungs above are gone,
@@ -526,7 +538,15 @@ const DonkeyKongGame = () => {
         const drawBarrel = (b) => {
             ctx.save()
             ctx.translate(b.x + b.w / 2, b.y + b.h / 2)
-            if (!b.onLadder) {
+            const ride = b.onLadder ? barrelRideFrame(gs.tickN) : null
+            if (ride) {
+                // #3651 — the descent lives: a half-pixel sway across the rungs
+                // and a hair of tilt, while the grip marks below swap rails on the
+                // same 4-tick cadence as the descent clicks. Visual-only; gs and
+                // the dice stream are untouched.
+                ctx.translate(ride.wobble, 0)
+                ctx.rotate(ride.wobble * 0.05)
+            } else {
                 ctx.rotate(b.rot)
             }
 
@@ -547,6 +567,16 @@ const DonkeyKongGame = () => {
             ctx.moveTo(-b.w / 3, 0); ctx.lineTo(b.w / 3, 0)
             ctx.moveTo(0, -b.w / 3); ctx.lineTo(0, b.w / 3)
             ctx.stroke()
+
+            if (ride) {
+                // Grip marks on the uprights: bright hands on both rails, the
+                // near one thicker, both swapping sides every BARREL_CLICK_EVERY.
+                const gx = b.w / 2 + 0.5
+                ctx.fillStyle = '#ffe27a'
+                ctx.fillRect(ride.grip * gx - 1, -1.5, ride.grip > 0 ? 2.5 : 2, 3)
+                ctx.fillStyle = '#b8860b'
+                ctx.fillRect(-ride.grip * gx - 1, -1.5, ride.grip > 0 ? 2 : 2.5, 3)
+            }
 
             ctx.restore()
         }
@@ -716,6 +746,10 @@ const DonkeyKongGame = () => {
                     hang: gs.player.hanging,
                     brk: gs.player.climbLadder && gs.player.climbLadder.broken
                         ? Math.round(gs.player.climbLadder.breakY) : null,
+                    // #3651 — barrels riding a ladder [centerX, y] for the drive
+                    // harness (DEV-only; physics untouched).
+                    rides: gs.barrels.filter(b => b.onLadder)
+                        .map(b => [Math.round(b.x + b.w / 2), Math.round(b.y)]),
                 }),
                 start: startRun,
                 // #1637 b26 parity — seat the route without a keyboard (the

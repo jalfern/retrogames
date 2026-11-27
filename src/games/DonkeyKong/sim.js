@@ -35,6 +35,28 @@ export const BARREL_DIVE_CHANCE = 0.35 // the original's random ladder take
 // Nothing here touches gs or the dice stream — seeded floors stay byte-identical.
 export const BARREL_CLICK_EVERY = 4 // click every N ticks while riding a ladder
 export const BARREL_CLICK_RANGE = 60 // px from the foot where the click starts climbing
+
+// #3651 — the corner-police law, visual-only: physics never reads any of this,
+// nothing writes into gs and no dice are consumed, so seeded floors stay
+// byte-identical (kongcheck §corner polish pins the law + the shell wiring).
+// BRACE: the brace that hangs the barrel-only outside ladder (R2) off girder
+// 1's corner was a 1.5px wire pair — on a phone it read as nothing and the
+// ladder seemed glued to air. Arcade girders are bolted steel (the rivets and
+// brick joints already tell that story in our frame), so the brace now carries
+// the same idiom: rails as thick as the ladder's own, a bolted gusset plate at
+// the girder anchor and a foot pad where the rails meet the ladder head.
+export const BRACE_WIDTH = 2 // was 1.5 — reads at phone scale
+export const BRACE_PLATE = { w: 7, h: 4 } // gusset under the girder at the anchor
+export const BRACE_PAD = { w: 5, h: 2 } // pad at the ladder head
+// RIDE: a descending barrel keeps its plain roll sprite today — the descent
+// reads as a slide. Grip marks swap sides on the SAME 4-tick cadence as the
+// descent clicks (BARREL_CLICK_EVERY), so the seen motion and the heard
+// clatter are one grammar, and the body sways ±0.5px across the rungs.
+export function barrelRideFrame(tickN) {
+    const phase = Math.floor(tickN / BARREL_CLICK_EVERY) % 2
+    return { grip: phase === 0 ? -1 : 1, wobble: phase === 0 ? -0.5 : 0.5 }
+}
+
 export function barrelBoardVoice(midAir) {
     return { kind: 'board', freq: midAir ? 740 : 560, dur: 0.035, wave: 'square', vol: 0.16 }
 }
