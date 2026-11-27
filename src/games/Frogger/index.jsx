@@ -541,23 +541,41 @@ const FroggerGame = () => {
             ctx.font = 'bold 8px monospace'
             ctx.textAlign = 'left'
             if (gs.players === 2) {
-                // #3676 — duel HUD: both scores shown at all times (the
-                // alternating arcade's law); the active seat's line is bright.
+                // #3703 — duel seat identity: seat colors (P1 amber / P2 cyan)
+                // carry the whole seat, a mini-frog on the row's seat color,
+                // and only the active seat renders bright. At the handoff
+                // (gs.banner > 0) the incoming seat's row blinks with the
+                // banner — the same cadence as the PLAYER ${seat} tell.
                 // #3692 §Scoring — five digits: the cabinet keeps only the last
-                // five once 99,990 rolls over.
+                // five once 99,990 rolls over. The 1P rows stay byte-identical
+                // (the 1P HUD is the identity floor).
                 const pad5 = n => String(Math.max(0, n) % SCORE_WRAP).padStart(5, '0')
-                ctx.fillStyle = gs.player === 1 ? '#ffffff' : '#6f6f6f'
-                ctx.fillText(`P1 ${pad5(gs.scores[0])}`, 6, 9)
-                ctx.fillStyle = gs.player === 2 ? '#ffffff' : '#6f6f6f'
-                ctx.fillText(`P2 ${pad5(gs.scores[1])}`, 6, 21)
+                const SEAT_COL = ['#ffe14d', '#4fc3f7']     // P1 amber / P2 cyan
+                const SEAT_SHADE = ['#a67c1a', '#2b7ca6']
+                const blinkOn = gs.banner > 0 && Math.floor(gs.banner / 20) % 2 === 0
+                ctx.font = 'bold 10px monospace'
+                for (let seat = 1; seat <= 2; seat++) {
+                    const i = seat - 1
+                    const active = gs.player === seat
+                    const bright = active && (gs.banner === 0 || blinkOn)
+                    const y = seat === 1 ? 10 : 22
+                    const icY = seat === 1 ? 7 : 19
+                    ctx.globalAlpha = active ? (gs.banner === 0 || blinkOn ? 1 : 0.35) : 0.45
+                    drawFrog(11, icY, 0.55, SEAT_COL[i], SEAT_SHADE[i])
+                    ctx.fillStyle = SEAT_COL[i]
+                    ctx.fillText(`P${seat}`, 20, y)
+                    ctx.fillStyle = bright ? '#ffffff' : '#8a8a8a'
+                    ctx.fillText(pad5(gs.scores[i]), 38, y)
+                    ctx.globalAlpha = 1
+                }
                 ctx.fillStyle = '#a9a9a9'
-                ctx.fillText('HI', 78, 9)
+                ctx.fillText('HI', 80, 10)
                 ctx.fillStyle = '#ffffff'
-                ctx.fillText(pad5(Math.max(gs.scores[0], gs.scores[1], hiScore)), 92, 9)
+                ctx.fillText(pad5(Math.max(gs.scores[0], gs.scores[1], hiScore)), 94, 10)
                 ctx.fillStyle = '#a9a9a9'
-                ctx.fillText('LV', 78, 21)
+                ctx.fillText('LV', 80, 22)
                 ctx.fillStyle = '#ffffff'
-                ctx.fillText(String(gs.level), 92, 21)
+                ctx.fillText(String(gs.level), 94, 22)
             } else {
                 ctx.fillStyle = '#a9a9a9'
                 ctx.fillText('SCORE', 6, 9)
@@ -589,12 +607,25 @@ const FroggerGame = () => {
                 ctx.textAlign = 'center'
                 ctx.fillText(`LEVEL ${gs.level - 1} COMPLETE  +1000`, W / 2, rowMid(MEDIAN_ROW) + 3)
             }
-            // #3676 — seat banner at a 2P handoff (and at duel start).
+            // #3676 — seat banner at a 2P handoff (and at duel start). #3703 —
+            // both totals under the banner: an alternating arcade must show
+            // either seat what the other seat stands on, not just the winner.
             if (gs.banner > 0 && !gs.attract && !gs.over && Math.floor(gs.banner / 20) % 2 === 0) {
+                const bannerY = rowMid(MEDIAN_ROW)
+                ctx.fillStyle = 'rgba(0,0,0,0.75)'
+                ctx.fillRect(0, bannerY - 21, W, 48)
+                // amber rails top and bottom — the handoff band reads as a banner
                 ctx.fillStyle = '#ffe14d'
-                ctx.font = 'bold 14px monospace'
+                ctx.fillRect(0, bannerY - 21, W, 2)
+                ctx.fillRect(0, bannerY + 25, W, 2)
+                ctx.fillStyle = '#ffe14d'
+                ctx.font = 'bold 15px monospace'
                 ctx.textAlign = 'center'
-                ctx.fillText(`PLAYER ${gs.player}`, W / 2, rowMid(MEDIAN_ROW) + 3)
+                ctx.fillText(`PLAYER ${gs.player}`, W / 2, bannerY - 3)
+                const pad5 = n => String(Math.max(0, n) % SCORE_WRAP).padStart(5, '0')
+                ctx.font = 'bold 10px monospace'
+                ctx.fillStyle = '#9ee0a3'
+                ctx.fillText(`P1 ${pad5(gs.scores[0])}   P2 ${pad5(gs.scores[1])}`, W / 2, bannerY + 13)
             }
 
             if (gs.attract) {

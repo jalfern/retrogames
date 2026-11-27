@@ -35,10 +35,11 @@ turtles, beat the clock. Fly house = +200, level clear = +1000, lanes speed up
 
 ## Verify
 ```
-npm run froggercheck             # 97 checks: attract rule 6 + seed replay +
+npm run froggercheck             # 103 checks: attract rule 6 + seed replay +
                                #   death distinctness + the 40-seed driver sweep +
                                #   the #3676 duel & tell block +
-                               #   the #3703 1981 tune block & carry-off splat pin
+                               #   the #3703 duel-seat identity pins (three) +
+                               #   the 1981 tune block & carry-off splat pin
 npm run froggercheck -- --mutate # 20 mutants, all must die
 npm run watchcheck -- --only frogger   # seat/handoff pilot (dev server)
 npm run feedbackcheck            # pin law + rollout floor (48)
@@ -76,7 +77,11 @@ byte-equal, every seed banks ≥1 level, 36/40 zero-death, ≥20 homes per seed,
   once per run (a shell-local guard keeps the over-frame replays from
   re-firing). Original note tables in `tunes.js`, pinned by the harness —
   never a copied cabinet tune.
-- The driver is survival-greedy, not perfect: on 4 of 40 seeds it sheds one
-  life to a dive-phase shuffle on the turtle lane (it still banks levels there).
-  It plans 7 s ahead (420 ticks) plus a 15 s drift carry-out projection; a
-  pattern beyond that reads as horizon, not as danger.
+- The driver is survival-greedy, not perfect: the 40-seed sweep (120 s per
+  seed, `npm run froggercheck -- --mutate`'s sweep) and a dedicated per-seed
+  driver-horizon re-measure on 2026-11-27 (40/40 seeds clean, zero deaths
+  across 120 s, clears 40/40, min homes 55, 2852 total homes) leave the
+  honest gap closed — the earlier "4 of 40 seeds shed one life" note was
+  measured against the older driver build. The driver plans 7 s ahead (420
+  ticks) plus a 15 s drift carry-out projection; a pattern beyond that reads
+  as horizon, not as danger.
