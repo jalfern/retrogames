@@ -14,7 +14,7 @@
 
 import { readFileSync } from 'node:fs'
 import { spawnSync } from 'node:child_process'
-import { START_LIVES, WIN_SCORE, BARREL_SPEED, HAMMER_SWINGS, RIVET_SCORE, PULL_TICKS, COLLAPSE_TICKS, RIVET_X, DK_PLAT, TOP_PLAT, DK_FALL_STOP, BREAK_FRACS, BARREL_CLICK_EVERY, BARREL_CLICK_RANGE, barrelBoardVoice, barrelDangleVoice, barrelRollClick, makeRun, tickDonkeyKong, watchStep, stateHash, rnd, getPlatformY, buildLevel, platformIndex } from '../src/games/DonkeyKong/sim.js'
+import { START_LIVES, WIN_SCORE, BARREL_SPEED, HAMMER_SWINGS, RIVET_SCORE, PULL_TICKS, COLLAPSE_TICKS, RIVET_X, DK_PLAT, TOP_PLAT, DK_FALL_STOP, BREAK_FRACS, BARREL_CLICK_EVERY, BARREL_CLICK_RANGE, barrelBoardVoice, barrelDangleVoice, barrelRollClick, BRACE_WIDTH, BRACE_PLATE, BRACE_PAD, barrelRideFrame, makeRun, tickDonkeyKong, watchStep, stateHash, rnd, getPlatformY, buildLevel, platformIndex } from '../src/games/DonkeyKong/sim.js'
 import { seedRng, seedFromQuery } from '../src/utils/gameContract.js'
 import { parseGaps } from './lib/idle.mjs'
 import { plant, pull } from './lib/mutateguard.mjs'
@@ -726,6 +726,37 @@ console.log('barrel voices #3641: board tick, descent clicks, dangling clatter')
     ok(clicks >= 20 && board > 1000,
         'the grammar is live in real play: a click trail on the rides, boards on every span-hitting pass',
         `clicks=${clicks} board=${board}`)
+}
+
+// #3651 — corner polish: a phone-legible brace and barrels that ALIVE-ride the
+// corner ladders. The laws are visual-only (constants + a pure tick function):
+// nothing writes gs or the dice, so every seeded floor above stays
+// byte-identical — their green is part of this proof. The section pins the
+// laws AND the shell wiring, so reverting either half fails the gate.
+console.log('corner polish #3651: bolted brace, alive descents')
+{
+    ok(BRACE_WIDTH >= 2,
+        'brace rails are as thick as the ladder uprights — the corner reads on a phone',
+        `width=${BRACE_WIDTH} (was 1.5)`)
+    ok(BRACE_PLATE.w * BRACE_PLATE.h >= 20 && BRACE_PAD.w * BRACE_PAD.h >= 8,
+        'bolted gusset at the girder anchor + foot pad at the head give the brace a steel story',
+        `plate=${BRACE_PLATE.w}x${BRACE_PLATE.h} pad=${BRACE_PAD.w}x${BRACE_PAD.h}`)
+    const f0 = barrelRideFrame(0)
+    const f1 = barrelRideFrame(BARREL_CLICK_EVERY)
+    const f2 = barrelRideFrame(BARREL_CLICK_EVERY * 2)
+    ok(f0.grip === -f1.grip && f2.grip === f0.grip,
+        `grip marks swap rails on the ${BARREL_CLICK_EVERY}-tick click cadence — seen motion and heard clatter are one grammar`,
+        `grip=${f0.grip}/${f1.grip}/${f2.grip}`)
+    ok(Math.abs(f0.wobble) <= 0.5 && Math.abs(f1.wobble) <= 0.5,
+        'the descent sway stays half a pixel — across the rungs, never off the span',
+        `wobble=${f0.wobble}/${f1.wobble}`)
+    ok(/ctx\.lineWidth = BRACE_WIDTH/.test(IDX) && /BRACE_PLATE\.w/.test(IDX),
+        'the shell draws the brace from the law (rails + plates), not a magic 1.5',
+        IDX.includes('ctx.lineWidth = BRACE_WIDTH') ? 'wired' : 'missing')
+    ok(/b\.onLadder \? barrelRideFrame\(gs\.tickN\)/.test(IDX),
+        'riding barrels draw grip + sway from the live tick; rolling barrels keep their spin')
+    ok(/rides: gs\.barrels\.filter\(b => b\.onLadder\)/.test(IDX),
+        'the DEV probe reports riding barrels so a drive can wait for a descent')
 }
 
 // ---------------------------------------------------------- shell wiring pin ----

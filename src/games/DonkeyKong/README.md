@@ -104,6 +104,24 @@ lands on the tick of its transition (boards on span entries, bright ticks only
 mid-air, clatter on dangling exits), the corner floors' 3 dangling exits and
 2 mid-air catches onto R2 ring, and every ride carries a click trail.
 
+## Corner polish (#3651 — the corner pair reads and moves)
+Two visual-only laws ride the corner pair, exported from `sim.js` so the gate
+can pin them; physics, dice and `gs` are untouched (seeded floors remain
+byte-identical — the rest of kongcheck's green is part of the proof).
+**Brace:** the corner pair used to hang R2 off girder 1 on two 1.5px wires —
+on a phone the ladder read as glued to air. `BRACE_WIDTH = 2` (as thick as
+the ladder's own uprights) plus `BRACE_PLATE` / `BRACE_PAD`: a bolted gusset
+under the girder at the anchor and a foot pad at the ladder head, with dark
+rivet holes — the same bolted-steel idiom the girders and the #3598 rivets
+already speak, so "this ladder belongs to that girder" is visible at a glance
+at 390×844. **Ride:** a descending barrel is no longer the plain roll sprite.
+`barrelRideFrame(tickN)` returns grip marks that swap rails on
+`BARREL_CLICK_EVERY` — the same 4-tick grid as the descent clicks, so the
+seen motion and the heard clatter are one grammar — with a ±0.5px sway across
+the rungs and a hair of tilt. Rolling barrels keep their spin. Kongcheck
+§corner-polish gates both laws and the shell wiring; the DEV probe gained
+`rides` so a drive can wait for a descent (before/after shots at phone scale).
+
 ## Corner pair (#3622 — the arcade's end-of-girder ladders)
 Two girder-end rungs stand at the RIGHT fall-gap corner, x=222 — where a
 Node trace showed barrels leaving girder 3's end at cx≈210.5 land, after the
