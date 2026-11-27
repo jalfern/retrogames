@@ -112,7 +112,8 @@ console.log('#3631 wave speed ladder: waves race, cuts accelerate')
     ok(waveSpeed(7) === waveSpeed(7), 'the ladder is dice-free — pure function of the wave')
     const src = readFileSync('src/games/Centipede/index.jsx', 'utf8')
     ok(/const spd = waveSpeed\(wave\)/.test(src), 'spawns seat the current wave pace')
-    ok(/for \(let j = hitSeg; j < state\.centipedes\.length; j\+\+\)/.test(src) && /state\.centipedes\[j\]\.spd = splitSpd\(state\.centipedes\[j\]\.spd\)/.test(src),
+    const rearLoop = src.match(/for \(let j = hitSeg; j < state\.centipedes\.length; j\+\+\) \{\s*state\.centipedes\[j\]\.spd = splitSpd\(state\.centipedes\[j\]\.spd\);?\s*\}/)
+    ok(!!rearLoop,
         'the rear sub-chain behind every cut takes the boost')
     ok(/c\.x \+= \(c\.fast \? 2 : 1\) \* \(c\.spd \|\| 1\) \* c\.vx/.test(src),
         'movement carries the chain speed under the venom double')
@@ -511,6 +512,14 @@ if (process.argv.includes('--mutant')) {
         ['the sting never races (venom cosmetic on the column)', I,
             `if (!c.fast && scorpionStings(s, c)) {`,
             `if (false && scorpionStings(s, c)) {`],
+        ['the bite never accelerates the rear', I,
+            `if (state.centipedes[i]) {
+                        state.centipedes[i].head = true
+                        for (let j = i; j < state.centipedes.length; j++) {
+                            state.centipedes[j].spd = splitSpd(state.centipedes[j].spd)
+                        }
+                    }`,
+            `if (state.centipedes[i]) state.centipedes[i].head = true`],
     ]
     let died = 0
     for (const [name, file, from, to] of MUTANTS) {
