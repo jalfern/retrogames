@@ -32,6 +32,34 @@ waves pays 100 per living city and 50 per spare missile, then reloads.
   it). The gunner takes the bonus shot only when every warhead is covered
   and the craft is a quarter-crossing in — the arcade-expert habit, not an
   edge-pop machine.
+- **#3638 saucer polish pass** (the QA ask on #3629), five things:
+  - **Reserve rule (the doctrine, measured).** A shell may chase the 125 only
+    if what stays in the magazine covers every warhead the wave can still
+    field — the ICBM ladder left to spawn PLUS the cruise launches of ferries
+    other than the target (~every 50–99 ticks; owed ferries count their whole
+    crossing; killing the target cancels ITS launches, the expert trade).
+    A/B sweep, 12 seeds × waves 6–10, bonus on vs off: **the bonus never
+    costs a city or a point**, waves 6–8 pay every seed (36/36), all 60 raids
+    clear. At waves 9–10 (28–30 warheads + ferry cruises vs 30 shells) the
+    reserve simply never frees a shell — the watch lets the ferry go rather
+    than gamble a city, which is the honest answer the ask asked for.
+  - **Legible look.** Cruise launches draw a 2 px ORANGE trail (#ff9d00) vs
+    ICBM red — distinct at the 600px phone letterbox at device scale 1
+    (verified by screenshot + pixel probe). Hull rx 18→21, dome r6→7, rim
+    lights 4×3 so the satellite still reads dome-and-lights when small.
+  - **Sound mix.** Two-part warble at 0.16 (was a single buried 0.07 sweep),
+    cruise launches growl at 180 Hz sawtooth below the ICBM whistle, and the
+    125 kill layers deep thud + long noise + rising chirps — bigger than a
+    warhead boom, the game's own hierarchy.
+  - **Kill juice.** The burn pops a white flash (4 ticks) plus six seeded
+    debris sparks (light gravity, ≤44 ticks). Dice roll only on a kill, and
+    kills exist only at/after the gate, so the byte pins hold; neither joins
+    the wave-clear law (check proves both).
+  - **Attract ad.** `attractFerry(gs)` sends a scripted ferry across the
+    attract screen every 360 ticks (side/altitude alternate, one at a time),
+    and the attract pilot leads it — the feature advertises itself. Scripted
+    by tick, NOT dice: two different seeds see identical sightings, which is
+    the check's proof the determinism story survives the ad.
 - **Restart was missing entirely before the batch-15 port** — the GAME OVER
   screen was dead. `startRun()` now rebuilds cities, silos, ammo, score, wave
   and spawn state from any key, click, or canvas tap (phones included).
@@ -53,12 +81,14 @@ waves pays 100 per living city and 50 per spare missile, then reloads.
 
 ## Verify
 ```
-npm run missilecmdcheck             # 49 checks: raid replay, sweep 24 seeds waves 1-5 clean,
+npm run missilecmdcheck             # 60 checks: raid replay, sweep 24 seeds waves 1-5 clean,
                                   #   doctrine pins (safe altitude, urgency, cover), saucers
-                                  #   (byte-exact gate, entry/launch/kill/hold), wiring + registry
-npm run missilecmdcheck -- --mutant # 12 mutants, all must die
-npm run mcsaucerdrive             # live browser ferry drive: gate negative, probe↔pixels,
-                                  #   real mouse+Space 125 kill (needs the dev server)
+                                  #   (byte-exact gate, entry/launch/kill/hold), deep doctrine
+                                  #   A/B waves 6-10, juice, attract ad, wiring + registry
+npm run missilecmdcheck -- --mutant # 17 mutants, all must die
+npm run mcsaucerdrive             # live browser ferry drive (11 checks): gate negative, probe↔pixels,
+                                  #   attract ad, orange cruise-trail pixels, real mouse+Space 125
+                                  #   kill with kill-juice sighting (needs the dev server)
 npm run watchcheck                # live browser pilot (needs the dev server)
 npm run feedbackcheck             # pin law + rollout floor (48)
 npm run attractcheck              # attract screen rule 6
@@ -67,9 +97,11 @@ npm run attractcheck              # attract screen rule 6
 ## Honest gaps
 - No smart/missile-silo split, no two-player alternating game (#3630).
 - Cities revive only between games (original revives every 10k points).
-- The gunner is proven to wave 5 (the sweep's bar); past the ammo horizon
-  (~wave 11, closer once ferries load) losing cities is arithmetic, not style.
-  The watch takes saucer bonus shots only when the warhead sky is fully
-  covered; it never prioritizes the 125-point ferry over a city.
+- The gunner is proven to wave 5 (the sweep's bar); ferries make the deep
+  arithmetic bind earlier (~wave 9–10 pays 28–30 warheads plus the ferry
+  salvo's cruises against 30 shells), so there losing cities is volume, not
+  style — the §deep A/B proves the bonus adds nothing to that bill (the
+  reserve rule holds the 125 until the magazine truly has surplus, and the
+  watch never prioritizes the ferry over a city).
 - Outer batteries fire by nearest-silo |dx| like the human click law — the
   original's field-of-fire arcs per battery are not modelled.

@@ -20,7 +20,7 @@ import { readFileSync } from 'node:fs'
 import { spawnSync } from 'node:child_process'
 import {
     chooseEnemySpawn, makeRun, tickMc, gunnerStep, citiesAlive, fireAt, startWave,
-    SCREEN_WIDTH, SAFE_Y, WAVE_BREAK_TICKS, PROVEN_WAVES,
+    SCREEN_WIDTH, SAFE_Y, WAVE_BREAK_TICKS, PROVEN_WAVES, attractFerry, ATTRACT_FERRY_EVERY,
     SAUCER_FIRST_WAVE, SAUCER_SCORE,
 } from '../src/games/MissileCommand/sim.js'
 import { seedRng, seedFromQuery } from '../src/utils/gameContract.js'
@@ -300,6 +300,107 @@ console.log('saucers (#3629): entry, launches, the 125 kill, the wave hold')
     ok(bonus && bonus.boom > g3.tick && bonus.aimY === 160, 'the bonus shot leads the ferry with its own detonation tick')
 }
 
+// --------------------------------------------- #3638 deep doctrine (A/B) ---------
+// The watch's ferry opportunism, measured rather than asserted: run every
+// seed twice at waves 6–10 — bonus on, bonus off — and pin what the arcade
+// expert's habit is allowed to feel like: it never costs a city, it pays when
+// the wave can afford it (waves 6–8 pay all seeds; at the 9–10 ammo horizon,
+// 30 shells against ~34 warheads once the ferries shoot back, the reserve
+// rule lets the 125 go rather than gamble a city), and nothing stalls.
+console.log('saucers (#3638): deep doctrine waves 6..10, bonus on vs off')
+{
+    const run = (seed, wave, noBonus) => {
+        const gs = makeRun(seed)
+        gs.wave = wave
+        startWave(gs)
+        let guard = 0
+        while (gs.wave <= wave && !gs.over && guard++ < 40000) tickMc(gs, gunnerStep(gs, { noBonus }))
+        return { over: gs.over, wave: gs.wave, cities: citiesAlive(gs), score: gs.score }
+    }
+    let stalls = 0, cityCost = 0, unpaid = 0, paid = 0
+    for (let s = 1; s <= 12; s++) {
+        const seed = s * 7919 + 3
+        for (const w of [6, 7, 8, 9, 10]) {
+            const a = run(seed, w, false), b = run(seed, w, true)
+            if (a.over || a.wave !== w + 1) { stalls++; console.log(`  stall seed ${seed} w${w}`) }
+            if (a.cities < b.cities) { cityCost++; console.log(`  city-cost seed ${seed} w${w}: ${a.cities} vs ${b.cities}`) }
+            if (a.score < b.score) { cityCost++; console.log(`  score-down seed ${seed} w${w}`) }
+            if (w <= 8) { if (a.score > b.score) paid++; else { unpaid++; console.log(`  unpaid seed ${seed} w${w}`) } }
+        }
+    }
+    ok(stalls === 0, 'every seed clears waves 6..10 with the ferry seat aboard (60 raids)', `${stalls}`)
+    ok(cityCost === 0, 'the reserve rule: the bonus never costs a city (or a point) vs no-bonus', `${cityCost}`)
+    ok(paid === 36 && unpaid === 0, 'waves 6..8: every seed is paid for its ferries (36/36)', `${paid}/36`)
+    // reserve rule units: a thin magazine holds fire; a truly spare one takes it
+    const g = makeRun(7)
+    g.wave = 9
+    startWave(g)
+    g.spawning = false
+    g.missilesLeftInWave = 20
+    g.saucersLeftInWave = 0
+    g.saucers = [
+        { id: 1, x: 400, y: 160, dir: 1, speed: 2, fireTimer: 9999, frame: 0 },
+        { id: 2, x: 100, y: 180, dir: 1, speed: 2, fireTimer: 9999, frame: 0 },
+    ]
+    g.silos.forEach((s) => { s.ammo = 8 }) // 24 shells vs debt 20 spawns + the OTHER ferry's ~6 crossing
+    ok(gunnerStep(g) === null, 'reserve rule: 20 warheads yet to spawn + a shooting ferry outrank the 125', `${gunnerStep(g)}`)
+    g.silos.forEach((s) => { s.ammo = 30 })
+    ok(gunnerStep(g) !== null, 'reserve rule: real surplus still buys the 125', 'held fire')
+}
+
+// ------------------------------------------------ #3638 juice + attract ad -----
+console.log('saucers (#3638): kill juice, and the attract ferry scripted by tick')
+{
+    // a kill sparks flash + debris, and neither gates the wave clear
+    const gs = makeRun(77)
+    gs.wave = SAUCER_FIRST_WAVE
+    gs.saucers = [{ id: 1, x: 400, y: 160, dir: 1, speed: 2, fireTimer: 9999, frame: 0 }]
+    gs.blasts = [{ x: 400, y: 160, radius: 5, growing: true, color: '#fff' }]
+    tickMc(gs, null)
+    ok(gs.debris.length === 6 && gs.flash, 'a burned ferry bursts into flash + debris', `${gs.debris.length}/${gs.flash ? 'flash' : 'none'}`)
+    gs.spawning = false
+    gs.missilesLeftInWave = 0
+    gs.warheads = []
+    let guard = 0
+    while (gs.state === 'playing' && guard++ < 300) tickMc(gs, null)
+    ok(gs.state === 'waveEnd' && gs.wave === SAUCER_FIRST_WAVE + 1 && gs.debris.length === 0 && !gs.flash,
+        'debris flies while the wave clears — cosmetic, never the clear-law', `${gs.state}/w${gs.wave} d${gs.debris.length}`)
+    // below the gate the juice never exists (dice stay out of waves 1..5)
+    let earlyJuice = 0
+    for (let s = 1; s <= 8; s++) {
+        const g2 = makeRun(s * 7919 + 3)
+        let g3 = 0
+        while (g2.wave < SAUCER_FIRST_WAVE && !g2.over && g3++ < 40000) tickMc(g2, gunnerStep(g2))
+        if (g2.debris.length > 0 || g2.flash) earlyJuice++
+    }
+    ok(earlyJuice === 0, 'no flash or debris below the gate (8 seeds)', `${earlyJuice}`)
+    // attract ad: two different seeds must see the SAME scripted sightings —
+    // that is the proof attractFerry consults no dice (the determinism story
+    // the polish ask asked us to weigh; the ad pays into it for free).
+    const sighting = (seed) => {
+        const g = makeRun(seed)
+        let n = 0
+        while (g.tick < 721 && n++ < 800) { tickMc(g, null); attractFerry(g) }
+        return g.saucers.map((s) => `${Math.round(s.x)},${s.y},${s.dir}`).join('|')
+    }
+    const g = makeRun(5)
+    let ticks = 0
+    let firstAt = 0
+    while (!firstAt && ticks++ < 4000) { tickMc(g, null); attractFerry(g); if (g.saucers.length > 0) firstAt = g.tick }
+    ok(firstAt === ATTRACT_FERRY_EVERY, 'attract ferry crosses at a scripted tick (no dice)', `tick ${firstAt}`)
+    ok(sighting(5) === sighting(99999), 'identical sightings whatever the seed — attract is scripted, not seeded')
+    let n2 = 0
+    const g2 = makeRun(5)
+    let second = null
+    // ferry #1 exits ~tick 751; the tick-720 slot waits for the sky, the
+    // tick-1080 slot spawns sighting #2 (side/altitude alternate)
+    while (n2++ < 1150 && !second) {
+        tickMc(g2, null); attractFerry(g2)
+        if (g2.attractFerries === 2) second = { y: g2.saucers[g2.saucers.length - 1].y, dir: g2.saucers[g2.saucers.length - 1].dir }
+    }
+    ok(second && second.y === 156 && second.dir === -1, 'the second sighting alternates side and altitude (advertising, not a loop frozen on one frame)', JSON.stringify(second))
+}
+
 // -------------------------------------------------------------------- the law ----
 console.log('component wiring: pin, report, restart, seat')
 {
@@ -374,6 +475,23 @@ if (process.argv.includes('--mutant')) {
         ['the wave clears regardless of owed ferries (spawned-after-clear ghost)', S,
             `gs.saucers.length === 0 && gs.saucersLeftInWave === 0`,
             `true`],
+        ['#3638: the bonus ignores its reserve (A/B cities pay for it)', S,
+            `if (!anyLive && saucer && ammoLeft - 1 >= reserve) {`,
+            `if (!anyLive && saucer) {`],
+        ['#3638: the reserve forgets the ferry fleet (missiles-only debt)', S,
+            `const reserve = gs.missilesLeftInWave +
+        gs.saucersLeftInWave * Math.max(1, Math.round(crossingTicks / 70)) +
+        gs.saucers.reduce((a, s) => a + (s === saucer || s.dead ? 0 : launchLeft(s)), 0)`,
+            `const reserve = gs.missilesLeftInWave`],
+        ['#3638: the kill flash dies on frame zero', S,
+            `gs.flash = { x: s.x, y: s.y, t: 4 }`,
+            `gs.flash = { x: s.x, y: s.y, t: 0 }`],
+        ['#3638: the kill leaves no debris', S,
+            `for (let i = 0; i < 6; i++) {`,
+            `for (let i = 0; i < 0; i++) {`],
+        ['#3638: the attract ferry rolls dice (determinism story dies)', S,
+            `y: 130 + (n % 3) * 26,`,
+            `y: SAUCER_Y_MIN + Math.floor(gs.rand() * (SAUCER_Y_MAX - SAUCER_Y_MIN)),`],
     ]
     let died = 0
     for (const [name, file, from, to] of MUTANTS) {

@@ -6,7 +6,7 @@ import WatchButton, { WatchToast, AttractWatchButton } from '../../components/Wa
 import { isWatchKey, isTakeoverKey, playWatchStart, playWatchStop, watchSfxLog, WATCH_ATTRACT_HINT } from '../../utils/watch'
 import { GAMES } from '../../config/games'
 import { attractFrame, DIM } from './attract.js'
-import { makeRun, tickMc, gunnerStep, fireAt, startWave, citiesAlive, SCREEN_WIDTH, SCREEN_HEIGHT, GROUND_Y } from './sim.js'
+import { makeRun, tickMc, gunnerStep, fireAt, startWave, citiesAlive, attractFerry, SCREEN_WIDTH, SCREEN_HEIGHT, GROUND_Y } from './sim.js'
 import { exposeFeedbackState, unexposeFeedbackState, seedFromQuery } from '../../utils/gameContract'
 import { mountDbg, unmountDbg } from '../../utils/DebugKit'
 
@@ -70,6 +70,22 @@ const MissileCommandGame = () => {
         // wander clock rides the sim tick, not Date.now (#1525 hygiene).
         const attractCmd = () => {
             if (gs.state !== 'playing') return null
+            const crosshair = gs.crosshair
+            // #3638: the scripted ferry is the ad — the pilot leads it like an
+            // expert (ABM ~15 px/t vs ferry ~2.2, so ~30 ticks of lead) and
+            // takes it with its same rough-shooter finger.
+            const ferry = gs.saucers.find((s) => !s.dead)
+            if (ferry) {
+                const leadX = ferry.x + ferry.dir * ferry.speed * 30
+                const dx = leadX - crosshair.x
+                const dy = ferry.y - crosshair.y
+                crosshair.x += dx * 0.12
+                crosshair.y += dy * 0.12
+                if (gs.rand() < 0.03 && Math.abs(dx) < 40 && Math.abs(dy) < 24) {
+                    return { aimX: leadX, aimY: ferry.y }
+                }
+                return null
+            }
             let targetMissile = null
             let minHeight = Infinity
             gs.warheads.forEach((m) => {
@@ -78,7 +94,6 @@ const MissileCommandGame = () => {
                     minHeight = m.y
                 }
             })
-            const crosshair = gs.crosshair
             if (targetMissile) {
                 const leadX = targetMissile.x + Math.cos(Math.atan2(targetMissile.targetY - targetMissile.startX, targetMissile.targetX - targetMissile.startX)) * 50
                 const leadY = targetMissile.y + Math.sin(Math.atan2(targetMissile.targetY - targetMissile.startY, targetMissile.targetX - targetMissile.startX)) * 50
@@ -187,16 +202,27 @@ const MissileCommandGame = () => {
             const cmd = attractUiRef.current ? attractCmd() : (gs.watch ? gunnerStep(gs) : null)
             const wasOver = gs.over
             tickMc(gs, cmd)
+            // #3638 attract ad: after the tick so its announce event survives
+            // tickMc's event reset (the warble plays on the live board).
+            if (attractUiRef.current) attractFerry(gs)
             for (const ev of gs.events) {
                 if (ev === 'pew') audioController.playTone(600, 0.05, 'triangle')
                 else if (ev === 'boom') audioController.playTone(100, 0.2, 'noise', 0.5)
-                // #3629 cruise saucers — a warble announces the ferry, its
-                // launches growl under the ICBM whistle, the kill crunches big.
-                else if (ev === 'saucer') audioController.playSweep(300, 900, 0.25, 'sine', 0.07)
-                else if (ev === 'cruisefire') audioController.playTone(220, 0.07, 'sawtooth', 0.12)
+                // #3638 saucer mix pass — the warble is two-part and loud enough
+                // to cut the wave-6 bed (was a single 0.07 sweep, buried under
+                // pew/boom); cruise launches growl below the ICBM whistle; the
+                // 125 kill layers a deep thud + long burst + rising chirps so it
+                // reads BIGGER than a warhead boom — the game's own hierarchy.
+                else if (ev === 'saucer') {
+                    audioController.playSweep(300, 900, 0.18, 'sine', 0.16)
+                    audioController.playSweep(900, 520, 0.2, 'sine', 0.12, null, 0.18)
+                }
+                else if (ev === 'cruisefire') audioController.playTone(180, 0.09, 'sawtooth', 0.15)
                 else if (ev === 'saucerkill') {
-                    audioController.playNoise(0.25, 0.5)
-                    audioController.playTone(920, 0.15, 'square', 0.08)
+                    audioController.playNoise(0.35, 0.65)
+                    audioController.playTone(70, 0.3, 'square', 0.45)
+                    audioController.playTone(920, 0.12, 'square', 0.14)
+                    audioController.playTone(1240, 0.14, 'square', 0.12, 0.1)
                 }
             }
             if (gs.over && !wasOver) release(false) // the raid ends in your hands (silent)
@@ -283,37 +309,45 @@ const MissileCommandGame = () => {
             })
 
             gs.warheads.forEach((m) => {
-                ctx.strokeStyle = '#ff0000' // Red trail
-                ctx.lineWidth = 1
+                // #3638: cruise launches read distinct from ICBM trails — same
+                // physics, different eyes. Orange trail + warm tip survives the
+                // 600px phone letterbox where two reds were one story.
+                ctx.strokeStyle = m.cruise ? '#ff9d00' : '#ff0000'
+                ctx.lineWidth = m.cruise ? 2 : 1 // #3638: 2 px + orange — at the
+                // ~0.7 letterbox scale a 1 px AA line reads as a dim blend;
+                // 2 px survives device scale 1 on a 600px phone board
                 ctx.beginPath()
                 ctx.moveTo(m.startX, m.startY)
                 ctx.lineTo(m.x, m.y)
                 ctx.stroke()
 
-                ctx.fillStyle = '#ffffff'
+                ctx.fillStyle = m.cruise ? '#ffd23d' : '#ffffff'
                 ctx.fillRect(m.x - 1, m.y - 1, 2, 2)
             })
 
             // #3629 cruise saucers — the satellite-shaped ferry (Atari 1981
             // manual §2: "look like satellites"). 4-frame hover bob, chasing
             // rim lights, flickering tail; the look is ours, the shape's era.
+            // #3638 legibility pass: hull rx 18→21, dome r 6→7, lights 4×3 —
+            // at the 600px letterbox (scale ≈ 0.71) the rim lights read as
+            // 3px blocks instead of sub-pixel smudges.
             gs.saucers.forEach((s) => {
                 const bob = [0, -1, -2, -1][s.frame]
                 const sy = s.y + bob
                 ctx.fillStyle = '#8f98a8' // lower hull shade
-                ctx.beginPath(); ctx.ellipse(s.x, sy + 2, 18, 6, 0, 0, Math.PI * 2); ctx.fill()
+                ctx.beginPath(); ctx.ellipse(s.x, sy + 2, 21, 7, 0, 0, Math.PI * 2); ctx.fill()
                 ctx.fillStyle = '#d8dee8' // upper hull
-                ctx.beginPath(); ctx.ellipse(s.x, sy, 18, 7, 0, Math.PI, 0); ctx.fill()
+                ctx.beginPath(); ctx.ellipse(s.x, sy, 21, 8, 0, Math.PI, 0); ctx.fill()
                 ctx.fillStyle = '#39d0ff' // dome
-                ctx.beginPath(); ctx.arc(s.x, sy - 5, 6, Math.PI, 0); ctx.fill()
+                ctx.beginPath(); ctx.arc(s.x, sy - 6, 7, Math.PI, 0); ctx.fill()
                 ctx.fillStyle = '#083044' // dome slit
-                ctx.fillRect(s.x - 1, sy - 9, 2, 3)
+                ctx.fillRect(s.x - 1, sy - 11, 2, 4)
                 for (let i = 0; i < 4; i++) { // running lights chase the rim
                     ctx.fillStyle = (i + s.frame) % 2 === 0 ? '#ffe14d' : '#ff4d4d'
-                    ctx.fillRect(s.x - 13 + i * 8, sy + 2, 3, 2)
+                    ctx.fillRect(s.x - 16 + i * 9, sy + 1, 4, 3)
                 }
                 ctx.fillStyle = s.frame % 2 === 0 ? '#ff9a3d' : '#ffd23d' // tail flicker
-                ctx.fillRect(s.x + (s.dir === 1 ? -21 : 19), sy + 1, 2, 2)
+                ctx.fillRect(s.x + (s.dir === 1 ? -25 : 22), sy + 1, 3, 3)
             })
 
             gs.blasts.forEach((e) => {
@@ -322,6 +356,24 @@ const MissileCommandGame = () => {
                 ctx.arc(e.x, e.y, e.radius, 0, Math.PI * 2)
                 ctx.fill()
             })
+
+            // #3638 kill juice — the flash is the exclamation mark on the 125,
+            // the debris ticks carry the wreck down (era-correct: the original's
+            // explosions were spectacles of falling fragments, not dots).
+            gs.debris.forEach((d) => {
+                ctx.globalAlpha = Math.max(0, Math.min(1, d.life / 22))
+                ctx.fillStyle = d.color
+                ctx.fillRect(d.x - 1, d.y - 1, 2, 2)
+            })
+            ctx.globalAlpha = 1
+            if (gs.flash) {
+                ctx.globalAlpha = gs.flash.t / 4
+                ctx.fillStyle = '#ffffff'
+                ctx.beginPath()
+                ctx.arc(gs.flash.x, gs.flash.y, 30 - gs.flash.t * 4, 0, Math.PI * 2)
+                ctx.fill()
+                ctx.globalAlpha = 1
+            }
 
             ctx.strokeStyle = '#ff00ff'
             ctx.lineWidth = 2
@@ -419,6 +471,9 @@ const MissileCommandGame = () => {
                     cities: citiesAlive(gs), silos: gs.silos.filter((s) => s.alive).length,
                     warheads: gs.warheads.length, abms: gs.abms.length, saucers: gs.saucers.length,
                     saucerAt: gs.saucers.map((s) => ({ x: Math.round(s.x), y: Math.round(s.y), dir: s.dir, speed: s.speed })),
+                    cruise: gs.warheads.filter((m) => m.cruise).length, // #3638 trail probe
+                    cruiseAt: gs.warheads.filter((m) => m.cruise).map((m) => ({ x: Math.round(m.x), y: Math.round(m.y), sx: Math.round(m.startX), sy: Math.round(m.startY) })),
+                    juice: gs.debris.length + (gs.flash ? 1 : 0), // #3638 kill-juice probe
                     ammo: gs.silos.reduce((a, s) => a + (s.alive ? s.ammo : 0), 0),
                     watching: gs.watch, seed: gs.seed,
                 }),
