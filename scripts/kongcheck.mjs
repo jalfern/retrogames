@@ -254,6 +254,86 @@ console.log('rules: gravity, jump, crush, dive, arc, lap, terminal')
     }
     ok(scoreEv === 1 && g2.score === 100, 'clearing a barrel underfoot scores the arcade 100', `score=${g2.score}`)
 
+    // #3754 §obstacle-bonus — the arcade pays BOTH halves of the obstacle
+    // bonus (Wikipedia §Scoring): jump-over 100 (pinned just above) and
+    // WALK-PAST 50. Law (sim.js): a barrel crossing Mario's column below his
+    // feet (dy −48..−10 — clear of the |dy|<10 kill box, spanning the 24/32/40
+    // px girder gaps) while grounded and alive pays +50 once per barrel.
+    {
+        const wb = makeRun(7)
+        wb.attract = false
+        tickDonkeyKong(wb, null)
+        wb.player.x = 150
+        wb.player.y = 176          // drops onto the sloped girder; physics settles it
+        for (let i = 0; i < 10; i++) tickDonkeyKong(wb, null)
+        ok(wb.player.grounded, 'walk-past rig: the runner settles grounded on a girder')
+        wb.barrels.push({ x: 120, y: 222, w: 10, h: 10, vx: BARREL_SPEED, vy: 0, rot: 0, onLadder: false, falling: false })
+        let wbPaid = 0
+        for (let i = 0; i < 80; i++) wbPaid += (tickDonkeyKong(wb, null).passedBarrel || 0)
+        ok(wbPaid === 1 && wb.score === 50, 'a barrel rolling past below the feet pays the arcade 50 — exactly once', `paid=${wbPaid} score=${wb.score}`)
+
+        // Spawn-behind silence: a barrel already astern, rolling away, is not
+        // an obstacle cleared.
+        const sb = makeRun(7)
+        sb.attract = false
+        tickDonkeyKong(sb, null)
+        sb.player.x = 150; sb.player.y = 176
+        for (let i = 0; i < 10; i++) tickDonkeyKong(sb, null)
+        sb.barrels.push({ x: 180, y: 222, w: 10, h: 10, vx: BARREL_SPEED, vy: 0, rot: 0, onLadder: false, falling: false })
+        for (let i = 0; i < 80; i++) tickDonkeyKong(sb, null)
+        ok(sb.score === 0 && sb.player.passedBarrels.size === 0, 'a barrel astern never retro-scores', `score=${sb.score}`)
+
+        // The dead pay nothing: the killer lands at once, and a second barrel
+        // crosses under the falling runner during the 90-tick death animation
+        // — the books stay at zero.
+        const dd = makeRun(7)
+        dd.attract = false
+        tickDonkeyKong(dd, null)
+        dd.player.x = 150; dd.player.y = 176
+        for (let i = 0; i < 10; i++) tickDonkeyKong(dd, null)
+        const surfY = dd.player.y
+        dd.barrels.push({ x: 150 - 4, y: surfY + 3, w: 10, h: 10, vx: 0, vy: 0, rot: 0, onLadder: false, falling: false })
+        dd.barrels.push({ x: 110, y: 222, w: 10, h: 10, vx: BARREL_SPEED, vy: 0, rot: 0, onLadder: false, falling: false })
+        let ddDied = false
+        for (let i = 0; i < 120; i++) ddDied = ddDied || tickDonkeyKong(dd, null).died
+        ok(ddDied && dd.score === 0, 'the dead pay nothing — a barrel crossing under a dying runner scores zero', `score=${dd.score} died=${ddDied}`)
+
+        // Witnesses reset with the life: after the respawn both bonus sets are
+        // empty, so the retry's passes score fresh.
+        const rs = makeRun(7)
+        rs.attract = false
+        tickDonkeyKong(rs, null)
+        rs.player.x = 150; rs.player.y = 176
+        for (let i = 0; i < 10; i++) tickDonkeyKong(rs, null)
+        rs.barrels.push({ x: 120, y: 222, w: 10, h: 10, vx: BARREL_SPEED, vy: 0, rot: 0, onLadder: false, falling: false })
+        for (let i = 0; i < 60; i++) tickDonkeyKong(rs, null)
+        // Witnesses reset with the life: a respawned runner starts clean, and
+        // the score already banked survives the death.
+        rs.lives = START_LIVES
+        rs.barrels.push({ x: rs.player.x + 5, y: rs.player.y + 3, w: 10, h: 10, vx: 0, vy: 0, rot: 0, onLadder: false, falling: false })
+        let respawned = false
+        for (let i = 0; i < 200; i++) {
+            tickDonkeyKong(rs, null)
+            respawned = respawned || (rs.deathTimer === 0 && rs.barrels.length === 0 && i > 100)
+        }
+        ok(respawned && rs.score === 50 && rs.player.passedBarrels.size === 0,
+            'the retry starts with clean bonus witnesses and keeps the banked score', `score=${rs.score} passed=${rs.player.passedBarrels.size}`)
+
+        // Determinism: the same seed replays byte-identical with the new
+        // witness riding the hash.
+        const hOf = () => {
+            const g3 = makeRun(31)
+            g3.attract = false
+            tickDonkeyKong(g3, null)
+            g3.player.x = 150; g3.player.y = 176
+            for (let i = 0; i < 10; i++) tickDonkeyKong(g3, null)
+            g3.barrels.push({ x: 120, y: 222, w: 10, h: 10, vx: BARREL_SPEED, vy: 0, rot: 0, onLadder: false, falling: false })
+            for (let i = 0; i < 60; i++) tickDonkeyKong(g3, null)
+            return `${g3.score}|${stateHash(g3)}`
+        }
+        ok(hOf() === hOf(), 'walk-past rolls stay deterministic (witness rides the hash)')
+    }
+
     // #3598 — the lap IS the rivet finale: reaching her girder ARMS it,
     // walking the row pulls all four rivets (+100 each), the last one out
     // starts the collapse, and ~2.5 s later the lap banks +1000 and the
@@ -1133,6 +1213,20 @@ if (process.argv.includes('--mutant')) {
         ['#3618 the rivet-screen phantom returns (README CLOSED marker stripped)', 'src/games/DonkeyKong/README.md',
             '**CLOSED by #3598, phantom-retired in #3618:**',
             '**Gap:**'],
+        ['#3754 the walk-past goes deaf (the arcade 50 vanishes)', S,
+            `                    gs.score += 50`,
+            `                    gs.score += 0`],
+        ['#3754 the walk-past pays every tick it overlaps (once-law gone)', S,
+            `!p.passedBarrels.has(b) && !p.jumpedBarrels.has(b)) {`,
+            `!p.jumpedBarrels.has(b)) {`],
+        ['#3754 the walk-past pays mid-air too (50/100 stop being a pair)', S,
+            `            else if (p.grounded && !p.climbing && gs.deathTimer <= 0) {
+                if (Math.abs(dx) < 16 && dy <= -10 && dy > -48 && !p.passedBarrels.has(b) && !p.jumpedBarrels.has(b)) {`,
+            `            else if (gs.deathTimer <= 0) {
+                if (Math.abs(dx) < 16 && dy < 0 && !p.passedBarrels.has(b) && !p.jumpedBarrels.has(b)) {`],
+        ['#3754 the walk-past band reaches into the kill box (dying pays 50)', S,
+            `dy <= -10 && dy > -48`,
+            `dy <= 0 && dy > -48`],
     ]
     let died = 0
     for (const [name, file, from, to] of MUTANTS) {

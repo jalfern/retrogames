@@ -129,5 +129,13 @@ await sleep(300)
 const a5 = await p()
 rep.check('death screen + any key -> new run', !a5.attract && !a5.over, `attract=${a5.attract} over=${a5.over}`)
 
+// #3754 — the walk-past 50, live and deterministic: DEV rig mirrors the
+// Node test (barrel rolls past below a grounded runner) against the shipped
+// shell on the fresh restart — the browser half of the law, no seed luck.
+{
+    const wpr = await page.evaluate(() => window.__dkTest.walkpast())
+    rep.check('walk-past pays the arcade 50 live, exactly once', wpr.paid === 1 && wpr.delta === 50 && wpr.witnesses === 1, JSON.stringify(wpr))
+}
+
 rep.check('zero page errors across the drive', errors === 0, `${errors}`)
 rep.exit(browser)
