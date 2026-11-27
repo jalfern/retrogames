@@ -974,15 +974,47 @@ const GauntletGame = () => {
             ctx.fillRect(0, VH, CW, HT)
             ctx.strokeStyle = '#2b3348'
             ctx.strokeRect(0.5, VH + 0.5, CW - 1, HT - 1)
-            text(LEVELS[gs.level].name, CW / 2, VH + 12, 7, '#8fa3d8')
-            text(`1UP ${String(gs.score).padStart(6, '0')}`, 12, VH + 12, 8, '#ff5d5d', 3, 'left')
-            text(`HI ${String(Math.max(gs.score, board()[0]?.score || 0)).padStart(6, '0')}`, CW - PW - 12, VH + 12, 8, '#ffd23f', 3, 'right')
+            // Row 1: 1UP left, HI right, and the level name centered in the
+            // free zone between them (shrunk to fit) — the fixed 7px name ran
+            // over the HI readout in every live frame.
+            const oneUp = `1UP ${String(gs.score).padStart(6, '0')}`
+            const hi = `HI ${String(Math.max(gs.score, board()[0]?.score || 0)).padStart(6, '0')}`
+            ctx.font = 'bold 8px monospace'
+            const leftEdge = 12 + ctx.measureText(oneUp).width + 8
+            ctx.font = 'bold 7px monospace'
+            const rightEdge = CW - PW - 12 - ctx.measureText(hi).width - 8
+            let lvlSize = 7
+            ctx.font = `bold ${lvlSize}px monospace`
+            while (lvlSize > 4 && ctx.measureText(LEVELS[gs.level].name).width > rightEdge - leftEdge) {
+                lvlSize--
+                ctx.font = `bold ${lvlSize}px monospace`
+            }
+            text(oneUp, 12, VH + 12, 8, '#ff5d5d', 3, 'left')
+            text(hi, CW - PW - 12, VH + 11, 7, '#ffd23f', 3, 'right')
+            text(LEVELS[gs.level].name, (leftEdge + rightEdge) / 2, VH + 12, lvlSize, '#8fa3d8')
+            // Row 2: lives left, level counter right — no shared zone.
             for (let i = 0; i < gs.lives; i++) {
                 ctx.fillStyle = '#ff5d5d'
-                ctx.beginPath(); ctx.arc(12 + i * 11, VH + 28, 4, 0, Math.PI * 2); ctx.fill()
+                ctx.beginPath(); ctx.arc(12 + i * 11, VH + 27, 3.5, 0, Math.PI * 2); ctx.fill()
             }
-            text(`LVL ${gs.level + 1}/${gs.levelCount}`, CW - PW - 12, VH + 28, 8, '#8fb0ff', 2, 'right')
-            if (toast > 0) { text(toastMsg, (VW + PW) / 2, VH + 34, 10, '#e9f7ff', 6); toast-- }
+            text(`LVL ${gs.level + 1}/${gs.levelCount}`, CW - PW - 12, VH + 27, 7, '#8fb0ff', 2, 'right')
+            // The narrator toast rides the bottom of the maze view — the same
+            // law the voice banner follows (#1249): never over the HUD band.
+            if (toast > 0) {
+                toast--
+                if (!(voiceCtl.on && voiceCtl.okT > 0)) {
+                    const flash = '#e9f7ff'
+                    ctx.font = 'bold 9px monospace'
+                    const bw = ctx.measureText(toastMsg).width + 18
+                    const bh = 13
+                    const bx = (VW - bw) / 2, by = VH - 16
+                    ctx.fillStyle = 'rgba(5,5,14,0.92)'
+                    ctx.fillRect(bx, by, bw, bh)
+                    ctx.strokeStyle = '#2b3348'
+                    ctx.strokeRect(bx + 0.5, by + 0.5, bw - 1, bh - 1)
+                    text(toastMsg, VW / 2, by + 9, 9, flash, 6)
+                }
+            }
 
             // #1249 heard-call banner + listening dot. The banner rides the
             // bottom of the maze view (never over the HUD band): the words,
