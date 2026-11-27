@@ -11,7 +11,8 @@ import { fileURLToPath } from 'node:url'
 import {
   MAP_W, MAP_H, createInitialState, stepGame, hash, done, runScore,
   buildGrid, monsterAttack, rng, setSeed, generateDungeon, isWall, blocksMove,
-  isThrowable, shootRay, watchStep, advanceMonsters, MONSTER_DEFS, MONSTER_ENERGY, qaSeatLevel, shackles,
+  isThrowable, shootRay, watchStep, advanceMonsters, MONSTER_DEFS, MONSTER_ENERGY, qaSeatLevel,
+  getItemName, shackles,
 } from '../src/games/Rogue/sim.js'
 
 let pass = 0, fail = 0
@@ -1185,6 +1186,46 @@ console.log('\namulet (#3592)')
     ok('no amulet on levels 1..19 — the goal sleeps only at dlvl 20', noneShallow)
     ok('exactly one amulet at dlvl 20: floor cell, off the start ring, trap-free', spawnOk)
     ok('the amulet is BFS-reachable from the level mouth on every seed', reachOk)
+
+    // ── #3601 §polish — the amulet is named, shimmered, and rings deep ──
+    // Amulet name: getItemName used to fall through to '?' — the pack, the
+    // inventory row, and the WIN card all name the same goal.
+    const am7 = qaSeatLevel(createInitialState(7), 20)
+    const amCell = am7.items.find(i => i.amulet)
+    ok('the amulet is named in the pack (not "?")', getItemName(amCell, am7) === 'Amulet of Yendor')
+    // Two-frame shimmer on the drawn glyph: gold on even turn-pairs, bright
+    // white on odd — a pure function of the sim turn clock, no timer. The
+    // cell must be visible for the item branch to paint it.
+    const allVis = am7.map.map(r => r.map(() => true))
+    const evenGold = buildGrid({ ...am7, turn: 4, visible: allVis })[amCell.y][amCell.x]
+    const oddWhite = buildGrid({ ...am7, turn: 6, visible: allVis })[amCell.y][amCell.x]
+    ok('the Amulet glyph shimmers gold ↔ bright white on the turn clock',
+        evenGold.color === '#ffd700' && oddWhite.color === '#fff2a0',
+        `even:${evenGold.color} odd:${oddWhite.color}`)
+    // Deep-floor descent: past dlvl 17 the stairs ring the slow low drone
+    // (deep-descend) alongside the plain descend cue.
+    let stairsAt = qaSeatLevel(createInitialState(7), 17)
+    const si = stairsAt.map.findIndex(row => row.includes('%'))
+    const sx = stairsAt.map[si].indexOf('%')
+    stairsAt = { ...stairsAt, player: { ...stairsAt.player, x: sx, y: si } }
+    const deep = stepGame(stairsAt, { type: 'DESCEND' })
+    ok('descending into dlvl 18 rings descend + deep-descend (the deep drone)',
+        deep.dungeonLevel === 18 && deep.fx.some(f => f.k === 'descend') && deep.fx.some(f => f.k === 'deep-descend'),
+        `dlvl ${deep.dungeonLevel} fx ${deep.fx.slice(-2).map(f => f.k).join(',')}`)
+    const shallowAt = createInitialState(4242)
+    const shi = shallowAt.map.findIndex(row => row.includes('%'))
+    const shx = shallowAt.map[shi].indexOf('%')
+    const shallowDesc = stepGame({ ...shallowAt, player: { ...shallowAt.player, x: shx, y: shi } }, { type: 'DESCEND' })
+    ok('descending shallow does NOT ring the deep drone', shallowDesc.dungeonLevel === 2 && shallowDesc.fx.some(f => f.k === 'descend') && !shallowDesc.fx.some(f => f.k === 'deep-descend'))
+    // Static view pins: the bloom under the card, the drone mapping, and the
+    // inventory row's gold glyph. View keeps these honest.
+    const idxSrc2 = readFileSync(fileURLToPath(new URL('../src/games/Rogue/index.jsx', import.meta.url)), 'utf8')
+    ok('the view maps deep-descend to a slow low drone (not the shallow sweep)',
+        /case 'deep-descend':[^\n]*playSweep\(180/.test(idxSrc2))
+    ok('the WIN card carries the golden bloom, reduced-motion-aware',
+        /\.rogue-win-bloom\s*{/.test(idxSrc2) && /rogue-win-bloom[^{]*{[^}]*animation: none/.test(idxSrc2) && /@media \(prefers-reduced-motion: reduce\) \{ \.rogue-win-bloom/.test(idxSrc2))
+    ok('the inventory row draws the amulet in gold (not stairs cyan)',
+        /item\.amulet[\s\S]*?'#ffd700'/.test(idxSrc2))
 
     // The you-win terminal through the real reducer: ride the guide's route
     // (it hunts the amulet and answers neighbours), then press ',' on the

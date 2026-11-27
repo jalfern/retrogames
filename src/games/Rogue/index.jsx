@@ -52,6 +52,9 @@ const fxSound = (e) => {
       case 'eat':       ac.playNoise(0.05, 0.05); ac.playTone(200, 0.07, 'triangle', 0.05); break
       case 'gold':      ac.playTone(988, 0.05, 'square', 0.05); ac.playTone(1319, 0.07, 'square', 0.05, 0.05); break
       case 'descend':   ac.playSweep(420, 110, 0.3, 'triangle', 0.06); break
+      // #3601 — the deep floors ring lower and slower: the dungeon's
+      // halfway-mark beat, not just a deeper copy of the same sweep.
+      case 'deep-descend': ac.playSweep(180, 42, 0.85, 'sawtooth', 0.09); ac.playTone(64, 0.6, 'sine', 0.06, 0.15); break
       case 'door-open': ac.playNoise(0.05, 0.06); ac.playTone(260, 0.07, 'triangle', 0.05); break
       case 'door-found': ac.playTone(660, 0.06, 'triangle', 0.05); ac.playTone(990, 0.09, 'triangle', 0.05, 0.06); break
       // #3579 → #3588: the cabinet names the trap by ear — every kind gets
@@ -118,6 +121,19 @@ const CRT_CSS = `
   0%,100% { transform: translate(0,0) } 25% { transform: translate(-2px,1px) } 50% { transform: translate(2px,-1px) } 75% { transform: translate(-1px,-1px) }
 }
 @media (prefers-reduced-motion: reduce) { .rogue-map-jitter { animation: none } }
+/* #3601 — the WIN card's golden bloom: one 0.5s radial flash under the text,
+   a pure CSS animation (no sim state), respecting the reduced-motion bar. */
+@keyframes rogueWinBloom {
+  0% { opacity: 0; transform: scale(0.6) }
+  35% { opacity: 1 }
+  100% { opacity: 0; transform: scale(1.35) }
+}
+.rogue-win-bloom {
+  position: absolute; inset: 0; pointer-events: none; z-index: 0;
+  background: radial-gradient(ellipse at center, rgba(255,215,0,0.34) 0%, rgba(255,215,0,0.12) 42%, transparent 72%);
+  animation: rogueWinBloom 0.5s ease-out 1 both;
+}
+@media (prefers-reduced-motion: reduce) { .rogue-win-bloom { animation: none; opacity: 0.22 } }
 `
 
 // ── Mobile d-pad ──────────────────────────────────────────────────────────────
@@ -507,7 +523,8 @@ export default function RogueGame() {
     return (
       <div ref={containerRef} style={base} tabIndex={0} className="rogue-crt"
            onPointerDown={() => dispatch({ type: 'NEW_GAME', seed: freshSeed() })}>
-        <div style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: '12px' }}>
+        {won && <div className="rogue-win-bloom" aria-hidden="true" />}
+        <div style={{ flex: 1, position: 'relative', zIndex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: '12px' }}>
           {won ? (
             <>
               {/* #3592 — the cart's other terminal: the Amulet, recovered. */}
@@ -580,7 +597,9 @@ export default function RogueGame() {
             shown.map(({ item, i }, listIdx) => (
               <div key={i} style={{ marginBottom: '3px', display: 'flex', gap: '8px' }}>
                 <span style={{ color: '#888', minWidth: '24px' }}>{String.fromCharCode(97 + listIdx)})</span>
-                <span style={{ color: COLORS[item.type] || '#aaa' }}>{item.type}</span>
+                <span style={{ color: item.amulet
+                  ? (Math.floor(state.turn / 2) % 2 ? '#fff2a0' : '#ffd700')
+                  : (COLORS[item.type] || '#aaa') }}>{item.type}</span>
                 <span style={{ color: '#ddd' }}>{getItemName(item, state)}</span>
                 {item === player.weapon && <span style={{ color: '#888' }}> (wielding)</span>}
                 {item === player.armor  && <span style={{ color: '#888' }}> (wearing)</span>}
