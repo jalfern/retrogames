@@ -176,6 +176,9 @@ export const MANUAL_CHECKS = [
   "scripts/evocheck.mjs",
   "scripts/filmstripcheck.mjs",
   "scripts/floorbosscheck.mjs",
+  // #3650: FIREFLY MEADOW — browser-driven demo gate (Chrome via CDP over
+  // file://, no dev server); advisory from the lane: npm run fireflymeadowcheck.
+  "scripts/fireflymeadowcheck.mjs",
   "scripts/foxgeminicheck.mjs",
   // #2261: RENARD — browser-driven demo gate like foxgeminicheck (needs the
   // dev server); advisory from the lane: npm run foxcheck.

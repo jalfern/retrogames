@@ -330,3 +330,33 @@ blooms. `window.__koiTest` exposes `ready`, `frames`, `tapAt(x, y)` (design
 units), and `koi()` (per-koi state/position snapshot). `npm run koicheck`
 proves it: boots, frames advancing, 7 koi, painted pond + koi colours, tap
 ripples + startle, 390×844 portrait, frame-time budget (17 gates).
+
+## fireflymeadow.html engine notes (#3650 — FIREFLY MEADOW)
+
+Jon's Canvas 2D prototype demo shipped as a demo: a painted dusk meadow with
+160 syncing fireflies drifting over meadow, forest and sky. Raw Canvas 2D,
+self-contained single file, zero libraries, zero image/audio assets —
+blink, drift and the dusk sweep are all synthesized at runtime.
+
+How it works: a fixed design space is not used — the canvas is letterboxed
+to any viewport and every coordinate is a fraction of W/H. The sky is a
+three-stop gradient (top/mid/horizon) that lerps through two dusk states
+over a 90 s sweep (`?dusk=0..1` pins the start); a warm horizon glow and a
+star field fade in/out with dusk. Forest silhouettes are seeded ridges
+(mulberry(1234)); the meadow is seeded grass blades (mulberry(777)) and
+wildflowers in three depth layers; an overlay watercolour brush texture
+sits on top at low alpha. Flies are seeded particles; each frame, a shared
+wave phase and a drifting sync value blend individual blink with a
+collective flash, so the meadow pulses in waves. Pointer tap drops a ring
+of flashes; holding attracts flies toward the finger (per-frame
+attraction, decays when released). The DEV hook `window.__fireflymeadowTest`
+exposes `ready`, `frames`, `taps()`, `hold()`, `setDusk(0..1)`, `setHold(on,x,y)`,
+`setTaps(x,y)`, `setFlash(v)` and `flash()`; `?dusk=` pins the dusk clock at boot.
+
+**Preview**: open `public/demos/index.html`, tap the meadow, hold to attract
+the flies. `npm run fireflymeadowcheck` proves it: 14 gates — self-contained file, DEV hook, no network assets, no
+games.js registration, boots with zero page errors, rAF advancing,
+upper-sky darkness, forest-band darkness, star pinpoints at high dusk,
+warm-glow presence at dusk 0.9 (pinned flash), tap ring, hold-attract hook +
+disk brightness, warm-horizon glow at dusk 0.1 and dusk sweep dim delta —
+plus a ~63 fps frame budget.
