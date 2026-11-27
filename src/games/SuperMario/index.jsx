@@ -1336,6 +1336,94 @@ const SuperMarioGame = () => {
             e.y = e.pipeTop - e.h
         }
 
+        // ---- ATTRACT (idle ambient motion) ----
+        // The title scene is not a static poster: Mario strolls the level, hops
+        // over live enemies and pit edges, plants rise and fall on their pipe
+        // cycle, coins spin and enemies patrol their home tiles. This is purely
+        // visual — no score, no deaths, no level changes, no menu logic — and it
+        // self-resets so the loop can never drift into play space. Direction
+        // mirrors the real physics (gravity + ground snap, never collideX/Y, so
+        // no bumpBlock can fire and coins/score are never touched).
+        let attractStall = 0
+        const resetAttract = () => loadRoom(LEVELS[0], false, undefined, { setIndex: 0, state: 'attract' })
+        const attractTick = () => {
+            const SPEED = 1.9
+            const HOP_VY = -8.8
+            // hop guards: a live enemy just ahead, a pit edge within ~20px, or a
+            // pipe/wall in the row Mario occupies.
+            const front = mario.x + mario.w
+            const feetRow = Math.floor((mario.y + mario.h) / TILE)
+            const enemyAhead = enemies.some(e => e.alive && !e.flip && e.x + e.w > front && e.x < front + 28)
+            let pitAhead = false
+            for (let c = Math.floor(front / TILE); c < level.cols; c++) {
+                if (!groundAt(c)) { pitAhead = (c * TILE - front) <= 20; break }
+            }
+            const aheadCol = Math.floor((front + 1) / TILE)
+            const topRow = Math.floor(mario.y / TILE), botRow = Math.floor((mario.y + mario.h - 1) / TILE)
+            let wallAhead = false
+            for (let r = topRow; r <= botRow; r++) if (solidAt(aheadCol, r)) { wallAhead = true; break }
+            // Ground-only hops: the stroll stays on the tilemap floor (rows 13-14).
+            // Landing on a floating brick and re-hopping from it reads as a bug,
+            // not a hop — so bricks are obstacles visually, never landing pads.
+            if (mario.onGround && feetRow >= 13 && (enemyAhead || pitAhead || wallAhead)) {
+                mario.vy = HOP_VY
+                mario.onGround = false
+            }
+            // horizontal
+            mario.vx = SPEED
+            mario.facing = 1
+            mario.x += mario.vx
+            const aheadCol2 = Math.floor((mario.x + mario.w) / TILE)
+            const topRow2 = Math.floor(mario.y / TILE), botRow2 = Math.floor((mario.y + mario.h - 1) / TILE)
+            let blocked = false
+            for (let r = topRow2; r <= botRow2; r++) if (solidAt(aheadCol2, r)) { mario.x = aheadCol2 * TILE - mario.w; mario.vx = 0; blocked = true; break }
+            if (mario.x < 0) mario.x = 0
+            // gravity + ground snap (never collideX/Y: no bumpBlock side effects)
+            mario.vy = Math.min(mario.vy + GRAVITY, MAX_FALL)
+            mario.y += mario.vy
+            mario.onGround = false
+            if (mario.vy >= 0) {
+                const r = Math.floor((mario.y + mario.h) / TILE)
+                if (r >= 0 && r < ROWS) {
+                    const left = Math.floor(mario.x / TILE), right = Math.floor((mario.x + mario.w - 1) / TILE)
+                    for (let c = left; c <= right; c++) if (solidAt(c, r)) { mario.y = r * TILE - mario.h; mario.vy = 0; mario.onGround = true; break }
+                }
+            }
+            if (mario.onGround && Math.abs(mario.vx) > 0.3) mario.anim += Math.abs(mario.vx)
+            mario.skid = false
+            // camera follows the stroller (same clamp as the play loop)
+            cameraX = Math.max(0, Math.min(mario.x - VIEW_W * 0.42, level.cols * TILE - VIEW_W))
+            // ambient motion: coins spin, enemies patrol their home tiles, plants cycle
+            for (const co of coinsArr) if (!co.taken) co.anim += 0.2
+            for (const e of enemies) {
+                if (!e.alive) continue
+                e.anim++
+                if (e.type === 'plant') { plantTick(e); continue }
+                if (e.homeX === undefined) e.homeX = e.x
+                e.vy = Math.min(e.vy + GRAVITY, MAX_FALL)
+                e.y += e.vy
+                const r = Math.floor((e.y + e.h) / TILE)
+                const cl = Math.floor(e.x / TILE), cr = Math.floor((e.x + e.w - 1) / TILE)
+                for (let c = cl; c <= cr; c++) if (solidAt(c, r)) { e.y = r * TILE - e.h; e.vy = 0; break }
+                e.x += e.vx
+                // bounded patrol ±56px (~3.5 tiles) around the spawn tile
+                if (e.x < e.homeX - 56) { e.x = e.homeX - 56; e.vx = Math.abs(e.vx) }
+                else if (e.x > e.homeX + 56) { e.x = e.homeX + 56; e.vx = -Math.abs(e.vx) }
+                const mid = Math.floor((e.y + e.h / 2) / TILE)
+                if (e.vx > 0) { const c = Math.floor((e.x + e.w) / TILE); if (solidAt(c, mid)) { e.x = c * TILE - e.w; e.vx *= -1 } }
+                else if (e.vx < 0) { const c = Math.floor(e.x / TILE); if (solidAt(c, mid)) { e.x = (c + 1) * TILE; e.vx *= -1 } }
+                if (e.x < 0) { e.x = 0; e.vx *= -1 }
+                if (e.y > VIEW_H + 30) e.alive = false
+            }
+            // self-reset: a pit fall, a wall that cannot be hopped (stalled), or the end of the run.
+            if (blocked) attractStall++
+            else attractStall = 0
+            if (mario.y > VIEW_H + 40 || attractStall > 45 || mario.x >= 66 * TILE) {
+                resetAttract()
+                attractStall = 0
+            }
+        }
+
         // ---- UPDATE ----
         const update = () => {
             tick++
@@ -1343,6 +1431,7 @@ const SuperMarioGame = () => {
                 // #1637 watch never lingers: game over and the credits release
                 // the seat silently (racer rule) — the next run starts in your hands.
                 if (watchingRef.current) { watchingRef.current = false; setWatching(false); mode = 'play' }
+                if (state === 'attract') attractTick()
                 return
             }
 
