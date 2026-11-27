@@ -95,6 +95,7 @@ console.log('#3620 kill-pop juice: debris and digits at the kill site')
     ok(/burst\(s\.x, s\.y, '#ff9d2e', 8, SCORPION_POINTS\)/.test(src), 'the scorpion pops amber at 1000')
     ok(/burst\(f\.x, f\.y, '#5ea8ff', 6, FLEA_POINTS\)/.test(src), 'the flea pops blue at 200')
     ok(/ctx\.fillText\(f\.text, f\.x, f\.y\)/.test(src), 'score digits render at the kill site')
+    ok(/pops: state\.fx\.length/.test(src), 'QA contract exposes the juice layer for the harness')
     ok(!/burst\([^)]*Math\.random/.test(src), 'the burst draws no dice — seeded drives stay byte-identical')
 }
 

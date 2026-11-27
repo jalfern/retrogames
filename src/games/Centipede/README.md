@@ -76,10 +76,17 @@ rollout (one driver per clock, the Zork lesson) — ticks land exact, and two
 identical seeded drives answer identically including what was seen en route.
 
 ## Honest gaps
-- Field is 40 scattered mushrooms, not the original's authored clovers.
+- ~~Field is 40 scattered mushrooms, not the original's authored clovers.~~
+  #3620: each wave now seats 3 clover blocks (2x2) and 2 five-cap hedges from
+  the seeded stream, remainder scattered; formations draw no extra dice, so
+  `?seed=N` replays unchanged. Authentic per-wave *layouts* (fixed tables)
+  stay UNVERIFIED in-repo — ours are seeded shapes, not the machine's map.
 - One centipede per wave with no speed ladder across waves.
 - Sound is a tone sketch; no arcade munch/click sequence.
 - The menagerie passes *through* the centipede column (the arcade's exact
   bug-vs-bug collisions are unwitnessed); cadences, spider bounce grammar
   and the poisoned-segment speed law are this repo's pinned spec, not
   claims about the machine.
+- Kill-pop debris (#3620) is our own juice grammar — fixed radial bursts and
+  score digits, render-only; the arcade's exact destruction animation frames
+  are UNVERIFIED.

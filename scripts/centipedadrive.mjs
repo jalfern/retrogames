@@ -71,6 +71,7 @@ const drive = () => page.evaluate(async (n) => {
     window.__game.reset(4242)
     const t0 = window.__game.state().tick
     let seenSpider = 0, seenScorpion = 0, seenFlea = 0, minShrooms = 999, rained = 0
+    let seenPops = 0, maxPops = 0 // #3620 kill-pop juice rides the same proof
     let lastM = window.__game.state().mushrooms
     for (let i = 0; i < n; i++) {
         const pad = { right: i % 240 < 120, left: i % 240 >= 120, a: i % 7 === 0 }
@@ -80,10 +81,12 @@ const drive = () => page.evaluate(async (n) => {
         minShrooms = Math.min(minShrooms, st.mushrooms)
         if (st.mushrooms > lastM) rained += st.mushrooms - lastM
         lastM = st.mushrooms
+        if (st.pops > 0) seenPops = 1
+        maxPops = Math.max(maxPops, st.pops)
     }
     const st = window.__game.state()
     return [st.tick - t0, st.score, st.lives, st.segments, st.heads, st.mushrooms,
-        seenSpider, seenScorpion, seenFlea, st.poisoned, rained, minShrooms, st.playerX, st.playerY].join('|')
+        seenSpider, seenScorpion, seenFlea, st.poisoned, rained, minShrooms, st.playerX, st.playerY, seenPops, maxPops].join('|')
 }, ROLLOUT)
 const r1 = await drive()
 const r2 = await drive()
@@ -94,6 +97,7 @@ rep.check('the rollout met the scorpion (venom cadence fires)', roll[7] === 1, `
 rep.check('venom landed on caps during the rollout', roll[9] > 0, `poisoned=${roll[9]}`)
 rep.check('the garden shrank during the rollout (eaters ate)', roll[11] < 40, `minShrooms=${roll[11]}`)
 rep.check('the flea rained bonus mushrooms during the rollout', roll[10] > 0, `rained=${roll[10]}`)
+rep.check('kill-pop juice fires in-browser (debris + digits at the kill sites, #3620)', roll[14] === 1 && roll[15] > 0, `seenPops=${roll[14]}, maxPops=${roll[15]}`)
 await page.keyboard.press('?') // un-pause
 await new Promise((r) => setTimeout(r, 120))
 

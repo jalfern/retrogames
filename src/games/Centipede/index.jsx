@@ -849,6 +849,7 @@ const CentipedeGame = () => {
                 scorpion: state.scorpion ? 1 : 0,
                 flea: state.flea ? 1 : 0,
                 poisoned: state.mushrooms.filter(m => m.poison).length,
+                pops: state.fx.length, // #3620 — QA can catch a kill-pop mid-flight
                 playerX: Math.round(state.player.x),
                 playerY: Math.round(state.player.y),
             }),
