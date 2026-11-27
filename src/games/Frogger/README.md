@@ -35,9 +35,10 @@ turtles, beat the clock. Fly house = +200, level clear = +1000, lanes speed up
 
 ## Verify
 ```
-npm run froggercheck             # 30 checks: attract rule 6 + seed replay +
-                               #   death distinctness + the 40-seed driver sweep
-npm run froggercheck -- --mutate # 13 mutants, all must die
+npm run froggercheck             # 61 checks: attract rule 6 + seed replay +
+                               #   death distinctness + the 40-seed driver sweep +
+                               #   the #3676 duel & tell block
+npm run froggercheck -- --mutate # 19 mutants, all must die
 npm run watchcheck -- --only frogger   # seat/handoff pilot (dev server)
 npm run feedbackcheck            # pin law + rollout floor (48)
 ```
@@ -46,7 +47,16 @@ byte-equal, every seed banks ≥1 level, 36/40 zero-death, ≥20 homes per seed,
 ≥1800 homes across the sweep.
 
 ## Honest gaps
-- No 2-player alternating turns; no arcade bonus timer per row-entry sound.
+- ~~No 2-player alternating turns; no arcade bonus timer per row-entry sound~~
+  **CLOSED by #3676**: `2` at attract/game-over opens the duel — P1 plays until
+  out, P2 takes the SAME board (filled homes persist) with 3 frogs and a full
+  clock; both scores show at all times; higher wins, equal is a draw
+  (Wikipedia §Gameplay). Surviving a hop onto a row never reached this life
+  pauses the whole field for `ROW_FREEZE` ticks — frog spins, clock stops with
+  it, rising bleep (§Gameplay's per-row tell) — and home pays the arcade's
+  time bonus, ten points per unused ½ second (§Scoring). The pause is a
+  human-seat law: under the watch seat the physics stay exact tick-for-tick so
+  the certified drivers (#2869 gapsweep, #1776 watchcheck pin) never desync.
 - Original logs-turtles carry frogs off-screen only via riding; a frog riding
   off the edge dies as "off" — faithful, but the arcade shows a distinct
   off-screen splat.

@@ -747,7 +747,7 @@ export const GAMES = [
         label: 'FROGGER',
         theme: 'dark',
         description: 'Hop five lanes of traffic, ride the logs across the river, and fill all five lily pads before the clock runs out. Turtles nap — and the water never forgets. Every pad you fill brings faster traffic.',
-        controls: ['Arrow Keys / D-Pad: Hop', 'Space / A button: Hop Forward', WATCH_HELP + ' — the crossing planner that clears the seeded sweep takes the wheel', 'Tap the screen to start and restart', '?: Pause and read the controls']
+        controls: ['Arrow Keys / D-Pad: Hop', 'Space / A button: Hop Forward', '2 at the title: two players alternating turns (shared keyboard — P1 until out, then P2 on the same board; highest score wins)', WATCH_HELP + ' — the crossing planner that clears the seeded sweep takes the wheel', 'Tap the screen to start and restart', '?: Pause and read the controls']
     },
     {
         path: '/missilecommand',

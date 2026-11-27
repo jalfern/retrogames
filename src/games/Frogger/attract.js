@@ -18,6 +18,7 @@ export const INFO_MSGS = [
     'HOP ON LOGS',
     'DON\'T GET FLATTENED',
     'AVOID THE TURTLES\' NAPS',
+    'PRESS 2 FOR TWO PLAYERS', // #3676 — alternating duel entry
 ]
 
 export const PRESS = 'TAP OR PRESS ANY KEY'
