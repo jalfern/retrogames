@@ -81,6 +81,28 @@ export function reviveGarden(field) {
 // out of the field has crossed everything the garden can offer.
 export const bulletEscapes = (y) => y < 0
 
+// #3726 — bug-vs-bug: the menagerie no longer ghosts through the column.
+// The arcade's exact collision frames are unwitnessed (README honest gap);
+// these two laws are this repo's pinned spec — the direction is legible
+// ecology, the reaches are pinned by centipedechek's §bite gates. Dice-free:
+// pure functions of positions already on the stream, so `?seed=N` replays
+// stay bit-exact.
+export const SPIDER_BITE = 12 // the eater's reach — same 12 px as a bullet's
+export const STING_REACH = 10 // the quicksilver's reach — same 10 px as its venom
+
+// The spider devours segments: eaten ≠ shot — the lunch is gone (no mushroom
+// left behind) and the arcade pays only the shooter, so bug-kills pay 0.
+// The chain still splits by the existing cut law (#3631).
+export const spiderDevours = (spider, seg) => (
+    Math.abs(spider.x - seg.x) < SPIDER_BITE && Math.abs(spider.y - seg.y) < SPIDER_BITE
+)
+
+// The scorpion stings the column: segments it touches turn red and race —
+// the same venom law the caps obey.
+export const scorpionStings = (scorpion, seg) => (
+    Math.abs(scorpion.x - seg.x) < STING_REACH && Math.abs(scorpion.y - seg.y) < STING_REACH
+)
+
 // The opening mushroom field: the port's baseline of 40, kept off the top
 // band where the centipede spawns AND off the bottom strip the zapper owns —
 // the arcade never plants the field in the player zone, and a walled-in
