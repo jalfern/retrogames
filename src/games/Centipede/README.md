@@ -124,6 +124,15 @@ identical seeded drives answer identically including what was seen en route.
   speed law are this repo's pinned spec, not claims about the machine — the
   arcade's exact bug-vs-bug frames remain unwitnessed; the shipped reaches
   (`SPIDER_BITE`/`STING_REACH`) and the one-bite-per-tick cadence are ours.
-- Kill-pop debris (#3620) is our own juice grammar — fixed radial bursts and
+- ~~Kill-pop debris (#3620) is our own juice grammar — fixed radial bursts and
   score digits, render-only; the arcade's exact destruction animation frames
-  are UNVERIFIED.
+  are UNVERIFIED.~~ #3736: the pop now speaks the plant law the sim enforces —
+  a shot segment becomes a mushroom, so a body kill sprays the cap-skin colour
+  the new cap wears (`MUSHROOM_SKIN[3].cap`) under a stepped sprout ring that
+  opens at the cell receiving it, and a head reads bigger (10 chips to the
+  body's 6) while paying its 100 like the machine table. Dice-free fixed
+  angles, so `?seed=N` replays every pop byte-identical — the determinism
+  rollout in `centipedadrive` catches a ring live, and both witnesses were
+  proven to fail on a dead push. Spider-chomp and sting-entry tells stay
+  #3733's (QA lane). The arcade's exact destruction frames remain UNVERIFIED;
+  this is arcade-close grammar, not a claim about the original's output.
