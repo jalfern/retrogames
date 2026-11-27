@@ -659,7 +659,12 @@ const SonarGame = () => {
             <div ref={stageRef} className="absolute inset-0 flex items-center justify-center" />
 
             <div className={`absolute inset-0 pointer-events-none transition-opacity duration-300 ${play ? 'opacity-100' : 'opacity-0'}`}>
-                <div className="absolute top-2 left-3 right-3 flex items-center gap-3 text-cyan-50 font-mono text-xs">
+                {/* chrome (GameChrome #437) keeps ARCADE/FEEDBACK (left) and
+                    PAUSE/PADS (right) always on at the corners — top-2 wrote
+                    DEPTH over ARCADE and the score over PAUSE (QA #3688 #1).
+                    Drop the row below the button stack; the dark band above
+                    the cave fits it on desktop AND phone landscape. */}
+                <div className="absolute left-3 right-3 flex items-center gap-3 text-cyan-50 font-mono text-xs" style={{ top: 'calc(4.9rem + var(--sat, 0px))' }}>
                     <span ref={setHud('depth')} className="font-bold tracking-widest text-sm" />
                     <span ref={setHud('lives')} className="text-red-400 text-sm" />
                     <span>PEARLS <span ref={setHud('pearls')} className="font-bold text-fuchsia-300" /></span>
