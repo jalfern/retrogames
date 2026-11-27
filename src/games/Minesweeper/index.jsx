@@ -228,6 +228,19 @@ const MinesweeperGame = () => {
         let press = null // { x, y, cx, cy, inside, preview: Set<number> } | null
         const clearPress = () => { press = null }
 
+        // The play board and the attract demo share one canvas and one cell
+        // painter — the demo must never inherit a play board's flags, press,
+        // stagger, cascade or dim marks (the attract paints demoG through the
+        // same cellPaint). Presentation only; the sim is untouched.
+        const clearPresentation = () => {
+            marks = null
+            cascade = []; cascTotal = 0; cascWait = 0; cascDone = false
+            stagger.clear(); need.clear()
+            press = null
+        }
+
+        const toAttract = () => { clearPresentation(); setSc('attract') }
+
         const buildCanvas = (d) => {
             if (canvas) canvas.remove()
             canvas = document.createElement('canvas')
@@ -563,29 +576,16 @@ const MinesweeperGame = () => {
             void d
         }
 
+        // The attract marquee shows THE demo board — the same cells, the same
+        // language, the same painter the play screen uses (docs/ART.md #6).
+        // The amber scanlines and noise field are gone: the game is the art.
         const paintDemo = () => {
-            if (!canvas) return
-            const c = DIFFS[diffRef.current].cell
+            if (!canvas || !demoG) return
             ctx.fillStyle = '#0b0e1d'
             ctx.fillRect(0, 0, canvas.width, canvas.height)
-            const t = Date.now() / 1000
-            for (let y = 0; y < Math.ceil(canvas.height / c); y++) {
-                for (let x = 0; x < Math.ceil(canvas.width / c); x++) {
-                    const k = (Math.sin(x * 12.9898 + y * 78.233) * 43758.5453) % 1
-                    const r = Math.abs(k)
-                    if (r > 0.9) {
-                        ctx.fillStyle = '#ff5d6c'
-                        ctx.beginPath(); ctx.arc(x * c + c / 2, y * c + c / 2, c * .3, 0, 7); ctx.fill()
-                    } else {
-                        ctx.fillStyle = r > 0.55 ? '#333f5f' : '#2b3554'
-                        ctx.fillRect(x * c + 1, y * c + 1, c - 2, c - 2)
-                        ctx.fillStyle = '#4d5c88'
-                        ctx.fillRect(x * c + 1, y * c + 1, c - 2, 2)
-                    }
-                }
-            }
-            ctx.fillStyle = `rgba(255,210,62,${0.35 + 0.25 * Math.sin(t * 3)})`
-            for (let x = 0; x < canvas.width; x += 6) ctx.fillRect(x, 0, 2, canvas.height)
+            for (let y = 0; y < demoG.h; y++)
+                for (let x = 0; x < demoG.w; x++)
+                    cellPaint(demoG, x, y)
         }
 
         // --------------------------------------------------- attract ----
@@ -596,6 +596,7 @@ const MinesweeperGame = () => {
             const di = Math.floor(Date.now() / 25000) % 2
             demoG = newGame(di, (Date.now() >>> 4) ^ 0xbeef)
             buildCanvas(DIFFS[di])
+            clearPresentation()
             const s = demoG
             const fx = s.w >> 1, fy = s.h >> 1
             try { dig(s, fx, fy) } catch { /* density always fine here */ }
@@ -713,7 +714,7 @@ const MinesweeperGame = () => {
             if (sc === 'over') {
                 if (performance.now() - overAtRef.current < 800) return
                 if (e.code === 'Enter' || e.code === 'KeyR') { seed = nextSeed(seed); return startPlay(diffRef.current) }
-                setSc('attract'); return
+                toAttract(); return
             }
             if (pausedRef.current || sc !== 'play') return
             if (MOVE_KEYS.has(e.code)) {
@@ -739,7 +740,7 @@ const MinesweeperGame = () => {
             if (sc === 'attract') { startPlay(0); return }
             if (sc === 'over') {
                 if (performance.now() - overAtRef.current < 800) return
-                setSc('attract'); return
+                toAttract(); return
             }
             if (sc !== 'play' || pausedRef.current || !canvas) return
             // taps that belong to the virtual pad (or any chrome) must not
