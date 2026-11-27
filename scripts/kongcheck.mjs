@@ -46,6 +46,7 @@ console.log('seeded stream: the dice live inside gs')
     ok(stepEq, 'rnd(gs) is step-identical to seedRng(seed) (#1473 replay holds)')
     ok(!/\bMath\.random\b/.test(SIM), 'the sim draws no dice outside the stream (b25 law)')
     ok(/watching \? watchStep\(gs\)/.test(SIM), 'the seat drives the sim through watchStep, not a bench script')
+    ok(/const WATCH_HORIZON = 90/.test(SIM), 'the horizon stays 90 ticks — a dive needs the full runway (#1637 b27)', 'shorten only with a re-measured sweep')
 }
 
 // ----------------------------------------------------------- level geometry ----
@@ -232,7 +233,7 @@ console.log('#3598 rivet finale: fairness, pull mechanics, collapse, honesty')
     const frozenX = f.player.x
     let froze = true
     for (let i = 0; i < PULL_TICKS - 1; i++) {
-        tickDonkeyKong(f, { left: true, right: true, jump: true, up: true })
+        tickDonkeyKong(f, { right: true, jump: true, up: true })
         if (f.player.x !== frozenX) froze = false
     }
     ok(froze, 'the pull freeze locks the feet (input held, no movement)')
