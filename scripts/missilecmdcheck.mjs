@@ -812,15 +812,27 @@ console.log('deep doctrine (#3711): knot economy and silo-first under deficit')
             { id: 92, x: 500, y: 196.86, startX: 500, startY: 0, targetX: 320, targetY: 450, speed: 1, color: '#f00', coverUntil: 0 },
         )
         let shells = 0, guard = 0, prevAmmo = gs.silos.reduce((a, s) => a + s.ammo, 0)
+        let tell = null, mk = 0 // #3707: the HUD tell data + the crowd-kill bill
         while (guard++ < 260 && gs.warheads.some((m) => m.id === 91 || m.id === 92)) {
             const cmd = gunnerStep(gs)
+            if (!tell) {
+                const h = gs.warheads.find((m) => m.held === true && Number.isFinite(m.knotX))
+                if (h) tell = { x: h.knotX, y: h.knotY }
+            }
             tickMc(gs, cmd)
+            mk += gs.events.filter((e) => e === 'multikill').length
             const ammo = gs.silos.reduce((a, s) => a + s.ammo, 0)
             if (ammo < prevAmmo) shells += prevAmmo - ammo
             prevAmmo = ammo
         }
         const survivors = gs.warheads.filter((m) => m.id === 91 || m.id === 92).length
         ok(shells === 1 && survivors === 0, 'KNOT: one shell downs two crossing warheads (predicted AND actual)', `shells ${shells}, survivors ${survivors}`)
+        // #3707 teach-the-knot delta: the hold must be visible (knotX/knotY =
+        // the meet point (402,328) while held) and the double kill audible
+        // (one 'multikill' beyond the ring's first).
+        ok(tell !== null && Math.abs(tell.x - 402) <= 4 && Math.abs(tell.y - 328) <= 4,
+            'KNOT TELL (#3707): the hold records its meet point for the HUD pulse', tell ? `${tell.x.toFixed(0)},${tell.y.toFixed(0)}` : 'no tell ever set')
+        ok(mk === 1, 'KNOT TELL (#3707): two warheads, one ring — the crowd kill bills exactly one stacked note', `${mk}`)
     }
 
     // Silo-first unit: under deficit a higher city warhead yields to the
@@ -840,6 +852,32 @@ console.log('deep doctrine (#3711): knot economy and silo-first under deficit')
         )
         const shot = gunnerStep(gs)
         ok(shot && shot.wid === 94, 'SILO-FIRST: under deficit the silo stream outranks the lower city stream', `wid ${shot && shot.wid}`)
+    }
+
+    // #3707 crowd-kill audio, negative half: a ring that downs ONE warhead must
+    // push no 'multikill' — the single-kill voice stays the baseline; only a
+    // second kill in the same blast's life stacks a note.
+    {
+        const gs = makeRun(11)
+        gs.wave = 9
+        startWave(gs, { noSmart: true })
+        gs.spawning = false
+        gs.missilesLeftInWave = 99 // keep the wave alive; only our two pilots die
+        gs.saucersLeftInWave = 0; gs.saucers = []
+        gs.warheads.length = 0
+        gs.abms.length = 0; gs.blasts.length = 0
+        gs.warheads.push(
+            { id: 95, x: 400, y: 240, startX: 400, startY: 0, targetX: 400, targetY: 450, speed: 1, color: '#f00', coverUntil: 0 },
+        )
+        let mk = 0, died = false, guard = 0
+        while (guard++ < 400 && !died) {
+            tickMc(gs, null)
+            // grow a manual ring over the lone warhead: one kill, no stack.
+            if (guard === 2) gs.blasts.push({ x: 400, y: 240, radius: 1, growing: true, center: false, color: '#fff' })
+            died = gs.warheads.every((m) => m.id !== 95 || m.dead)
+            mk += gs.events.filter((e) => e === 'multikill').length
+        }
+        ok(died && mk === 0, 'crowd-kill silence (#3707): a ring that takes ONE warhead bills no stacked note', `mk ${mk}`)
     }
 
     // Deep A/B: 12 seeds x waves 9-11, doctrine on vs off. Honest claims: the
@@ -901,6 +939,10 @@ console.log('component wiring: pin, report, restart, seat')
     ok(/isWatchKey\(e\)/.test(src) && /isTakeoverKey\(e\)/.test(src), 'Y seats, any driving key takes over')
     ok(/import\.meta\.env\.DEV/.test(src) && /window\.__mcTest/.test(src), '__mcTest is DEV-only')
     ok(/gs\.over && !wasOver\) release\(false\)/.test(src), 'watch never lingers into GAME OVER (silent)')
+    // #3707 teach-the-knot deltas live in this file — pin their wiring so a
+    // refactor cannot silently drop the tell or the crowd-kill voice.
+    ok(/ev === 'multikill'/.test(src), '#3707: the stacked crowd-kill note is wired to the event loop')
+    ok(/m\.held !== true \|\| !Number\.isFinite\(m\.knotX\)/.test(src), '#3707: the knot hold pulses its meet point on the board')
     ok(/release\(false\) \/\/ watch never lingers/.test(src), 'a fresh raid starts in your hands')
     // #3630 slice 2 — the hot-seat wiring the sim section can't see
     ok(/e\.code === 'Digit2' \|\| e\.code === 'Digit1'/.test(src),

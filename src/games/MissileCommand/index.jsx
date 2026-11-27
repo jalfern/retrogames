@@ -301,6 +301,10 @@ const MissileCommandGame = () => {
             // #3638 attract ad: after the tick so its announce event survives
             // tickMc's event reset (the warble plays on the live board).
             if (attractUiRef.current) attractFerry(gs)
+            // #3707 crowd-kill counter — 'multikill' events within this tick's
+            // batch stack a rising arpeggio (each extra kill a higher note:
+            // the sound of volume, matching the arcade's per-missile billing).
+            let mkStack = 0
             for (const ev of gs.events) {
                 if (ev === 'pew') audioController.playTone(600, 0.05, 'triangle')
                 else if (ev === 'boom') audioController.playTone(100, 0.2, 'noise', 0.5)
@@ -338,6 +342,15 @@ const MissileCommandGame = () => {
                     audioController.playNoise(0.2, 0.5)
                     audioController.playTone(740, 0.1, 'square', 0.12)
                     audioController.playTone(1180, 0.08, 'square', 0.09, 0.09)
+                }
+                // #3707 crowd kill — one ring sweeping several warheads must
+                // sound like the windfall it is: a bright stacked chirp per
+                // co-kill, each one higher than the last, riding under the
+                // boom's 0.5 so the single-kill voice stays the baseline.
+                else if (ev === 'multikill') {
+                    mkStack++
+                    audioController.playTone(523 + mkStack * 160, 0.07, 'square', 0.12)
+                    audioController.playTone(784 + mkStack * 160, 0.09, 'square', 0.09, 0.06)
                 }
                 // #3630 slice 2: the handoff jingle spells who is next — P2
                 // climbs (G→D, the bright right corner), P1 descends (E→C, the
@@ -505,6 +518,22 @@ const MissileCommandGame = () => {
                 ctx.fill()
                 ctx.fillStyle = pulse ? '#00e5ff' : '#ff2020' // spark alternates with the pulse
                 ctx.fillRect(m.x - 1, m.y - 1, 2, 2)
+            })
+
+            // #3707 knot tell — while the watch HOLDS a warhead for a crossing,
+            // pulse a gold ring at the predicted meet point. The arcade taught the
+            // expert habit by billboarding the multi-kill score popup after the
+            // fact; ours previews it: gold = "a shell will spend here and pay for
+            // many." Pure render (knotX/knotY carry no dice), so the byte pins and
+            // the deep A/B replay byte-identical.
+            gs.warheads.forEach((m) => {
+                if (m.held !== true || !Number.isFinite(m.knotX)) return
+                const beat = Math.floor(gs.tick / 6) % 2 === 0
+                ctx.strokeStyle = 'rgba(255,210,61,0.7)'
+                ctx.lineWidth = 1.5
+                ctx.beginPath()
+                ctx.arc(m.knotX, m.knotY, beat ? 9 : 7, 0, Math.PI * 2)
+                ctx.stroke()
             })
 
             // #3629 cruise saucers — the satellite-shaped ferry (Atari 1981
@@ -722,6 +751,11 @@ const MissileCommandGame = () => {
                     winner: gs.over ? winner(gs) : null,
                     state: gs.state,
                     crosshair: [Math.round(gs.crosshair.x), Math.round(gs.crosshair.y)],
+                    // #3707 — the knot hold seen from the outside: which warheads
+                    // the watch is holding, and the meet point the board pulses.
+                    held: gs.warheads.filter((m) => m.held === true).length,
+                    knotAt: gs.warheads.filter((m) => m.held === true && Number.isFinite(m.knotX))
+                        .map((m) => ({ x: Math.round(m.knotX), y: Math.round(m.knotY) })),
                 }),
                 // the drive flips seat 2 without a join flash: the guard and
                 // actuation code paths read the flag, which is what's proven.
@@ -746,6 +780,23 @@ const MissileCommandGame = () => {
                 seat: () => { if (!gs.watch) { seat(); } return gs.watch },
                 release: () => { release(); return gs.watch },
                 start: () => { startRun(); return gs.seed },
+                // #3707 — a knot on demand: the checker's proven crossing pair
+                // (meet point 402,328) placed on the live board under a wave-9
+                // deficit, so a screenshot can show the hold tell and a drive can
+                // watch the crowd-kill moment. Harness lift, DEV-only like the rest.
+                knotDemo: () => {
+                    gs.wave = 9; startWave(gs, { noSmart: true })
+                    gs.spawning = false
+                    gs.missilesLeftInWave = 2
+                    gs.saucersLeftInWave = 0; gs.saucers.length = 0
+                    gs.warheads.length = 0; gs.abms.length = 0; gs.blasts.length = 0
+                    gs.silos.forEach((s) => { s.ammo = 1 })
+                    gs.warheads.push(
+                        { id: 901, x: 300, y: 200, startX: 300, startY: 0, targetX: 500, targetY: 450, speed: 1, color: '#f00', coverUntil: 0 },
+                        { id: 902, x: 500, y: 196.86, startX: 500, startY: 0, targetX: 320, targetY: 450, speed: 1, color: '#f00', coverUntil: 0 },
+                    )
+                    return true
+                },
             }
         }
 

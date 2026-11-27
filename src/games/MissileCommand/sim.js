@@ -561,6 +561,13 @@ export function tickMc(gs, cmd = null) {
                 if (m.smart && !e.center) return
                 m.dead = true
                 addScore(gs, 25) // #3630 slice 2: the kill pays the seat that took it
+                // #3707 crowd-kill audio: the arcade billed 25 at once for every
+                // missile a single explosion downed — our ring stayed silent
+                // however many it swept. One 'multikill' per kill beyond the
+                // first in this blast (over its whole life, not just one tick);
+                // the draw stacks a rising note on the boom for each.
+                e.kills = (e.kills || 0) + 1
+                if (e.kills >= 2) gs.events.push('multikill')
                 if (m.smart) {
                     gs.events.push('smartkill')
                     smartWrecks.push([m.x, m.y])
@@ -778,6 +785,14 @@ export function gunnerStep(gs, opts = {}) {
             // re-solve falls back to the plain earliest-intercept answer —
             // a held warhead can never be forgotten.
             w.held = true
+            // #3707 knot tell: a hold needs a face. Record the predicted meet
+            // point — where one shell will pay for many — so the draw can pulse
+            // it while the hold is live. Pure render data (no dice, no score):
+            // the eye learns the knot habit the arcade taught with its
+            // multi-kill score popups.
+            const meet = stepWarhead(w, holdJ)
+            w.knotX = meet.x
+            w.knotY = meet.y
             w.coverUntil = gs.tick + Math.max(1, holdJ - holdK - BLAST_LIFE + 2)
             continue
         }
