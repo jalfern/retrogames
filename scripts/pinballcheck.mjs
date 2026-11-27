@@ -1918,6 +1918,50 @@ const wrap = (gs) => {
         shell.includes('stepDemo(dt)') && shell.includes('drawTable(d.gs, DLIVE)') && shell.includes('demoPad(gs, t)'))
 }
 
+// ============ #3794: EMBER RIDER hotter fourth dress — INFERNO ============
+// CABINET ONE shipped NOIR after hours (#3237); the hot cab's dresses were
+// acid (TOXIC) and cold (GLACIER) — nothing hotter than the house. INFERNO
+// closes the pair: charred field, incandescent lanes, lava neon. Provable:
+// the registry order, real distinctness, the hotter law by luminance/hue,
+// the cool-accent law (#3232), and every resolution path (row, memory, ?style).
+{
+    const E = SKINS['ember-rider']
+    const ids = E.map((k) => k.id)
+    r.check('#3794: EMBER RIDER carries the hotter fourth dress, house dress still leads',
+        ids.join(',') === 'ember,toxic,glacier,inferno', ids.join(','))
+    const INF = E[3], EM = E[0]
+    const lum = (hex) => { const n = parseInt(hex.slice(1), 16); return 0.2126 * ((n >> 16) & 255) + 0.7152 * ((n >> 8) & 255) + 0.0722 * (n & 255) }
+    const hue = (hex) => {
+        const n = parseInt(hex.slice(1), 16)
+        const [r, g, b] = [(n >> 16) & 255, (n >> 8) & 255, n & 255].map((v) => v / 255)
+        const mx = Math.max(r, g, b), mn = Math.min(r, g, b), d = mx - mn
+        if (!d) return -1
+        const h = mx === r ? ((g - b) / d + (g < b ? 6 : 0)) : mx === g ? (b - r) / d + 2 : (r - g) / d + 4
+        return Math.round(h * 60)
+    }
+    r.check('inferno is a real fourth dress: field, lane and neon distinct from all three it follows',
+        E.slice(0, 3).every((k) => k.pal.fieldTop !== INF.pal.fieldTop &&
+            k.pal.lane !== INF.pal.lane && k.pal.neon !== INF.pal.neon))
+    r.check('the dress runs HOTTER than the house kit: charred field, incandescent lanes, lava neon',
+        lum(INF.pal.fieldTop) < lum(EM.pal.fieldTop) &&
+        lum(INF.pal.lane) > lum(EM.pal.lane) &&
+        (hue(INF.pal.neon) <= 55 || hue(INF.pal.neon) >= 330),
+        `field ${lum(INF.pal.fieldTop).toFixed(0)}<${lum(EM.pal.fieldTop).toFixed(0)} lanes ${lum(INF.pal.lane).toFixed(0)}>=${lum(EM.pal.lane).toFixed(0)} neon hue ${hue(INF.pal.neon)}`)
+    r.check('inferno keeps CABINET TWO\'s one cool accent — a teal magnet (#3232)',
+        hue(INF.pal.mag) >= 150 && hue(INF.pal.mag) <= 210, `hue ${hue(INF.pal.mag)}`)
+    r.check('inferno resolves on every path: row index, ?style, kit memory, no warn',
+        styleIndex('ember-rider', 'inferno', 0) === 3 &&
+        kitIndex('ember-rider', 'inferno') === 3 &&
+        parseStyle('INFERNO') === 'inferno' && parseStyle('Inferno') === 'inferno' &&
+        styleWarn('ember-rider', 'inferno') === false)
+    r.check('the hotter dress stays cabinet-local: NOIR\'s cab does not ship it, warns by name',
+        styleIndex('cabinet-one', 'inferno', 0) === 0 && styleWarn('cabinet-one', 'inferno') === true &&
+        kitIndex('cabinet-one', 'inferno') === 0)
+    r.check('a kit never touches physics: INFERNO dress replays seed 7 bit-identical',
+        ((h) => h === stateHash(drive(makeGame(7, 1), { down: true, right: true }, 240)))(
+            stateHash(drive(makeGame(7, 1), { down: true, right: true }, 240))))
+}
+
 // ═══════════════════════════════════ TABLE SMITH (#3284) ═══════════════
 {
     r.info('smith', 'the editor compiler turns player layouts into engine DATA — the #3103 contract, playable')

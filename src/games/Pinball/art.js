@@ -204,6 +204,41 @@ export const PAL_GLACIER = {
     kickerRgb: '232,244,255',
 };
 
+// EMBER RIDER kit "INFERNO" (#3794) — the hotter dress the pair was missing:
+// the machine heats until the playfield chars to black glass, the lane graphics
+// burn to incandescent white, and the neon runs molten lava-orange. The teal
+// magnet stays (CABINET TWO's one cool accent, #3232), just paler against the
+// char. Paired by law (#3259): palette only, 27-key parity, no physics.
+export const PAL_INFERNO = {
+    fieldTop: '#1c0506',
+    fieldBot: '#050101',
+    lane: '#fff3d0',
+    laneDim: 'rgba(255,243,208,0.25)',
+    neon: '#ff6a00',
+    hot: '#ff2d1a',
+    sling: '#ffd0a0',
+    chrome: '#ffeedd',
+    glow: '#ffb14d',
+    score: '#ffedb8',
+    wood: '#20090a',
+    woodHi: '#3f1410',
+    dmd: '#ffe6a0',
+    dmdOff: 'rgba(255,230,160,0.06)',
+    mag: '#45e0dc',
+    hotRgb: '255,45,26',
+    magRgb: '69,224,220',
+    trailRgb: '255,220,160',
+    spark: '255,240,200',
+    capHi: '#ffb27a',
+    hotOff: 'rgba(255,45,26,0.18)',
+    magOff: 'rgba(69,224,220,0.25)',
+    hotSoft: 'rgba(255,45,26,0.85)',
+    hotGlass: 'rgba(255,45,26,0.20)',
+    glowOff: 'rgba(255,177,77,0.15)',
+    hotDim: 'rgba(255,45,26,0.25)',
+    kickerRgb: '255,243,208',
+};
+
 export const SCORE_DIGITS = 6;
 export const SEG_W = 14, SEG_H = 24;    // 7-segment glyph size
 export const SCORE_X = 96, SCORE_Y = 44; // centred between the reserved corners
@@ -523,6 +558,7 @@ export const SKINS = {
         { id: 'ember', label: 'EMBER', pal: PAL_EMBER },
         { id: 'toxic', label: 'TOXIC', pal: PAL_TOXIC },
         { id: 'glacier', label: 'GLACIER', pal: PAL_GLACIER },
+        { id: 'inferno', label: 'INFERNO', pal: PAL_INFERNO },
     ],
 };
 export const skinsFor = (tableId) => SKINS[tableId] || SKINS['cabinet-one'];
