@@ -537,7 +537,7 @@ console.log('round clear, intermission briefs, fruit cues & stage tell (#3667)')
     ok(paidK === 5000 && kindSeen === 'key', 'eating the round-9 key pays 5000 and hands the cue the kind', `${paidK}/${kindSeen}`)
 
     // component wiring: the live loop runs the phase machine and the cues
-    const src2 = readFileSync('src/games/PacMan/index.jsx', 'utf8')
+    const src2 = readFileSync('src/games/Pacman/index.jsx', 'utf8')
     ok(/if \(mazeCleared\(map\)\) \{/.test(src2), 'the live loop notices a clear the tick it happens')
     ok(/phase = 'freeze'/.test(src2) && /briefForRound\(round\)/.test(src2), 'a clear lifts through freeze, and rounds 1-2 route to the brief')
     ok(/phase === 'brief' && phaseT >= BRIEF_TICKS/.test(src2) && /intermissionFrame\(phaseT\)/.test(src2),
