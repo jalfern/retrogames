@@ -13,7 +13,7 @@
 
 import { readFileSync, writeFileSync } from 'node:fs'
 import { spawnSync } from 'node:child_process'
-import { MAP, COLS, ROWS, CORNER_PX, makePacman, stepPlayer, tileOpen, cloneMap, stepGhost, scaredSkin, SCARED_FLASH_AT, SCARED_BLINK, POWER_TICKS, makeFruitTracker, stepFruit, FRUIT_TICKS, FRUIT_AT, FRUIT_POS, FRUIT_BLINK, SPEED_STAGES, speedStage, pacSpeedForScore, ghostSlowsAt, FRUIT_TABLE, fruitForRound, energizerTicks, TUNNEL_ROW, mazeCleared, briefForRound, CLEAR_FREEZE, BRIEF_TICKS, intermissionFrame, fruitEatTones, makeTunnelRumble, stepTunnelRumble, RUMBLE_PULSE } from '../src/games/Pacman/move.js'
+import { MAP, COLS, ROWS, CORNER_PX, makePacman, stepPlayer, tileOpen, validMoves, bfsDir, safeMove, stepGhost, cloneMap, scaredSkin, SCARED_FLASH_AT, SCARED_BLINK, POWER_TICKS, makeFruitTracker, stepFruit, FRUIT_TICKS, FRUIT_AT, FRUIT_POS, FRUIT_BLINK, SPEED_STAGES, speedStage, watchHorizon, pacSpeedForScore, ghostSlowsAt, FRUIT_TABLE, fruitForRound, energizerTicks, TUNNEL_ROW, mazeCleared, briefForRound, CLEAR_FREEZE, BRIEF_TICKS, intermissionFrame, fruitEatTones, makeTunnelRumble, stepTunnelRumble, RUMBLE_PULSE } from '../src/games/Pacman/move.js'
 import { seedRng, seedFromQuery } from '../src/utils/gameContract.js'
 import { plant, pull } from './lib/mutateguard.mjs'
 
@@ -482,6 +482,80 @@ console.log('progression: score stages, tunnel crawl, round-keyed fruit, energiz
     ok(/speedStage\(gs\.score\)/.test(src), 'the report/debug read the live score stage')
 }
 
+// ------------------------------------------------------- watch (#3679) ----
+// The attract autopilot's panic horizon must track the #3661 ladder: a fixed
+// 8 tiles reacts too late to the ×1.2 late-stage ghosts (pacwatchdrive measured
+// 10.3 captures/min at stage 4 pre-fix). Horizon = 8 + 2·stage; stage 0 keeps
+// the classic 8 exactly. Survival is judged on matched dice — same seed, same
+// ghost stream, horizon the only difference — swept over twelve boards.
+console.log('watch: panic horizon scales with the ladder (#3679)')
+{
+    const hz = [0, 1, 2, 3].map(watchHorizon)
+    ok(hz.join(',') === '8,10,12,14', 'the panic horizon widens 2 tiles per stage from the old 8', hz.join(','))
+    ok(watchHorizon(null) === 8 && watchHorizon(undefined) === 8, 'stage-less callers keep the old horizon 8')
+
+    const ghostsAt = () => ([
+        { id: 1, x: 13, y: 11, color: '#ff0000', path: [], progress: 0, speed: 0.08, state: 'chase', type: 'blinky', penTimer: 0 },
+        { id: 2, x: 13, y: 14, color: '#ffb8ff', path: [], progress: 0, speed: 0.075, state: 'pen', type: 'pinky', penTimer: 120 },
+        { id: 3, x: 12, y: 14, color: '#00ffff', path: [], progress: 0, speed: 0.07, state: 'pen', type: 'inky', penTimer: 360 },
+        { id: 4, x: 15, y: 14, color: '#ffb852', path: [], progress: 0, speed: 0.06, state: 'pen', type: 'clyde', penTimer: 600 },
+    ])
+    const resetPos = (pac, ghosts) => {
+        Object.assign(pac, makePacman())
+        const fresh = ghostsAt()
+        ghosts.forEach((g, i) => Object.assign(g, { x: fresh[i].x, y: fresh[i].y, state: fresh[i].state, progress: 0, penTimer: fresh[i].penTimer }))
+    }
+    // the attract decision, mirroring index.jsx: panic inside the horizon, else
+    // nearest energizer, else nearest dot, else a random legal move
+    const attractDir = (map, pac, ghosts, hzn, rand) => {
+        const mapX = Math.round(pac.x), mapY = Math.round(pac.y)
+        const chase = ghosts.find(g => g.state === 'chase' && Math.sqrt(Math.pow(g.x - mapX, 2) + Math.pow(g.y - mapY, 2)) < hzn)
+        if (chase) return safeMove(map, pac, ghosts, mapX, mapY)
+        const pw = bfsDir(map, mapX, mapY, 'power')
+        if (pw && !pac.poweredUp) return pw
+        const dot = bfsDir(map, mapX, mapY, 'dot')
+        if (dot) return dot
+        const moves = validMoves(map, mapX, mapY)
+        return moves.length ? moves[Math.floor(rand() * moves.length)] : { x: 0, y: 0 }
+    }
+    // 60 s of attract on a stage-4 board (score pinned at 5000): returns captures
+    const attractRide = (seed, ticks, hznOf) => {
+        const map = cloneMap()
+        const pacman = makePacman()
+        const gs = { map, pacman, score: 5000 }
+        const ghosts = ghostsAt()
+        const rand = seedRng(seed)
+        let hits = 0
+        for (let i = 0; i < ticks; i++) {
+            if (pacman.poweredUp && --pacman.powerTimer <= 0) {
+                pacman.poweredUp = false
+                ghosts.forEach(g => { if (g.state === 'scared') g.state = 'chase' })
+            }
+            if (pacman.progress === 0) {
+                pacman.nextDir = attractDir(map, pacman, ghosts, hznOf(speedStage(gs.score)), rand)
+                pacman.dir = pacman.nextDir || pacman.dir
+            }
+            const eaten = stepPlayer(gs, [])
+            if (eaten === 'power' && pacman.poweredUp) ghosts.forEach(g => { if (g.state === 'chase') g.state = 'scared' })
+            if (mazeCleared(map)) {
+                for (let r = 0; r < ROWS; r++) for (let c = 0; c < COLS; c++) map[r][c] = MAP[r][c]
+                resetPos(pacman, ghosts)
+                continue
+            }
+            ghosts.forEach(g => stepGhost(g, gs, rand, { eat: () => {}, hit: () => { hits++; resetPos(pacman, ghosts) } }))
+        }
+        return hits
+    }
+    const seeds = [3679, 12, 77, 505, 101, 202, 303, 404, 5050, 616, 727, 7]
+    let tunedHits = 0, fixedHits = 0
+    for (const s of seeds) {
+        tunedHits += attractRide(s, 3600, (st) => watchHorizon(st))
+        fixedHits += attractRide(s, 3600, () => 8)
+    }
+    ok(tunedHits <= fixedHits - 3, 'matched dice: the wider horizon saves lives on the twelve-board sweep', `tuned ${tunedHits} vs fixed-8 ${fixedHits}`)
+    ok(tunedHits <= 8, 'the autopilot still gets caught sometimes (a coward horizon is not the fix)', `${tunedHits}/12 boards`)
+}
+
 // --------------------------------------------- tunnel-crawl rumble (#3677) ----
 console.log('tunnel-crawl rumble: rising edge, pulse cadence, house silence (#3677)')
 {
@@ -721,6 +795,9 @@ if (process.argv.includes('--mutate')) {
         ['#3677: the rumble never fires', 'src/games/Pacman/move.js',
             `if (now && (!tr.crawling || tr.cd <= 0)) {`,
             `if (false) {`],
+        ['#3679: the panic horizon stays at 8 while ghosts climb', 'src/games/Pacman/move.js',
+            `return 8 + 2 * (stage || 0)`,
+            `return 8`],
     ]
     let died = 0
     for (const [name, file, from, to] of MUTANTS) {
