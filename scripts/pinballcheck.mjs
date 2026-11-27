@@ -2283,6 +2283,35 @@ const wrap = (gs) => {
         capPeak <= 0.12 / 4, `capPeak=${capPeak.toFixed(5)} bumper/4=${(0.12 / 4).toFixed(5)}`)
 }
 
+// drive-script race law (#3778): the DMD is one announce slot and two says can
+// land in one step chain (a wrap feed crossing the spinner writes SPINNER x2
+// over ORBIT! +150 before any rAF paints it), so NO strip sample — poll- or
+// rAF-side — can prove a callout. The sim must ring every announce at the
+// write funnel and hand the ring to the drives as display state (stateHash
+// enumerates its fields and never sees it — #3766's shape), and pinballplay
+// must consume the ring; the pixel-strip proof must sample inside the paint
+// loop while the line is up, never post-break.
+{
+    const simSrc = readFileSync(new URL('../src/games/Pinball/sim.js', import.meta.url), 'utf8')
+    const playSrc = readFileSync(new URL('./pinballplay.mjs', import.meta.url), 'utf8')
+    r.check('#3778 say() rings every announce at the write funnel (push + cap)',
+        /gs\.msgLog\.push\(text\)/.test(simSrc) && /gs\.msgLog\.length > 12/.test(simSrc))
+    const gsR = makeGame(81)
+    const h0R = stateHash(gsR)
+    gsR.msgLog.push('ORBIT! +150')   // ring already open (say() is unexported — pin 1 proves the funnel)
+    gsR.msg = { text: 'SPINNER x2', t: 50, T: 50 }   // the same-frame overwrite, written after the ring
+    const soR = stateOf(gsR)
+    r.check('#3778 the ring catches the same-frame overwrite and stateHash never sees it',
+        soR.msgLog.includes('ORBIT! +150') && soR.dmd.text === 'SPINNER x2' && stateHash(gsR) === h0R,
+        `ring=${soR.msgLog.join('|')} dmd="${soR.dmd.text}"`)
+    r.check('#3778 the drives read the ring — no one-shot ORBIT dmd.text sample survives',
+        /st\.msgLog\.includes\('ORBIT! \+100'\)/.test(playSrc) && /eorb\.msgLog\.includes\('ORBIT! \+150'\)/.test(playSrc) &&
+        !/dmd\.text === 'ORBIT! \+1[05]0'/.test(playSrc))
+    r.check('#3778 the pixel-strip proof samples inside the paint loop while the line is up',
+        /window\.__strip = \{ lit: 0 \}/.test(playSrc) && /if \(s && s\.dmd\.text\)/.test(playSrc) &&
+        /getImageData\(112, 246, 136, 24\)/.test(playSrc) && !/const strip = g\.getImageData/.test(playSrc))
+}
+
 restoreAll()
 if (MUT) {
     const red = r.failed > 0

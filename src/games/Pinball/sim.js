@@ -375,6 +375,11 @@ export function makeGame(seed = 1, cab = 0) {
         magCharge: 1, magHold: 0, magTouched: false, magFlash: 0, magFreeFlash: 0,
         // DMD message state lives in the SIM so Node can pin the text (#3199)
         msg: { text: '', t: 0, T: 0 },
+        // #3778 display state: a ring of every announce text this game has
+        // said. Two says can land in one step chain (an orbit wrap crossing the
+        // spinner is the classic) — the strip only ever shows the last, so
+        // drives read this log instead of sampling the strip.
+        msgLog: [],
         // rung-2 flash mirrors (0 until lit; the shell reads these for lamps)
         rampFlash: 0, laneFlash: [0, 0, 0], lockFlash: 0, mbFlash: 0,
         events: [],
@@ -502,7 +507,13 @@ function add(gs, pts) { gs.score += pts * (gs.multiball ? gs.table.rules.mbDoubl
 // DMD message (rung 3): the strip's text is SIM state so pinballcheck can
 // pin what the display says at any tick. Tick-driven decay; a newer message
 // simply replaces the old one.
-function say(gs, text, ticks = 110) { gs.msg = { text, t: ticks, T: ticks }; }
+function say(gs, text, ticks = 110) {
+    gs.msg = { text, t: ticks, T: ticks };
+    // #3778: ring at the write funnel — a same-frame overwrite never reaches the
+    // strip or any sample, but the log catches both says, in order.
+    gs.msgLog.push(text);
+    if (gs.msgLog.length > 12) gs.msgLog.shift();
+}
 
 function substep(gs, dt) {
     const T = gs.table;
@@ -1233,6 +1244,7 @@ export function stateOf(gs) {
         magCharge: gs.magCharge, magHold: gs.magHold, magTouched: gs.magTouched,
         // what the DMD strip reads this tick (deterministic — Node can pin it)
         dmd: { text: gs.msg.t > 0 ? gs.msg.text : '', t: gs.msg.t, T: gs.msg.T || 0 },
+        msgLog: gs.msgLog.slice(),   // #3778 announce ring (stateHash never sees it)
         hash: stateHash(gs),
     };
 }
