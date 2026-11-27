@@ -38,7 +38,7 @@ try { ({ chromium } = require('playwright-core')) } catch {
 
 const PORT = process.argv.includes('--port') ? process.argv[process.argv.indexOf('--port') + 1] : '9381'
 const CHROME = '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome'
-const DEMOS = ['ocean', 'shore', 'campfire', 'mountains', 'storm', 'reef', 'blackhole', 'neonrain', 'volcano', 'deepglass', 'stickwalk', 'physicswalk', 'learnedwalk', 'horse', 'horse-gemini', 'furlong', 'fox-gemini', 'fox', 'horse-gemini-hd', 'starry-night', 'koi', 'fireflymeadow', 'tidepool', 'lanternriver', 'orrery', 'snowglobe']
+const DEMOS = ['ocean', 'shore', 'campfire', 'mountains', 'storm', 'reef', 'blackhole', 'neonrain', 'volcano', 'deepglass', 'stickwalk', 'physicswalk', 'learnedwalk', 'horse', 'horse-gemini', 'furlong', 'fox-gemini', 'fox', 'horse-gemini-hd', 'starry-night', 'koi', 'fireflymeadow', 'tidepool', 'lanternriver', 'orrery', 'snowglobe', 'bonsai']
 const LAB_PAGES = ['weightsurgery']
 
 const results = []

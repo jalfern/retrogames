@@ -386,3 +386,29 @@ upper-sky darkness, forest-band darkness, star pinpoints at high dusk,
 warm-glow presence at dusk 0.9 (pinned flash), tap ring, hold-attract hook +
 disk brightness, warm-horizon glow at dusk 0.1 and dusk sweep dim delta —
 plus a ~63 fps frame budget.
+
+## bonsai.html engine notes (#3763 — BONSAI)
+
+Jon's Canvas 2D prototype demo shipped as a demo: a gnarled bonsai tree on a
+pot over a wooden stand, living through the seasons — no audio, zero-library,
+self-contained single file, Canvas 2D.
+
+How it works: a 900x1000 world space with a fixed stand/pot at the bottom; the
+canvas is letterboxed to any viewport (portrait-first). The trunk runs in a
+seeded segment chain (gnarled sine kinks), branches are cubic-bezier strokes
+with wobble and taper; foliage is six ink-wash opaque pads, each painted once
+per frame at seeded wobble with a blossom/summer/autumn/winter palette that
+interpolates between seasonal endpoint colors; new-year snow piles up on the
+pot's rim; drifting petals, leaves or snow fall from the sky; one bird crosses
+the summer sky. The year turns on its own (`~0.016/s`); dragging scrubs the
+year fast — `seasonT = (seasonT - dy*0.0019 + 1) % 1`; tapping foliage pads
+prunes them to a bare twig and they regrow over ~28 s. The DEV hook
+`window.__bonsaiTest` exposes `ready`, `frames`, `setSeason(t)`, `bird(t)`,
+`season()`, `pads()` and `padScreenPos(i)`.
+
+**Preview**: open `public/demos/index.html`, drag to scrub the year, tap a
+pad to prune it. `npm run bonsaicheck` proves it: 25 gates — DEV hook, rAF
+advancing, zero page errors, wall painted, season set/RTT + drag law + spring
+vs summer luminance delta, trunk/pot/pad pixels, tap-to-prune + hold-others,
+phone 390x844 boot/paint/no-errors, self-contained file + honest credits card
++ index entry + no games.js registration.
