@@ -53,9 +53,12 @@ waves pays 100 per living city and 50 per spare missile, then reloads.
 
 ## Verify
 ```
-npm run missilecmdcheck             # 33 checks: raid replay, sweep 24 seeds waves 1-5 clean,
-                                  #   doctrine pins (safe altitude, urgency, cover), wiring + registry
-npm run missilecmdcheck -- --mutant # 9 mutants, all must die
+npm run missilecmdcheck             # 49 checks: raid replay, sweep 24 seeds waves 1-5 clean,
+                                  #   doctrine pins (safe altitude, urgency, cover), saucers
+                                  #   (byte-exact gate, entry/launch/kill/hold), wiring + registry
+npm run missilecmdcheck -- --mutant # 12 mutants, all must die
+npm run mcsaucerdrive             # live browser ferry drive: gate negative, probe↔pixels,
+                                  #   real mouse+Space 125 kill (needs the dev server)
 npm run watchcheck                # live browser pilot (needs the dev server)
 npm run feedbackcheck             # pin law + rollout floor (48)
 npm run attractcheck              # attract screen rule 6

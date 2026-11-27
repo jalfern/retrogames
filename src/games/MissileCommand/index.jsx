@@ -418,9 +418,13 @@ const MissileCommandGame = () => {
                     tick: gs.tick, score: gs.score, wave: gs.wave, done: gs.over,
                     cities: citiesAlive(gs), silos: gs.silos.filter((s) => s.alive).length,
                     warheads: gs.warheads.length, abms: gs.abms.length, saucers: gs.saucers.length,
+                    saucerAt: gs.saucers.map((s) => ({ x: Math.round(s.x), y: Math.round(s.y), dir: s.dir, speed: s.speed })),
                     ammo: gs.silos.reduce((a, s) => a + (s.alive ? s.ammo : 0), 0),
                     watching: gs.watch, seed: gs.seed,
                 }),
+                // harness-only ferry lift (same cheat DebugKit offers) so a drive
+                // script doesn't sit through five waves at 60 fps
+                toWave6: () => { gs.wave = 6; startWave(gs); return gs.wave },
                 // harness fallback for the seat (the pilot presses Y like a player)
                 seat: () => { if (!gs.watch) { seat(); } return gs.watch },
                 release: () => { release(); return gs.watch },
