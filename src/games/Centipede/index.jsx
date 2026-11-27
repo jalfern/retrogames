@@ -5,7 +5,7 @@ import VirtualControls from '../../components/VirtualControls'
 import { GAMES } from '../../config/games'
 import { attractFrame, DIM } from './attract.js'
 import { exposeGame, unexposeGame, exposeFeedbackState, unexposeFeedbackState, seedFromQuery, seedRng } from '../../utils/gameContract'
-import { CELL_SIZE, START_LIVES, INVULN_TICKS, scoreForSegment, MUSHROOM_POINTS, mushroomField, SPIDER_POINTS, SCORPION_POINTS, FLEA_POINTS, SPIDER_EVERY, SCORPION_EVERY, FLEA_COOLDOWN, poisonMushroom, bulletEscapes } from './sim.js'
+import { CELL_SIZE, START_LIVES, INVULN_TICKS, scoreForSegment, MUSHROOM_POINTS, mushroomField, SPIDER_POINTS, SCORPION_POINTS, FLEA_POINTS, SPIDER_EVERY, SCORPION_EVERY, FLEA_COOLDOWN, poisonMushroom, bulletEscapes, waveSpeed, splitSpd } from './sim.js'
 
 // CENTIPEDE (#1473 batch 16) — the Feb port's score was dead, one touch was
 // instant hard-reset, cut bodies never grew heads, and the mushroom field
@@ -61,6 +61,7 @@ const CentipedeGame = () => {
         let tickN = 0
         let lives = START_LIVES
         let over = false
+        let wave = 1              // #3631 — the speed ladder; cleared fields climb it
         let respawnAt = -1       // tick the zapper returns, -1 = alive
         let invulnUntil = 0
         let spiderAt = SPIDER_EVERY     // tick the next spider enters
@@ -140,11 +141,13 @@ const CentipedeGame = () => {
 
         const spawnCentipede = () => {
             state.centipedes = []
+            // #3631 — the wave the field rebuilds on sets the column's pace.
+            const spd = waveSpeed(wave)
             // Head
-            state.centipedes.push({ x: state.width / 2, y: 0, vx: CENTIPEDE_SPEED, vy: 0, head: true })
+            state.centipedes.push({ x: state.width / 2, y: 0, vx: CENTIPEDE_SPEED, vy: 0, head: true, spd })
             // Body
             for (let i = 1; i < 10; i++) {
-                state.centipedes.push({ x: state.width / 2 - i * CELL_SIZE, y: 0, vx: CENTIPEDE_SPEED, vy: 0, head: false })
+                state.centipedes.push({ x: state.width / 2 - i * CELL_SIZE, y: 0, vx: CENTIPEDE_SPEED, vy: 0, head: false, spd })
             }
         }
 
@@ -157,6 +160,7 @@ const CentipedeGame = () => {
 
         const init = () => {
             // Fresh board: zapper + seeded mushroom field + a centipede on top
+            wave = 1 // #3631 — a fresh run restarts the ladder at the base pace
             respawnAt = -1
             invulnUntil = 0
             spiderAt = tickN + SPIDER_EVERY
@@ -381,7 +385,14 @@ const CentipedeGame = () => {
                     // The segment behind the gap becomes a new head — the
                     // arcade's chain rule (the pre-batch code punted on it).
                     state.centipedes.splice(hitSeg, 1)
-                    if (state.centipedes[hitSeg]) state.centipedes[hitSeg].head = true
+                    if (state.centipedes[hitSeg]) {
+                        state.centipedes[hitSeg].head = true
+                        // #3631 — the arcade's escape rule: the rear sub-chain
+                        // behind every cut races at a compounded faster pace.
+                        for (let j = hitSeg; j < state.centipedes.length; j++) {
+                            state.centipedes[j].spd = splitSpd(state.centipedes[j].spd)
+                        }
+                    }
 
                     burst(seg.x, seg.y, '#ffffff', 8, scoreForSegment(seg.head))
                     audioController.playNoise(0.2, 0.3)
@@ -457,8 +468,9 @@ const CentipedeGame = () => {
             // We need to look ahead for mushrooms
             state.centipedes.forEach(c => {
                 // Move — a redened (poison-touched) segment races at double
-                // the pace until the wave rebuilds.
-                c.x += c.fast ? c.vx * 2 : c.vx
+                // the pace until the wave rebuilds; #3631 stacks the chain's
+                // own speed (wave pace × split boosts) underneath it.
+                c.x += (c.fast ? 2 : 1) * (c.spd || 1) * c.vx
                 c.y += c.vy
 
                 // Turn/Drop Logic
@@ -493,6 +505,7 @@ const CentipedeGame = () => {
             })
 
             if (state.centipedes.length === 0) {
+                wave += 1 // #3631 — the field rebuilds one rung faster
                 spawnCentipede() // Next level
                 audioController.playSweep(400, 800, 0.5, 'sine')
             }
@@ -850,6 +863,8 @@ const CentipedeGame = () => {
                 flea: state.flea ? 1 : 0,
                 poisoned: state.mushrooms.filter(m => m.poison).length,
                 pops: state.fx.length, // #3620 — QA can catch a kill-pop mid-flight
+                wave, // #3631 — speed ladder rung
+                rearSpd: Math.round(100 * state.centipedes.reduce((m, c) => Math.max(m, c.spd || 1), 1)) / 100,
                 playerX: Math.round(state.player.x),
                 playerY: Math.round(state.player.y),
             }),

@@ -72,9 +72,13 @@ const drive = () => page.evaluate(async (n) => {
     const t0 = window.__game.state().tick
     let seenSpider = 0, seenScorpion = 0, seenFlea = 0, minShrooms = 999, rained = 0
     let seenPops = 0, maxPops = 0 // #3620 kill-pop juice rides the same proof
+    let maxWave = 0, maxRearSpd = 1 // #3631 the ladder must visibly climb in-browser
+    let seenPoison = 0 // venom must LAND en route — faster waves get it eaten sooner
     let lastM = window.__game.state().mushrooms
     for (let i = 0; i < n; i++) {
-        const pad = { right: i % 240 < 120, left: i % 240 >= 120, a: i % 7 === 0 }
+        // Fire on the right-sweeps only: the left-sweeps glide so the
+        // scorpion can survive long enough to venomise caps (#3631 pacing).
+        const pad = { right: i % 240 < 120, left: i % 240 >= 120, a: i % 240 < 120 && i % 7 === 0 }
         window.__game.step(pad, 1)
         const st = window.__game.state()
         seenSpider |= st.spider; seenScorpion |= st.scorpion; seenFlea |= st.flea
@@ -83,10 +87,13 @@ const drive = () => page.evaluate(async (n) => {
         lastM = st.mushrooms
         if (st.pops > 0) seenPops = 1
         maxPops = Math.max(maxPops, st.pops)
+        maxWave = Math.max(maxWave, st.wave)
+        maxRearSpd = Math.max(maxRearSpd, st.rearSpd)
+        if (st.poisoned > 0) seenPoison = 1
     }
     const st = window.__game.state()
     return [st.tick - t0, st.score, st.lives, st.segments, st.heads, st.mushrooms,
-        seenSpider, seenScorpion, seenFlea, st.poisoned, rained, minShrooms, st.playerX, st.playerY, seenPops, maxPops].join('|')
+        seenSpider, seenScorpion, seenFlea, seenPoison, rained, minShrooms, st.playerX, st.playerY, seenPops, maxPops, maxWave, maxRearSpd].join('|')
 }, ROLLOUT)
 const r1 = await drive()
 const r2 = await drive()
@@ -98,6 +105,19 @@ rep.check('venom landed on caps during the rollout', roll[9] > 0, `poisoned=${ro
 rep.check('the garden shrank during the rollout (eaters ate)', roll[11] < 40, `minShrooms=${roll[11]}`)
 rep.check('the flea rained bonus mushrooms during the rollout', roll[10] > 0, `rained=${roll[10]}`)
 rep.check('kill-pop juice fires in-browser (debris + digits at the kill sites, #3620)', roll[14] === 1 && roll[15] > 0, `seenPops=${roll[14]}, maxPops=${roll[15]}`)
+rep.check('cuts race the rear chain in-browser (split boost compounds toward the cap, #3631)', roll[17] > 1, `maxRearSpd=${roll[17]}`)
+// The glide-pad rollout keeps the zapper alive but rarely empties a column;
+// a second all-fire rollout must clear wave 1 and spawn its faster rebuild.
+const climb = await page.evaluate(async (n) => {
+    window.__game.reset(777)
+    let maxWave = 1
+    for (let i = 0; i < n; i++) {
+        window.__game.step({ right: i % 240 < 120, left: i % 240 >= 120, a: i % 7 === 0 }, 1)
+        maxWave = Math.max(maxWave, window.__game.state().wave)
+    }
+    return maxWave
+}, 4000)
+rep.check('a cleared field rebuilds one rung faster in-browser (#3631)', climb >= 2, `maxWave=${climb}`)
 await page.keyboard.press('?') // un-pause
 await new Promise((r) => setTimeout(r, 120))
 

@@ -96,3 +96,14 @@ export function mushroomField(rand, width, height) {
     }
     return field
 }
+
+// #3631 — wave speed ladder (the arcade law: each cleared wave spawns faster,
+// and the rear half behind every cut escapes at a higher pace). The exact
+// rates are this repo's pinned spec, not claims about the machine; the
+// direction (monotone ramp, compounding split boost) is the arcade law.
+// Dice-free: pure functions of wave/spd, so seeded rollouts replay whole.
+export const WAVE_RAMP = 0.08
+export const SPLIT_BOOST = 1.25
+export const SPEED_CAP = 2
+export const waveSpeed = (wave) => Math.min(1 + (wave - 1) * WAVE_RAMP, SPEED_CAP)
+export const splitSpd = (spd) => Math.min((spd || 1) * SPLIT_BOOST, SPEED_CAP)

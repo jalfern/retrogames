@@ -12,7 +12,7 @@
 
 import { readFileSync } from 'node:fs'
 import { spawnSync } from 'node:child_process'
-import { mushroomField, scoreForSegment, MUSHROOM_POINTS, CELL_SIZE, START_LIVES, SPIDER_POINTS, SCORPION_POINTS, FLEA_POINTS, SPIDER_EVERY, SCORPION_EVERY, FLEA_COOLDOWN, poisonMushroom, bulletEscapes } from '../src/games/Centipede/sim.js'
+import { mushroomField, scoreForSegment, MUSHROOM_POINTS, CELL_SIZE, START_LIVES, SPIDER_POINTS, SCORPION_POINTS, FLEA_POINTS, SPIDER_EVERY, SCORPION_EVERY, FLEA_COOLDOWN, poisonMushroom, bulletEscapes, waveSpeed, splitSpd, SPEED_CAP } from '../src/games/Centipede/sim.js'
 import { seedRng, seedFromQuery } from '../src/utils/gameContract.js'
 import { plant, pull } from './lib/mutateguard.mjs'
 
@@ -99,6 +99,28 @@ console.log('#3620 kill-pop juice: debris and digits at the kill site')
     ok(!/burst\([^)]*Math\.random/.test(src), 'the burst draws no dice — seeded drives stay byte-identical')
 }
 
+// ------------------------------------------------ wave speed ladder (#3631) ----
+console.log('#3631 wave speed ladder: waves race, cuts accelerate')
+{
+    ok(waveSpeed(1) === 1, 'wave 1 runs at the base pace')
+    let mono = true
+    for (let w = 2; w <= 40; w++) if (waveSpeed(w) < waveSpeed(w - 1)) mono = false
+    ok(mono && waveSpeed(13) > waveSpeed(12), 'spawn speed climbs every wave up to the cap (never slower)')
+    ok(waveSpeed(40) === SPEED_CAP && waveSpeed(99) === SPEED_CAP, `the ramp caps at ×${SPEED_CAP} base`)
+    ok(splitSpd(1) === 1.25 && splitSpd(1.5625) === 1.953125 && splitSpd(SPEED_CAP) === SPEED_CAP,
+        'cuts compound the rear chain ×1.25, bounded by the cap')
+    ok(waveSpeed(7) === waveSpeed(7), 'the ladder is dice-free — pure function of the wave')
+    const src = readFileSync('src/games/Centipede/index.jsx', 'utf8')
+    ok(/const spd = waveSpeed\(wave\)/.test(src), 'spawns seat the current wave pace')
+    ok(/for \(let j = hitSeg; j < state\.centipedes\.length; j\+\+\)/.test(src) && /state\.centipedes\[j\]\.spd = splitSpd\(state\.centipedes\[j\]\.spd\)/.test(src),
+        'the rear sub-chain behind every cut takes the boost')
+    ok(/c\.x \+= \(c\.fast \? 2 : 1\) \* \(c\.spd \|\| 1\) \* c\.vx/.test(src),
+        'movement carries the chain speed under the venom double')
+    ok(/wave \+= 1/.test(src), 'a cleared field rebuilds one rung faster')
+    ok(/wave = 1 \/\/ #3631/.test(src), 'a fresh run restarts the ladder at wave 1')
+    ok(/wave, \/\/ #3631/.test(src) && /rearSpd:/.test(src), 'QA contract exposes the ladder rung and the fastest live chain')
+}
+
 // --------------------------------------------------------- arcade scoring ----
 console.log('1981 scoring law')
 {
@@ -183,7 +205,7 @@ console.log('#3604 wiring: the garden walks, stings and rains')
         'the spider kill pays through the proximity band')
     ok(/poisonMushroom\(m\)/.test(src), 'the scorpion poisons mushrooms on its path')
     ok(/if \(hitPoison\) c\.fast = true/.test(src), 'a centipede crossing venom turns red')
-    ok(/c\.x \+= c\.fast \? c\.vx \* 2 : c\.vx/.test(src), 'the redened segment races at double pace')
+    ok(/c\.x \+= \(c\.fast \? 2 : 1\) \* \(c\.spd \|\| 1\) \* c\.vx/.test(src), 'the redened segment races at double pace (atop its chain speed)')
     ok(/if \(s\.x < -20 \|\| s\.x > state\.width \+ 4\)[\s\S]{0,120}?scorpionAt = tickN \+ SCORPION_EVERY/.test(src),
         'the streak exits the far side and the cadence restarts')
     ok(/rainMushrooms\(2\)/.test(src), 'every flea hit rains two bonus mushrooms')
@@ -238,8 +260,8 @@ if (process.argv.includes('--mutant')) {
             `isHead ? 100 : 10`,
             `isHead ? 5 : 10`],
         ['cut bodies never grow heads', I,
-            `if (state.centipedes[hitSeg]) state.centipedes[hitSeg].head = true`,
-            ``],
+            `state.centipedes[hitSeg].head = true`,
+            `void hitSeg`],
         ['the touch is harmless (no lives loop)', I,
             `lives--
             if (lives <= 0) {`,
@@ -258,7 +280,7 @@ if (process.argv.includes('--mutant')) {
             `if (hitPoison) c.fast = true`,
             `void hitPoison`],
         ['the redened never actually speeds up', I,
-            `c.x += c.fast ? c.vx * 2 : c.vx`,
+            `c.x += (c.fast ? 2 : 1) * (c.spd || 1) * c.vx`,
             `c.x += c.vx`],
         ['flea hits never rain mushrooms', I,
             `rainMushrooms(2) // every hit rains the bonus mushrooms`,
@@ -294,6 +316,19 @@ if (process.argv.includes('--mutant')) {
         ['score digits never draw', I,
             `ctx.fillText(f.text, f.x, f.y)`,
             `void f.text`],
+        // #3631 — the ladder is a law too.
+        ['waves never ramp (one pace forever)', S,
+            `Math.min(1 + (wave - 1) * WAVE_RAMP, SPEED_CAP)`,
+            `1`],
+        ['the cleared field never rebuilds faster', I,
+            `wave += 1 // #3631 — the field rebuilds one rung faster`,
+            `void 0 // #3631`],
+        ['spawns ignore the wave pace', I,
+            `const spd = waveSpeed(wave)`,
+            `const spd = 1`],
+        ['cuts never accelerate the rear chain', I,
+            `state.centipedes[j].spd = splitSpd(state.centipedes[j].spd)`,
+            `void j`],
     ]
     let died = 0
     for (const [name, file, from, to] of MUTANTS) {
