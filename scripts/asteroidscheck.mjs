@@ -12,7 +12,7 @@
 
 import { readFileSync } from 'node:fs'
 import { spawnSync } from 'node:child_process'
-import { makeAsteroid, spawnWave, scoreForSize, livesForScore, START_LIVES, makeRun, tickAsteroids, watchStep, stateHash, SAUCER_SCORE, SAUCER_ROCK_BONUS, SAUCER_RADIUS, SAUCER_BULLET_SPEED, SAUCER_AIM, saucerAimWidth, saucerTell, SAUCER_TELL_PITCH, SHIP_SIZE, SHIP_HULL, RESPAWN_DELAY, INVULN_TICKS, HYPER_COOLDOWN, HYPER_INVULN, HYPER_BLINK } from '../src/games/Asteroids/sim.js'
+import { makeAsteroid, spawnWave, scoreForSize, livesForScore, START_LIVES, makeRun, tickAsteroids, watchStep, stateHash, SAUCER_SCORE, SAUCER_ROCK_BONUS, SAUCER_RADIUS, SAUCER_BULLET_SPEED, SAUCER_AIM, saucerAimWidth, saucerTell, SAUCER_TELL_PITCH, SHIP_SIZE, SHIP_HULL, RESPAWN_DELAY, INVULN_TICKS, HYPER_COOLDOWN, HYPER_INVULN, HYPER_BLINK, HULL_DANCE_TTC } from '../src/games/Asteroids/sim.js'
 import { seedRng, seedFromQuery } from '../src/utils/gameContract.js'
 import { plant, pull } from './lib/mutateguard.mjs'
 
@@ -579,6 +579,101 @@ console.log('panic reserve (#2001 pt4): doomed ships jump, safe ones keep the wh
     ok(earlyJumps === 0, 'the reserve is never spent early — calm fields keep the wheel', `${earlyJumps}`)
 }
 
+// ---------------------------------------------------------- kiting dance ----
+// #3706 — the machine pays 200/1000 for the saucers, and the arcade's answer
+// to that money is the dance: draw the hull, beat its fire, bank the bounty.
+// The driver never saw the money (rollout paid rocks only) and its eye fled a
+// hull at ttc<75 while honest bullets were the real gun. Now: hull threat
+// reuses the rock-law margin (45), the rollout ledger pays SAUCER_SCORE, and
+// greedy — no longer fleeing a crossing hull — keeps the crosshair on the
+// bounty and fires on the window. Dice-free; the survival floor unchanged, so
+// no candidate is ever bought into a death.
+console.log('kiting dance (#3706): hull past the margin is bounty, the bank pays, the gun still flees')
+{
+    ok(HULL_DANCE_TTC === 45, 'the hull margin is the rock-law reuse (45 ticks), not a new law', `${HULL_DANCE_TTC}`)
+    ok(/ttc < HULL_DANCE_TTC && ttc < tThreat/.test(SIM),
+        'scan gates the hull threat at the dance margin — the gun is tracked as bullets')
+    ok(/if \(ev\.saucerKilled\) bounty \+= SAUCER_SCORE\[ev\.saucerKilled\] \* 1\.2/.test(SIM),
+        'the rollout ledger pays the machine table (200/1000 × 1.2 onto the rocks\' ledger)')
+
+    const kiteWorld = (sd, opts = {}) => {
+        const gs = makeRun(sd, { width: 600, height: 800 })
+        gs.attract = false
+        gs.watching = true
+        gs.invulnUntil = 0
+        gs.asteroids = []
+        gs.bullets = opts.bullet ? [{
+            x: gs.ship.x + 90, y: gs.ship.y, vx: -4, vy: 0,
+            life: 140, hostile: true, owner: 'small',
+        }] : []
+        gs.saucers = [{
+            big: false,
+            x: gs.ship.x + (opts.closing ? 60 : 220), y: gs.ship.y - 30,
+            vx: opts.closing ? -2.7 : 2.7, vy: 0, phase: 0, amp: 1.2,
+            cooldown: 400, life: 900,
+        }]
+        return gs
+    }
+    // The dance itself: a crossing hull, gun still cold — the pilot answers
+    // with the crosshair, not its back, and banks the 1000 deterministically.
+    for (const sd of [11, 44, 55]) {
+        const gs = kiteWorld(sd)
+        const first = watchStep(gs)
+        ok(first && first.fire === true && first.hyper !== true,
+            `seed ${sd}: the crossing hull is met with the gun, not a flee`, JSON.stringify(first))
+        let killed = 0
+        for (let t = 0; t < 240 && !gs.over; t++) {
+            const ev = tickAsteroids(gs, watchStep(gs) || { left: false, right: false, thrust: false, fire: false })
+            if (ev.saucerKilled) killed++
+        }
+        ok(killed === 1, `seed ${sd}: the dance banks the bounty (saucer killed inside 240 ticks)`, `${killed}`)
+    }
+    // The bank is real progress: ten seeds of seated play take the arcade's
+    // 200/1000 money down repeatedly — measured 14 (the pre-dance law banked
+    // 5 on the same seeds) — and the dance is never a suicide.
+    let banked = 0, danceDeaths = 0
+    for (const s of [1, 2, 3, 4, 5, 6, 7, 8, 9, 10]) {
+        const gs = makeRun(s * 7919 + 13, { width: 600, height: 800 })
+        gs.attract = false
+        gs.watching = true
+        for (let t = 0; t < 2400 && !gs.over; t++) {
+            const ev = tickAsteroids(gs, watchStep(gs) || { left: false, right: false, thrust: false, fire: false })
+            if (ev.saucerKilled) banked++
+            if (ev.died) danceDeaths++
+        }
+    }
+    ok(banked >= 10, 'the seated fleet banks 10+ saucer bounties across ten seeds', `${banked}`)
+    ok(danceDeaths === 0, 'the dance is never suicide — zero deaths across the banking seeds', `${danceDeaths}`)
+    // The margin keeps its teeth: a hull that actually reaches you point-blank
+    // with no steering out spends the panic reserve (verbatim #2001 pt4), and
+    // a rock threat still returns the verbatim flee — fire stays false.
+    const cornered = watchStep(kiteWorld(11, { closing: true }))
+    ok(cornered && cornered.hyper === true,
+        'point-blank hull with no way out still buys the jump — the dance is not muzzle-buzzing', JSON.stringify(cornered))
+    const rockTrap = makeRun(11, { width: 600, height: 800 })
+    rockTrap.attract = false
+    rockTrap.watching = true
+    rockTrap.invulnUntil = 0
+    rockTrap.saucers = []
+    rockTrap.asteroids = [
+        { x: rockTrap.ship.x + 60, y: rockTrap.ship.y, vx: -3, vy: 0, size: 40, vertices: [] },
+        { x: rockTrap.ship.x - 60, y: rockTrap.ship.y, vx: 3, vy: 0, size: 40, vertices: [] },
+        { x: rockTrap.ship.x, y: rockTrap.ship.y + 60, vx: 0, vy: -3, size: 40, vertices: [] },
+        { x: rockTrap.ship.x, y: rockTrap.ship.y - 60, vx: 0, vy: 3, size: 40, vertices: [] },
+    ]
+    rockTrap.hyperReadyAt = rockTrap.tickN + 30 // cooled: no jump — watch the flee itself
+    const rockFlee = watchStep(rockTrap)
+    ok(rockFlee && rockFlee.fire === false, 'the rock-law flee is untouched — threats without a bounty never fire', JSON.stringify(rockFlee))
+    // Incoming fire with the shooter alive: the pilot may answer on the dodge
+    // (that IS kiting) but must survive the shot it drew.
+    {
+        const gs = kiteWorld(11, { bullet: true })
+        let died = false
+        for (let t = 0; t < 240 && !gs.over; t++) if (tickAsteroids(gs, watchStep(gs) || { left: false, right: false, thrust: false, fire: false }).died) died = true
+        ok(!died, 'the shot it draws, the pilot outruns — incoming fire never banks a suicide', `over=${gs.over}`)
+    }
+}
+
 // --------------------------------------------------------------- look polish ----
 // #2001 part 3 — the machine's rocks JAG (docs/ART.md bar 1 + bar 5 "juice").
 // Silhouette dice swing ±0.25 / ±0.2 / ±0.15 of nominal by size tier (bigger
@@ -800,6 +895,13 @@ if (process.argv.includes('--mutant')) {
         ['#3553 ease never reaches the floor', S,
             `const k = age >= SAUCER_AIM.learn ? 0 : 1 - age / SAUCER_AIM.learn`,
             `const k = 1 - age / (SAUCER_AIM.learn * 2)`],
+        // #3706 kiting-dance mutants — the bounty and the margin must both pay.
+        ['#3706 bounty docked again — the rollout stops paying saucer kills', S,
+            `if (ev.saucerKilled) bounty += SAUCER_SCORE[ev.saucerKilled] * 1.2`,
+            `if (ev.saucerKilled) bounty += 0`],
+        ['#3706 hull flees at the old 75 — the dance margin is gone', S,
+            `if (ttc < HULL_DANCE_TTC && ttc < tThreat)`,
+            `if (ttc < 75 && ttc < tThreat)`],
         // #3568 tell mutants — the curve must stay visible and audible.
         ['the tell never warms (the curve goes invisible again)', S,
             `export function saucerTell(s) {

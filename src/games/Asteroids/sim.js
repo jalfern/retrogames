@@ -551,6 +551,11 @@ export function tickAsteroids(gs, input = null) {
 // ---------------------------------------------------------------------------
 
 const WATCH_HORIZON = 70   // ~1.2 s — long enough for a led shot to fly and kill
+// #3706 — the kiting dance. A saucer hull outranks as a flee-threat
+// only inside the rock-law margin; its gun is honestly tracked as bullets.
+// 45 ticks is the same "does it actually reach the hull" horizon the rocks
+// already use (README §whole-tick lift) — reuse, don't invent a second law.
+export const HULL_DANCE_TTC = 45
 
 // Wrap-aware delta (the whole field wraps — so does the driver's eye).
 const wrapDelta = (d, span) => {
@@ -663,13 +668,20 @@ function scan(c) {
     // 200/1000 against a rock's 20/50/100, so the eye discounts their
     // distance by 120 px — the machine's own economics, aimed with their
     // instantaneous velocity (the weave is slow, the lead stays honest).
+    // #3706 — the hull flees only inside the rock-law margin (45 ticks, the
+    // same honest horizon as a drifting pebble), NOT at 75: the saucer's gun
+    // is already tracked for real, as hostile bullets below. Beyond that
+    // margin a crossing hull is the board's biggest bounty, and the arcade's
+    // answer to it is the kiting dance — keep the crosshair, answer the gun,
+    // sidestep the reply — not its back. Rocks and bullets keep the verbatim
+    // flee law; the panic reserve still catches what steering cannot outrun.
     for (const s of c.saucers) {
         const dx = wrapDelta(s.x - c.ship.x, c.width)
         const dy = wrapDelta(s.y - c.ship.y, c.height)
         const svy = saucerVy(s)
         const rr = SAUCER_RADIUS[s.big ? 'big' : 'small'] + SHIP_SIZE * 0.4
         const ttc = arriveTTC(dx, dy, s.vx - c.ship.vx, svy - c.ship.vy, rr)
-        if (ttc < 75 && ttc < tThreat) { tThreat = ttc; threat = { x: s.x, y: s.y } }
+        if (ttc < HULL_DANCE_TTC && ttc < tThreat) { tThreat = ttc; threat = { x: s.x, y: s.y } }
         // Hunt the UFO, but never buzz the muzzle: the kill discount applies
         // only beyond 160 px — inside that, its own gun outranks its bounty.
         const raw = Math.sqrt(dx * dx + dy * dy)
@@ -763,11 +775,22 @@ function rollout(gs, cand) {
     const c = cloneWorld(gs)
     const s0 = scan(c)
     let broken = 0
+    let bounty = 0
     let minGap = Infinity
     for (let t = 0; t < WATCH_HORIZON; t++) {
         const ev = tickAsteroids(c, t < HOLD ? cand : greedy(c))
         if (ev.died) return t
         broken += ev.smashed
+        // #3706 — the kiting dance pays its bounty. A saucer kill credits at
+        // the machine's own table scaled onto the rocks' ledger (a small rock
+        // = 100 arcade = 120 value units, so ×1.2): small UFO +1200, big
+        // +240 — the same 10×/2× ratios #2001 ships. Far below the
+        // horizon×10000 survival floor, so no candidate is ever bought into a
+        // death; it only ranks among the survivors, which is where the dance
+        // lives. A dead saucer also erases its future fire, so survival
+        // already leans toward the pilot that banks it — this makes the bank
+        // explicit instead of an accident of luck.
+        if (ev.saucerKilled) bounty += SAUCER_SCORE[ev.saucerKilled] * 1.2
         if (ev.wave) broken += 4 // a cleared field pays like a few more rocks
         const g = closestGap(c)
         if (g < minGap) minGap = g
@@ -779,7 +802,7 @@ function rollout(gs, cand) {
         shaping += Math.abs(s1.aim.diff) <= s1.aim.window ? 150 : Math.max(0, 90 - Math.abs(s1.aim.diff) * 30)
         if (s1.aim.dist < 340 && s1.aim.closing === Infinity) shaping += 60 // a clean shot is loaded
     }
-    return WATCH_HORIZON * 10000 + broken * 120 + shaping + Math.min(minGap, 150)
+    return WATCH_HORIZON * 10000 + broken * 120 + bounty + shaping + Math.min(minGap, 150)
 }
 
 // Candidate order IS the tie-break: hold the line and shoot first, coast next,
