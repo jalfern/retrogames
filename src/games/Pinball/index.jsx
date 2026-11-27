@@ -1955,6 +1955,20 @@ const PinballGame = () => {
                 // dev rig (#3297): park balls in the tower so the gate slam can
                 // be screenshotted without farming 3 locks. DEV-only, like tiltInfo.
                 devLock: (n) => { gsRef.current.locks = n },
+                // dev rig (#3793): stage the lit-hierarchy looks — SET lamps, a bank
+                // in progress and the jackpot window — so the intensity classes can be
+                // screenshotted without farming feeds. Seam-only: lamps read gs, so
+                // staging gs flags paints them; no scores, no drain, DEV-only.
+                devLit: (o = {}) => {
+                    const g = gsRef.current
+                    if (o.rampLit !== undefined) g.rampLit = !!o.rampLit
+                    if (o.rampLLit !== undefined) g.rampLLit = !!o.rampLLit
+                    if (o.orbitLit !== undefined) g.orbitLit = !!o.orbitLit
+                    if (o.orbitBank !== undefined) g.orbitBank = o.orbitBank | 0
+                    if (o.lockFlash !== undefined) g.lockFlash = o.lockFlash | 0
+                    if (o.mb !== undefined) { g.multiball = !!o.mb; g.mbFlash = o.mb ? 60 : 0 }
+                    return { rampLit: g.rampLit, rampLLit: g.rampLLit, orbitLit: g.orbitLit, orbitBank: g.orbitBank, multiball: g.multiball }
+                },
                 // dev rig (#3304): flip the bed's pack overlay so the hand-off
                 // (solo → mb → solo) is driveable without farming three locks.
                 // Seam-only: it never touches gs.multiball, so drains, locks and
