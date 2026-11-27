@@ -95,12 +95,37 @@ console.log('#3620 kill-pop juice: debris and digits at the kill site')
         'body chips wear the cap they become; the head reads bigger than body 10 (#3736)')
     ok(/state\.fx\.push\(\{ ring: 1, x: cellX \+ 8, y: cellY \+ 8/.test(src),
         'a sprout ring marks the cell that receives the new cap (#3736)')
-    ok(/burst\(s\.x, s\.y, '#c17bff', 8, SPIDER_POINTS\(dist\)\)/.test(src), 'the spider pops purple with its band')
-    ok(/burst\(s\.x, s\.y, '#ff9d2e', 8, SCORPION_POINTS\)/.test(src), 'the scorpion pops amber at 1000')
+    ok(/spiderPop\(s\.x, s\.y, SPIDER_POINTS\(dist\)\)/.test(src), 'the spider pops purple with its band')
+    ok(/scorpionPop\(s\.x, s\.y, SCORPION_POINTS\)/.test(src), 'the scorpion pops amber at 1000')
     ok(/burst\(f\.x, f\.y, '#5ea8ff', 6, FLEA_POINTS\)/.test(src), 'the flea pops blue at 200')
     ok(/ctx\.fillText\(f\.text, f\.x, f\.y\)/.test(src), 'score digits render at the kill site')
     ok(/pops: state\.fx\.length/.test(src), 'QA contract exposes the juice layer for the harness')
     ok(!/burst\([^)]*Math\.random/.test(src), 'the burst draws no dice — seeded drives stay byte-identical')
+}
+
+// ------------------------------------------- #3749 authored kill-pop shapes ----
+console.log('#3749 authored kill-pop: every bug dies in its own body language')
+{
+    const src = readFileSync('src/games/Centipede/index.jsx', 'utf8')
+    ok(src.includes("huskL: ['.##', '###', '###', '###', '.##']"),
+        'a husk half is the C left of the round body — original mask art')
+    ok(src.includes("huskR: ['##.', '.##', '.##', '.##', '##.']"),
+        'the husk halves are mirrors — the body splits along the strike axis')
+    ok(/huskBreak = \(x, y, color\) => \{[\s\S]{0,120}'huskL', -1\.3[\s\S]{0,120}'huskR', 1\.3/.test(src),
+        'the halves drift apart symmetrically on fixed offsets — no dice')
+    ok(/plantPop[\s\S]{0,320}?huskBreak\(x, y, isHead \? '#ffffff' : MUSHROOM_SKIN\[3\]\.cap\)/.test(src),
+        'the most frequent kill breaks its own husk under the cap chips')
+    ok(/for \(let i = 0; i < 4; i\+\+\) \{[\s\S]{0,120}'leg',/.test(src),
+        'four of the spider\'s eight legs scatter as shards when it dies')
+    ok(/scorpionPop = \(x, y, points\) => \{[\s\S]{0,200}?pincerO', -1\.0[\s\S]{0,120}pincerO', 1\.0/.test(src),
+        'the scorpion sheds a mirrored pair of pincers')
+    ok(/f\.sh === 'pincerO' && f\.life % 6 < 3 \? 'pincerS'/.test(src),
+        'the shed claws snap shut on the life clock — one garden, one clock')
+    ok(/else if \(f\.sh\) \{/.test(src), 'the renderer draws the authored debris glyphs')
+    ok(/huskBreak\(seg\.x, seg\.y, '#c17bff'\)/.test(src),
+        'the devoured segment pops its husk — prey reads apart from the spider\'s leg-scatter death')
+    ok(!/(huskBreak|spiderPop|scorpionPop|shapeFx|pointDigit)[^;]*Math\.random/.test(src),
+        'the authored pops draw no dice — seeded drives stay byte-identical')
 }
 
 // ------------------------------------------------ wave speed ladder (#3631) ----
@@ -466,6 +491,16 @@ if (process.argv.includes('--mutant')) {
         ['the mushroom kill never pops', I,
             `burst(dead.x, dead.y, dead.poison ? '#ff2d2d' : MUSHROOM_SKIN[1].cap, 6, MUSHROOM_POINTS)`,
             `void dead.x`],
+        // #3749 — the authored shapes are the story; if they stop telling it, die.
+        ['the husk halves fly the same way (no split read)', I,
+            `shapeFx(x + 8, y + 8, 'huskR', 1.3, -0.7, 14, color)`,
+            `shapeFx(x + 8, y + 8, 'huskR', -1.3, -0.7, 14, color)`],
+        ['the shed claws never snap', I,
+            `f.sh === 'pincerO' && f.life % 6 < 3 ? 'pincerS' : f.sh`,
+            `f.sh`],
+        ['the spider never sheds its legs', I,
+            `shapeFx(x + 8, y + 8, 'leg', i % 2 ? 1.1 : -1.1, i < 2 ? -1.4 : 1.0, 12, '#b48cff')`,
+            `void i`],
         ['score digits never draw', I,
             `ctx.fillText(f.text, f.x, f.y)`,
             `void f.text`],

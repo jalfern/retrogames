@@ -149,6 +149,44 @@ const CentipedeGame = () => {
             if (points > 0) state.fx.push({ x: x + 8, y: y + 4, vx: 0, vy: -0.5, life: 26, max: 26, text: String(points) })
         }
 
+        // #3749 authored kill-pop — every bug dies in the language of its own
+        // body. Original mask-table glyph art, era-cheap 1px rects: the round
+        // body breaks into two mirrored C-shaped husk halves that drift apart
+        // along the strike axis; the spider's legs scatter as four diagonal
+        // shards; the scorpion's pincers peel off and snap shut as they fade
+        // (life parity — the same one-clock trick the sprites' legs use).
+        // Dice-free: fixed offsets and velocities only, so `?seed=N` drives
+        // stay byte-identical (same law as every burst in this garden).
+        const SHAPES = {
+            huskL: ['.##', '###', '###', '###', '.##'], // left half of the round body
+            huskR: ['##.', '.##', '.##', '.##', '##.'], // its mirror
+            leg: ['..#', '.#.', '#..', '#..'], // a snapped leg, knee bent
+            pincerO: ['###', '..#', '..#'], // claw open
+            pincerS: ['#.#', '##.', '#..'], // claw snapped shut
+        }
+        const shapeFx = (x, y, sh, vx, vy, life, color) => {
+            state.fx.push({ x, y, vx, vy, life, max: life, color, sh })
+        }
+        const pointDigit = (x, y, points) => {
+            if (points > 0) state.fx.push({ x, y, vx: 0, vy: -0.5, life: 26, max: 26, text: String(points) })
+        }
+        const huskBreak = (x, y, color) => {
+            shapeFx(x + 8, y + 8, 'huskL', -1.3, -0.7, 14, color)
+            shapeFx(x + 8, y + 8, 'huskR', 1.3, -0.7, 14, color)
+        }
+        const spiderPop = (x, y, points) => {
+            huskBreak(x, y, '#7f5cff') // the body itself halves, sprite-purple
+            for (let i = 0; i < 4; i++) { // four of its eight legs fling out diagonally
+                shapeFx(x + 8, y + 8, 'leg', i % 2 ? 1.1 : -1.1, i < 2 ? -1.4 : 1.0, 12, '#b48cff')
+            }
+            pointDigit(x + 8, y + 4, points)
+        }
+        const scorpionPop = (x, y, points) => {
+            burst(x, y, '#ff9d2e', 4, points) // body chips and the amber price
+            shapeFx(x + 8, y + 8, 'pincerO', -1.0, -1.2, 14, '#f0a02e') // claws peel off ahead
+            shapeFx(x + 8, y + 8, 'pincerO', 1.0, -1.2, 14, '#f0a02e')
+        }
+
         // #3736 — the plant law on screen: the sim turns a shot segment into a
         // mushroom (arcade rule), and since #3620 the kill said so only in the
         // state. Now the pop speaks it: body segments spray cap-skin chips (the
@@ -158,6 +196,7 @@ const CentipedeGame = () => {
         // angles only, so `?seed=N` replays every pop byte-identical.
         const plantPop = (x, y, cellX, cellY, isHead, points) => {
             burst(x, y, isHead ? '#ffffff' : MUSHROOM_SKIN[3].cap, isHead ? 10 : 6, points)
+            huskBreak(x, y, isHead ? '#ffffff' : MUSHROOM_SKIN[3].cap) // #3749 — the body halves under the chips
             state.fx.push({ ring: 1, x: cellX + 8, y: cellY + 8, life: 10, max: 10, color: MUSHROOM_SKIN[3].lite })
         }
 
@@ -473,7 +512,7 @@ const CentipedeGame = () => {
                         if (s.health <= 0) {
                             const dist = Math.abs(s.x - state.player.x) + Math.abs(s.y - state.player.y)
                             state.score += SPIDER_POINTS(dist)
-                            burst(s.x, s.y, '#c17bff', 8, SPIDER_POINTS(dist))
+                            spiderPop(s.x, s.y, SPIDER_POINTS(dist)) // #3749 — husk + leg shards, in its band's purple
                             state.spider = null
                             spiderAt = tickN + SPIDER_EVERY
                             // #3632 — the squelch-boing: down in a harsh buzz,
@@ -492,7 +531,7 @@ const CentipedeGame = () => {
                     const s = state.scorpion
                     if (Math.abs(b.x - (s.x + 8)) < 12 && Math.abs(b.y - (s.y + 8)) < 10) {
                         state.score += SCORPION_POINTS
-                        burst(s.x, s.y, '#ff9d2e', 8, SCORPION_POINTS)
+                        scorpionPop(s.x, s.y, SCORPION_POINTS) // #3749 — chips + snapping shed pincers
                         state.scorpion = null
                         scorpionAt = tickN + SCORPION_EVERY
                         // #3632 — the sting: a whip-crack up then off, static on
@@ -669,7 +708,7 @@ const CentipedeGame = () => {
                         }
                     }
                     bitesTotal++
-                    burst(seg.x, seg.y, '#c17bff', 6) // purple chomp at the fall site, no digits — it pays 0
+                    huskBreak(seg.x, seg.y, '#c17bff') // #3749 — the victim's husk, no digits: it pays 0
                     state.fx.push(biteFlash(seg.x, seg.y)) // #3733 — the fall site flashes white: the lunch is SEEN
                     s.chomp = CHOMP_FRAMES // #3733 — the spider clamps its jaws over the bite
                     // #3726 — the crunch: a low mauling under a wet squelch,
@@ -1010,6 +1049,20 @@ const CentipedeGame = () => {
                     ctx.strokeStyle = f.color
                     ctx.lineWidth = 1
                     ctx.strokeRect(Math.round(f.x - w / 2) + 0.5, Math.round(f.y - w / 2) + 0.5, w, w)
+                    ctx.globalAlpha = 1
+                } else if (f.sh) {
+                    // #3749 authored debris glyph — the mask's lit pixels, 1px
+                    // each, fading on the same clock as every other shard. The
+                    // shed pincers snap shut on the parity of their life.
+                    const sh = f.sh === 'pincerO' && f.life % 6 < 3 ? 'pincerS' : f.sh
+                    const mask = SHAPES[sh]
+                    ctx.globalAlpha = f.life > 8 ? 1 : f.life / 8
+                    ctx.fillStyle = f.color
+                    mask.forEach((row, ry) => {
+                        for (let rx = 0; rx < row.length; rx++) {
+                            if (row[rx] === '#') ctx.fillRect(Math.round(f.x - row.length / 2 + rx), Math.round(f.y - mask.length / 2 + ry), 1, 1)
+                        }
+                    })
                     ctx.globalAlpha = 1
                 } else {
                     ctx.globalAlpha = f.life > 8 ? 1 : f.life / 8
