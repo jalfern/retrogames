@@ -4,7 +4,7 @@ import PauseOverlay from '../../components/PauseOverlay'
 import VirtualControls from '../../components/VirtualControls'
 import { GAMES } from '../../config/games'
 import { press, release, currentPad } from '../../utils/onePad'
-import { MAP, COLS, ROWS, CELL_SIZE, makePacman, stepPlayer, validMoves, bfsDir, safeMove, stepGhost, scaredSkin, makeFruitTracker, stepFruit, FRUIT_BLINK, fruitForRound, speedStage, energizerTicks, mazeCleared, briefForRound, CLEAR_FREEZE, BRIEF_TICKS, intermissionFrame, fruitEatTones, makeTunnelRumble, stepTunnelRumble } from './move'
+import { MAP, COLS, ROWS, CELL_SIZE, makePacman, stepPlayer, validMoves, bfsDir, safeMove, stepGhost, scaredSkin, makeFruitTracker, stepFruit, FRUIT_BLINK, fruitForRound, speedStage, watchHorizon, energizerTicks, mazeCleared, briefForRound, CLEAR_FREEZE, BRIEF_TICKS, intermissionFrame, fruitEatTones, makeTunnelRumble, stepTunnelRumble } from './move'
 import { attractFrame, DIM } from './attract.js'
 import { exposeFeedbackState, unexposeFeedbackState, seedFromQuery, seedRng } from '../../utils/gameContract'
 import { mountDbg, unmountDbg } from '../../utils/DebugKit'
@@ -53,6 +53,7 @@ const PacmanGame = () => {
 
         let gameOver = false
         let lives = 3
+        let deaths = 0 // #3679 — cumulative captures, the probe counts what sampling can miss
         // #3661: round number drives the fruit kind and the energizer decay
         // (the speed ladder rides the score). Human start resets to 1; a
         // cleared maze advances it.
@@ -165,7 +166,8 @@ const PacmanGame = () => {
             if (isAttractMode && pacman.progress === 0) {
                 const mapX = Math.round(pacman.x)
                 const mapY = Math.round(pacman.y)
-                let dangerGhost = ghosts.find(g => g.state === 'chase' && Math.sqrt(Math.pow(g.x - mapX, 2) + Math.pow(g.y - mapY, 2)) < 8)
+                const horizon = watchHorizon(speedStage(gs.score)) // #3679 — panic earlier as the ladder climbs
+                let dangerGhost = ghosts.find(g => g.state === 'chase' && Math.sqrt(Math.pow(g.x - mapX, 2) + Math.pow(g.y - mapY, 2)) < horizon)
                 if (dangerGhost) {
                     pacman.nextDir = safeMove(map, pacman, ghosts, mapX, mapY)
                 } else {
@@ -240,6 +242,7 @@ const PacmanGame = () => {
                         audioController.playTone(800, 0.1, 'square', 0.2)
                     },
                     hit: () => {
+                        deaths++
                         lives--
                         if (lives <= 0) {
                             gameOver = true
@@ -825,7 +828,7 @@ const PacmanGame = () => {
         if (import.meta.env.DEV) {
             window.__pacTest = {
                 probe: () => ({
-                    tick: tickN, score: gs.score, done: gameOver, seed, lives,
+                    tick: tickN, score: gs.score, done: gameOver, seed, lives, deaths,
                     round, stage: speedStage(gs.score),
                     pac: { x: pacman.x, y: pacman.y, p: pacman.progress, speed: pacman.speed },
                     power: pacman.poweredUp ? pacman.powerTimer : 0,

@@ -105,6 +105,16 @@ export function pacSpeedForScore(score) {
     return SPEED_STAGES[speedStage(score)].pac
 }
 
+// #3679 — the attract autopilot's panic horizon must track the #3661 ladder.
+// The fixed 8-tile radius predates the ghost lift: at stage 4 the ghosts close
+// at ×1.2 and a panic that starts 8 tiles out arrives too late (measured
+// 10.3 deaths/min vs a 3.1/min stage-0 baseline, pacwatchdrive). The horizon
+// widens 2 tiles per stage; stage 0 keeps the old 8 exactly. Ghost rates are
+// untouched — the pinned #3661 spec is the law.
+export function watchHorizon(stage) {
+    return 8 + 2 * (stage || 0)
+}
+
 // Ghosts crawl on the tunnel mouths — row 14 OUTSIDE the ghost-house walls
 // (x ≤ 9 / x ≥ 18). The house interior (x 11–16) is not a tunnel.
 export const TUNNEL_X_MAX = 9
