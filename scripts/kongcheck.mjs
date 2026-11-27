@@ -583,6 +583,74 @@ console.log('WATCH driver sweep: 24 seeds of seated play on the shipped physics'
     ok(minWinTick >= 300, 'no seed banks its lap suspiciously fast (the route uses the ladders)', `${minWinTick}`)
 }
 
+// ------------------------------------------------------------- corner pair ----
+// #3622 — the fall-gap corner ladders and the mid-air take. The old README
+// gap ("a barrel meeting a ladder mid-air keeps rolling") had two causes: no
+// ladder stood in the drop column, and the shipped edge-check could never set
+// falling=true (gravity beats it to vy>0). This section pins the geometry,
+// the mid-air rule, once-per-barrel-per-ladder, the dangling-foot retake and
+// the runner's refusal of the barrel-only rung — on the real physics with a
+// parked runner (no laps, continuous barrel stream), exact floors (the sim is
+// deterministic; if these shift, the dice or the layout shifted).
+console.log('corner pair #3622: mid-air takes at the fall-gap corner')
+{
+    const { ladders } = buildLevel()
+    const r1 = ladders.find(l => l.dangles)
+    const r2 = ladders.find(l => l.barrelOnly)
+    ok(!!r1 && !!r2 && r1.x === 222 && r2.x === 222,
+        'the corner pair stands at the measured fall column x=222', `r1=${r1 && r1.x} r2=${r2 && r2.x}`)
+    ok(!!r2 && r2.yTop > r1.yBot && r2.yBot >= 232,
+        'R2 sits below R1\'s dangling foot and reaches the ground',
+        `r1Bot=${r1 && r1.yBot.toFixed(1)} r2Top=${r2 && r2.yTop.toFixed(1)} r2Bot=${r2 && r2.yBot.toFixed(1)}`)
+
+    const ids = new WeakMap()
+    let nextId = 1, aerial = 0, r1land = 0, dangling = 0, r2aerial = 0, doubleSame = 0, stuck = 0
+    for (const seed of [7919, 15838, 31676]) {
+        const gs = makeRun(seed) // runner parked at spawn: no lap, the ape keeps throwing
+        const snap = new Map()
+        const onFrom = new Map()
+        for (let t = 0; t < 60 * 360; t++) {
+            for (const b of gs.barrels) {
+                if (!ids.has(b)) ids.set(b, nextId++)
+                const id = ids.get(b)
+                snap.set(id, { onL: b.onLadder, f: b.falling, x: b.x, y: b.y, bits: b.takenBits })
+                if (b.onLadder && !onFrom.has(id)) onFrom.set(id, t)
+                if (!b.onLadder) onFrom.delete(id)
+            }
+            tickDonkeyKong(gs, {})
+            for (const b of gs.barrels) {
+                const id = ids.get(b)
+                const p = snap.get(id)
+                if (!p) continue
+                if (!p.onL && b.onLadder) {
+                    const l = ladders.find(la => la.yBot === b.ladderBot && Math.abs(la.x - (b.x + b.w / 2)) < 0.01)
+                    if (l && (p.bits & (1 << ladders.indexOf(l)))) doubleSame++
+                    if (p.f) { aerial++; if (l === r2) r2aerial++ } else if (l === r1) r1land++
+                }
+                if (p.onL && !b.onLadder && b.falling) dangling++
+                if (onFrom.has(id) && t - onFrom.get(id) > 200) stuck++ // longer than the longest span / 1.5
+            }
+        }
+    }
+    ok(aerial === 4 && r1land === 1 && dangling === 3 && r2aerial === 2,
+        'corner floors exactly hold: 4 mid-air takes (2 onto R2), 1 landed R1 board, 3 dangling-foot exits',
+        `aerial=${aerial} r1land=${r1land} dangling=${dangling} r2aerial=${r2aerial}`)
+    ok(doubleSame === 0 && stuck === 0,
+        'once-per-barrel-per-ladder holds — no ladder retakes, no barrel stuck on a span',
+        `double=${doubleSame} stuck=${stuck}`)
+
+    // The runner never rides the barrel-only rung (attract would hang on it).
+    let runnerR2 = 0
+    for (const seed of [7919, 15838, 31676]) {
+        const gs = makeRun(seed, { attract: true })
+        for (let t = 0; t < 60 * 300; t++) {
+            tickDonkeyKong(gs)
+            if (gs.player.climbing && Math.abs(gs.player.x + gs.player.w / 2 - r2.x) < 2) runnerR2++
+        }
+    }
+    ok(runnerR2 === 0, 'the runner never climbs the barrel-only outside ladder', `${runnerR2}`)
+}
+
 // ---------------------------------------------------------- shell wiring pin ----
 console.log('shell wiring: seed, terminal, seat chrome')
 {

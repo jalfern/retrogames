@@ -43,10 +43,18 @@ Ports: the browser checks read `DEV_PORT` (slot a 5173 / slot b 5178 / QA 5176).
   below is kept for the record.
 - Oil drum is decor; the arcade's flame kills. No score bonus timers, no
   50/100-point distinction for walking past vs jumping over barrels' edges.
-- Barrels never fall onto ladders they didn't board (onLadder is per-barrel;
-  a barrel meeting a ladder mid-air keeps rolling). Needs fall-gap ladder
-  geometry first — filed as #3622 after a Node trace logged zero airborne
-  ladder-column crossings on the shipped layout.
+- Barrels can take ladders mid-air now (#3622): a falling barrel crossing a
+  ladder's span rolls a single BARREL_DIVE_CHANCE, once per barrel per ladder
+  (`takenBits`). Two girder-end rungs stand at the right fall-gap corner
+  (x=222, R1→dangling foot, R2→ground), so corner-miss barrels meet R2
+  mid-air and R1 off the tip. The runner never climbs the barrel-only outer
+  rung. (The old silent failure: the edge-check could never set `falling=true`
+  — gravity beats it to `vy>0` — so no airborne barrel state existed at all;
+  fixed to `vy >= 0`.)
+- The arcade's true barrel-drop onto an already-boarded ladder (two barrels
+  sharing one span) is still simplified: each span takes only its first
+  boarder per tick, and the pair stands at the right corner only — the left
+  fall column drifts barrels off-screen before any rung reaches it.
 - **CLOSED by #3618:** broken ladders climbed part-way — see Half-rungs
   below. (Was: the original let Mario climb part-way some rounds; barrels and
   the player both refused them outright.)
