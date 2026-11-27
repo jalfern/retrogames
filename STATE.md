@@ -1,70 +1,66 @@
-# STATE — forge board snapshot (slot a, 2026-11-26 — SMART BOMBS SHIPPED `038a986`)
+# STATE — forge board snapshot (slot b, 2026-11-26 — PAC-MAN arcade progression SHIPPED `791132c`)
 
-## This session (slot a)
-- TARGET #3630 CLAIMED (warden assignment). Shipped **slice 1: smart bombs +
-  center-battery speed** → PR #3656, merged `038a986`. Slice 2 (2P alternating)
-  re-queued on #3630 (game-queue) with a full handoff comment.
-- Rules (manual+Wikipedia pinned, README §SMART BOMBS): entry wave 7 (§6 "after
-  the 6th wave", one behind the ferry; die never rolls below the gate → waves
-  1..6 byte-identical). Smart bomb senses blasts (60px) + incoming ABMs (70px),
-  sidesteps 12 ticks, bends its trail. Blind spot §7 hint 3: aim ≤32px of the
-  core at launch = undetectable = killable — the lead window a 28px/tick center
-  ABM threads, a 15px/tick outer never can. Hard rule: ONLY center fireballs
-  kill (25 pts). Watch answers smart bombs center-only, blind-solutions-only,
-  via arcade 3-button law (`cmd.silo` cross-sector reach).
-- **Integration with QA #3654 (landed mid-session):** `startWave(gs,
-  {noSmart:true})` skips the arrivals AND their DIE — QA's deep-doctrine A/B
-  (60 raids waves 6-10) replays bit-exact; their numbers stand untouched
-  (stalls 0, cityCost 0, 36/36 paid). Center-speed is a wave flag (`smartWave`),
-  not a wave compare, so it rides the same opt-out.
-- Proof at merged head: missilecmdcheck **83/0** (+23 §smart), `--mutant`
-  **24/24 dead** (7 new), **mcsmartdrive 10/10** live Chrome (real mouse
-  blind-kill pays 25; probe↔core pixels; speed split 28/15), mcsaucerdrive
-  11/11, watchcheck missilecommand **322/322**, lints + build green.
-- Filed **#3665** `QA — MISSILE COMMAND: smart-bomb polish` (phone legibility
-  of the bend, sound identity vs ferry, center-speed visibly-faster, pass-
-  through sell, attract ad for the threat).
-- Lesson kept hot: an extra seeded roll inside `startWave` is NOT isolated by
-  zeroing the counters alone — dice move the stream (two deep-doctrine
-  game-overs before the noSmart opt-out).
+## This session (slot b)
+- TARGET #3630 REFUSED at claim (slot a live, 16 min) → normal ladder: steer 0 ·
+  `next` #1712 waiting-jon (skip #605) · game-queue empty · feedback-borrow
+  blocked (QA mini + studio live) → flagship stage spent → honest never-dry pick.
+- **Weakest-stage audit:** `idle-kick` answered `KICK CENTIPEDE 0 weak` but 3 of
+  Centipede's 5 "gaps" are struck-through shipped work (`~~…~~ #NNNN:`) —
+  `parseGaps` has NO `~~` filter (same phantom class #3553 fixed for Restored).
+  Honest scores tie six titles at 2; registry order picks **PAC-MAN** gap 0.
+  Filed + claimed **#3661**; filed **#3670** to fix the `~~` filter properly
+  (with pins) so future kicks stop counting shipped work.
+- **SHIPPED #3661 → PR #3669 (`791132c`): arcade progression.**
+  Score-stage ladder 0/700/2000/5000 (pac 0.15→0.178, ghosts ×1→×1.2 — the
+  80/75→95/90 % table); tunnel-mouth crawl (row 14 x≤9/x≥18, house NOT a
+  tunnel, laws sourced Wikipedia §Gameplay, rates pinned per #3631 tradition);
+  round-keyed fruit (cherry 100→key 5000, bell/key cycle r11+, six original
+  `drawFruit` sprites + arcade fruit-as-round HUD icon); energizer decays
+  600→120 per round, no fright at all ≥ r14. Round counter human-start→1,
+  cleared maze→+1; report carries `{round,stage}`; DebugKit Next round /
+  Round→14 / Score→5000. Round 1 <700 outside tunnels **byte-identical**.
+- Proof: pacmancheck **102/0** (+30 §progression), `--mutant` **31/31 dead**
+  (+10; one survived first pass — bare `round++` regex eaten by my own DebugKit
+  button — tightened to pin the incrementer inside resetGame), new alias
+  **pacprogressiondrive 12/12** real Chrome (probe↔HUD-pixel match cherry→
+  galaxian→key, real keys eat, r1/s0 restart, 0 errors), eslint + lint:mario/
+  fps/ai + build green. New DEV hook `window.__pacTest.probe()` (MC pattern).
+- Filed **#3667** `QA — PAC-MAN: arcade-progression polish + intermission briefs`
+  (feedback): intermissions (gap-0's remaining feature), per-kind eat jingle,
+  stage-lift tell, tunnel audio, phone legibility, watch-horizon check.
 
 ## BOARD facts at close
-- main GREEN at `038a986` (nightly success; my merge is tip).
-- building: #3661 (PAC-MAN progression), #3664 (CENTIPEDE mushroom revival).
-  building-qa: #3657, #3645 (QA MASTER owns).
-- game-queue: **#3630** = MC slice 2 (2P alternating; README Honest gaps item 1
-  says how: manual §6 games 18-34, CPU default via gunnerStep, desktop-keyboard
-  2P, both scores shown).
-- Rule-4 satisfied: game code merged (#3656).
+- main GREEN at `791132c`. building: **#3630** (slot a — saucers+smart bombs
+  shipped, 2P alternating remains). building-qa: #3645 (DEMO TIDE POOL).
+  game-queue: empty. Rule-4 satisfied (game code merged #3669).
+- idle-kick at close answered `KICK MISSILE COMMAND 0 weak` — but #3630's
+  building title names MissileCommand, so MC is held: a held-dir leak worth a
+  lane-check look (or the title-match normalize misses `—`). Do not chase
+  from a free slot; the real MC work item #3630 needs slot a's context.
+- Open `next`: #1712 (PLAICRAFT S2, waiting-jon). AWAITING jonq: #3335
+  (QA, due Nov 27 14:14Z), #3516 (Arkanoid art, Nov 28).
 
 ## PLAYABLE on main right now
-- MISSILE COMMAND — wave 7+ sends evasive smart bombs; only the fast center
-  battery can down them, crosshair ON them beats the dodge:
-  https://jalfern.com/retrogames/missilecommand
-- Saucer ferries wave 6+ (#3629/#3638 polish). DK corners, CENTIPEDE ladder.
+- PAC-MAN — the maze speeds up as you score, ghosts crawl the tunnels, the HUD
+  fruit marks the round (key pays 5000), and round 14 kills the energizer:
+  https://jalfern.com/retrogames/pacman
+- MISSILE COMMAND — smart bombs + center-silo speed (slot a). CENTIPEDE garden
+  revival (#3664). DK span-body law (#3657).
 
 ## Open questions (links only — #605)
-- #3516 — Arkanoid art rung (AWAITING, Nov 28).
-- #3335 — QA music-bus low-pass (lane:qa, AWAITING Nov 27).
-- #3244, #2971, #1712 — unchanged since last STATE.
-- No new jonq questions this session (doctrine calls were measured, not taste).
+- #3335, #3516, #3244, #2971, #1712 (all AWAITING; none mine this session —
+  no new jonq asks, every call was measured, none of taste).
 
 ## Next claims (for whoever is free)
-1. game-queue #3630 slice 2 — 2P alternating (issue body holds the spec;
-   gunnerStep is the ready-made CPU for the default seat; watch seat needs a
-   per-player handoff at wave turns).
-2. MC honest gaps after that: bonus city every 10k (manual §5 — fully sourced:
-   reserve, end-of-wave deploy, jingle) — cheapest strong stage; then
-   field-of-fire arcs per battery (replaces the |dx| click law wholesale).
-3. #3615 (DK finale polish) stays QA's first grab.
+1. game-queue is empty; feedback #3667 (PAC-MAN polish) and #2971/#3244 are
+   QA's unless a lane goes reverse per #1258. #3670 (`~~` filter fix) is a
+   clean small harness fix — good fit for any lane between games.
+2. #3630's 2P-alternating stage stays slot a's (context lives there).
+3. #3615 (DK finale polish) still QA's first grab when #3657's follow-ups clear.
 
 ## Slot state at handoff
-- Slot-a dev server :5173 stopped via `scripts/devstop.sh` at close.
-- Worktree ~/Dev/retrogames-forge-mc-smartbomb DONE (#3656 merged; safe to
-  prune — node_modules is a symlink into the main checkout). Older
-  ~/Dev/retrogames-forge-mc-saucers also prune-safe (STATE handoff last round).
-- Main checkout detached at origin/main; STATE.md ships via the docs PR this
-  park accompanies, and parks with `statepark.mjs park a`.
-- Slip this session: one `pkill -f "5173"` — WRONG tool (lane prompts carry the
-  port; AGENTS.md forbids pattern kills). Session survived; use devstop.sh
-  only, always.
+- Slot-b dev server :5178 stopped via `scripts/devstop.sh` at close.
+- Worktree ~/Dev/retrogames-forge-pac-progression DONE (#3669 merged; safe to
+  prune — node_modules is a symlink into the main checkout).
+- Main checkout detached at origin/main; STATE.md parks with
+  `statepark.mjs park b`; docs PR carries it to main.
