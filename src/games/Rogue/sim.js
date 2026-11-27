@@ -145,6 +145,13 @@ export const TRAP_TYPES = [
   { kind: 'darts', msg: 'Darts spring from the wall!' },
 ]
 
+// #3588: compact HUD shorthand for the body's shackles. A hero drugged for
+// eight turns cannot see WHY arrows stopped coming — the banner must say.
+// Pure so the harness can pin the notation against the counters themselves.
+export const shackles = (player) =>
+  (player.sleeping > 0 ? ` Slp:${player.sleeping}` : '') +
+  (player.held > 0 ? ` Hld:${player.held}` : '')
+
 export const POTION_COLORS = ['red', 'blue', 'green', 'yellow', 'bubbly', 'smoky', 'fizzy', 'dark', 'clear', 'murky', 'pink', 'white']
 export const SCROLL_TITLES = ['XIXAXA XOXO', 'ZELGO MER', 'FOOBIE BLETCH', 'NATRIX AN', 'PONCHO WIGG', 'YZAX VORN', 'BLIBBER BLUBBER', 'JUYED AWK']
 
@@ -1370,7 +1377,9 @@ export function handleSearch(state) {
 export function trapSpring(state, trap) {
   let s = { ...state, traps: state.traps.map(t => (t.x === trap.x && t.y === trap.y ? { ...t, seen: true } : t)) }
   const { player } = s
-  s = emitFx(s, 'trap', { kind: trap.kind })
+  // #3588: the event names the cell too — the view flashes the white beat
+  // exactly where the hero was wrong.
+  s = emitFx(s, 'trap', { kind: trap.kind, x: trap.x, y: trap.y })
   s = addMsg(s, TRAP_TYPES.find(t => t.kind === trap.kind).msg)
 
   switch (trap.kind) {
@@ -1394,7 +1403,9 @@ export function trapSpring(state, trap) {
         items: d.items, monsters: d.monsters, traps: d.traps,
         visible: d.visible, explored: d.explored, falls,
         player: { ...player, x: d.startX, y: d.startY, hp },
-      }, 'trapdoor')
+        // #3588: the wail rides the grudge — the view pitches it deeper
+        // the second and third time the floor opens.
+      }, 'trapdoor', { falls })
       if (dmg > 0) s = addMsg(emitFx(s, 'hurt'), `The fall hurls you deeper — ${dmg} damage!`)
       break
     }

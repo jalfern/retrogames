@@ -11,7 +11,7 @@ import { fileURLToPath } from 'node:url'
 import {
   MAP_W, MAP_H, createInitialState, stepGame, hash, done, runScore,
   buildGrid, monsterAttack, rng, setSeed, generateDungeon, isWall, blocksMove,
-  isThrowable, shootRay, watchStep, advanceMonsters, MONSTER_DEFS, MONSTER_ENERGY, qaSeatLevel,
+  isThrowable, shootRay, watchStep, advanceMonsters, MONSTER_DEFS, MONSTER_ENERGY, qaSeatLevel, shackles,
 } from '../src/games/Rogue/sim.js'
 
 let pass = 0, fail = 0
@@ -1069,6 +1069,53 @@ const mineAt = (s, kind) => {
         if (mm.monsters[0].x <= trapX) crossed = true
     }
     ok('creatures cross the minefield untouched — monsters spring no traps', crossed && mm.traps[0].seen === false && mm.monsters[0].hp === 4, `crossed=${crossed}`)
+}
+
+// ── 14b. #3588 trap personality — named voices, spring-stamped fx, shackles ─
+console.log('trap personality (#3588): fx stamps, grudge pitch, HUD shackles, sound kit')
+{
+    // every kind stamps its spring fx with kind + the cell the view flashes
+    let fxOk = true, cellOk = true, first = ''
+    for (const [i, kind] of ['door', 'teleport', 'sleep', 'str', 'confuse', 'snare', 'darts'].entries()) {
+        let s = mineAt(createInitialState(3100 + i), kind)
+        const cell = `${s.traps[0].x},${s.traps[0].y}`
+        s = stepGame(s, { type: 'MOVE', dx: 1, dy: 0 })
+        const ev = s.fx.find(f => f.k === 'trap')
+        if (!ev || ev.kind !== kind) { fxOk = false; first = first || `${kind}: ${JSON.stringify(ev)}` }
+        else if (`${ev.x},${ev.y}` !== cell) { cellOk = false; first = first || `${kind}: fx ${ev.x},${ev.y} != ${cell}` }
+    }
+    ok('every trap kind stamps its spring fx with kind (#3588)', fxOk, first)
+    ok('the spring fx names the cell — the white beat lands where the hero was wrong', cellOk, first)
+
+    // the fall grudge rides into the trapdoor fx so the wail can sink with it
+    let g = mineAt(createInitialState(3110), 'door')
+    g = stepGame(g, { type: 'MOVE', dx: 1, dy: 0 })
+    const g1 = g.fx.find(f => f.k === 'trapdoor')
+    let g2 = mineAt(g, 'door')
+    g2 = stepGame(g2, { type: 'MOVE', dx: 1, dy: 0 })
+    const g2e = g2.fx.filter(f => f.k === 'trapdoor').pop()
+    ok('trapdoor fx carries the grudge count for pitch (1 → 2)', g1?.falls === 1 && g2e?.falls === 2, `${g1?.falls}/${g2e?.falls}`)
+
+    // shackles: the banner shorthand, pinned against the counters themselves
+    ok('shackles names Slp/Hld only while they bite',
+        shackles({ sleeping: 5, held: 0 }) === ' Slp:5' && shackles({ sleeping: 0, held: 2 }) === ' Hld:2'
+        && shackles({ sleeping: 5, held: 2 }) === ' Slp:5 Hld:2' && shackles({ sleeping: 0, held: 0 }) === '')
+    let hud = mineAt(createInitialState(3005), 'snare')
+    hud = stepGame(hud, { type: 'MOVE', dx: 1, dy: 0 })
+    ok('a sprung snare reads as Hld on the banner', hud.player.held >= 3 && shackles(hud.player) === ` Hld:${hud.player.held}`, shackles(hud.player))
+    let hudS = mineAt(createInitialState(3004), 'sleep')
+    hudS = stepGame(hudS, { type: 'MOVE', dx: 1, dy: 0 })
+    ok('a drugged hero reads as Slp on the banner', hudS.player.sleeping >= 5 && shackles(hudS.player) === ` Slp:${hudS.player.sleeping}`, shackles(hudS.player))
+
+    // the per-kind SYNTH lives in the view (audio can't ring in Node) — gate
+    // the kit at its source, so collapsing a voice back into the old snap is red.
+    const idxSrc2 = readFileSync(fileURLToPath(new URL('../src/games/Rogue/index.jsx', import.meta.url)), 'utf8')
+    ok('fxSound gives every trap kind its own voice (#3588 sound kit)',
+        /case 'trap':\s*\n\s*switch \(e\.kind\)[\s\S]*case 'darts'[\s\S]*case 'teleport'[\s\S]*case 'sleep'[\s\S]*case 'snare'[\s\S]*case 'str'[\s\S]*case 'confuse'/.test(idxSrc2))
+    ok('the trapdoor wail is pitched by the grudge it carries', /case 'trapdoor'/.test(idxSrc2) && /e\.falls/.test(idxSrc2))
+    ok('the spring moment burns the cell white and jitters the grid (view stamps)',
+        /trapFlashCells/.test(idxSrc2) && /trapFlashTurn/.test(idxSrc2) && /rogueSpringJitter/.test(idxSrc2) && /#ffffff/.test(idxSrc2))
+    ok('the banner carries the shackles notation', /\$\{shackles\(player\)}/.test(idxSrc2))
 }
 
 // ── #3592 §amulet — the Amulet of Yendor (Rogue, 1980): dlvl 20 goal object
