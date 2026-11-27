@@ -196,6 +196,13 @@ ok(parseGaps('## Honest gaps\n- live gap still open here\n- shipped gap — **CL
     '#961: parseGaps drops a CLOSED-marked bullet')
 ok(parseGaps('## Honest gaps\n- open one\n- shipped **CLOSED by 959** without a hash\n').length === 2,
     '#961: only a "CLOSED by #<n>" marker closes a gap')
+// #3813: the by-less twin `CLOSED (#<n>)` — Pinball's #3789-item-1 note ships with
+// it, and it held idle-kick at `KICK PINBALL 0 weak` on a fully-owned shelf:
+// a free lane would have filed POLISH against shipped, pinballcheck-pinned work.
+ok(parseGaps('## Honest gaps\n- live gap still open here\n- shipped ghost trail — **CLOSED (#3789 item 1):** it shipped.\n').length === 1,
+    '#3813: parseGaps drops the by-less CLOSED (#<n>) marker')
+ok(parseGaps('## Honest gaps\n- open one\n- shipped **CLOSED (no hash)** names nothing\n').length === 2,
+    '#3813: CLOSED ( without a hash must not decline')
 // #3672: strikethrough is the repo's dominant closed-gap notation, but nothing
 // filtered it — 2026-11-26 idle-kick scored CENTIPEDE 5 with three struck
 // bullets (#3620/#3631/#3632) and Pac-Man gap 0 the same shape.
