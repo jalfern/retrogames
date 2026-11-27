@@ -295,11 +295,6 @@ export function abmArrivalTicks(d, speed = ABM_SPEED) {
 // descent lines and spends ONE shell at the knot. The blast envelope is the
 // sim's own grow/shrink (radius 1→40→1, one px per tick):
 export const BLAST_LIFE = 2 * BLAST_RADIUS_MAX - 1 // ticks a blast can still kill, from launch
-// A knot shot is only worth taking when the warheads arrive with the ring in
-// its strong half: detonation at tick k, arrival at j, need j − k <= 60 so
-// the radius at arrival is >= 20 px, not a 1 px dying rim. (The rim is where
-// prediction and sim disagree by a tick; the doctrine forbids duds.)
-export const KNOT_READY = BLAST_RADIUS_MAX + 20
 export const blastRadiusAt = (t) => (t <= BLAST_RADIUS_MAX - 1 ? 1 + t : 2 * BLAST_RADIUS_MAX - 1 - t)
 
 // Mirror of #3638's reserve rule: the reserve asks "is there a surplus for a
@@ -731,8 +726,9 @@ export function gunnerStep(gs, opts = {}) {
                 arrive = j
                 break
             }
-            if (j - k <= KNOT_READY) {
-                // READY point. Score the ring exactly: every open warhead the
+            if (j - k < BLAST_LIFE) {
+                // READY point (the ring can still be alive when the warhead
+                // arrives). Score the ring exactly: every open warhead the
                 // envelope provably sweeps WITH CUSHION (the ring must beat
                 // the warhead's travel by a margin — a grazing claim is
                 // one-tick noise between prediction and sim, and duds are
@@ -782,7 +778,7 @@ export function gunnerStep(gs, opts = {}) {
             // re-solve falls back to the plain earliest-intercept answer —
             // a held warhead can never be forgotten.
             w.held = true
-            w.coverUntil = gs.tick + Math.max(1, holdJ - holdK - KNOT_READY + 2)
+            w.coverUntil = gs.tick + Math.max(1, holdJ - holdK - BLAST_LIFE + 2)
             continue
         }
         if (!fired && firstFire) { fired = firstFire.shot; arrive = firstFire.j }

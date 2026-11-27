@@ -144,12 +144,15 @@ waves pays 100 per living city and 50 per spare missile, then reloads.
   vs 30) — a measured deficit (`clusterMode`, the mirror of #3638's reserve
   rule; the gate is silent at waves 1..7, so every shallower proof replays
   untouched). Two expert habits engage under deficit only:
-  - **The knot.** One explosion downs everything inside it, so when crossing
-    descent lines meet at a point the gunner waits (holds cover to the fire-
-    ready window `KNOT_READY = 60`, arrival inside the ring's strong half) and
-    spends ONE shell at the crossing, promising the ring to every co-kill the
-    envelope proves WITH CUSHION (a grazing claim is one-tick noise between
-    prediction and sim; duds are forbidden; the lapse-retry stays the net).
+  - **The knot.** One explosion downs everything inside it, so when the
+    envelope provably catches more than the primary at one point — crossing
+    lines, or a sibling arriving while the ring is big — the gunner waits
+    (a held warhead re-solves each tick until the shot becomes possible:
+    arrival inside the ring's life, `j − k < BLAST_LIFE`) and spends ONE
+    shell there, promising the ring to every co-kill the envelope proves
+    WITH CUSHION (the ring must beat travel by 2 px — a grazing claim is
+    one-tick noise between prediction and sim; duds are forbidden; the
+    lapse-retry stays the net).
     §cluster proves it in a crafted crossing: held, one shell, two kills.
     Measured honest: knots are RARE at reachable waves — spawn spacing keeps
     siblings 50–150 px apart at any shared altitude, and the geometry closes
