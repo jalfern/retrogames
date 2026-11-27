@@ -762,7 +762,7 @@ export const GAMES = [
         // smart bomb, manual §6), fired at the live crosshair. KeyB, not
         // Digit2: attract `2` keeps meaning "two player".
         pad: { layout: 'stick', reads: ['a', 'b'], aLabel: 'FIRE', buttons: [{ label: 'FAST', code: 'KeyB' }] },
-        controls: ['Mouse Move / Arrow Keys: Aim', 'Click / Space: Fire ABM — the nearest battery in range launches', '1 / 2 / 3: fire the LEFT / CENTER / RIGHT battery from any aim — 2 is the fast one, the smart-bomb answer (phones: FAST button)', WATCH_HELP + ' — the sweep-proven gunner meets every warhead high and never lets the fire touch the ground', 'Press 2 at the title: two-player alternating vs the CPU — a human P2 joins on WASD + F', '?: Pause and read the controls'],
+        controls: ['Mouse Move / Arrow Keys: Aim', 'Click / Space: Fire ABM — the nearest battery in range launches', '1 / 2 / 3: fire the LEFT / CENTER / RIGHT battery from any aim — 2 is the fast one, the smart-bomb answer (phones: FAST button)', WATCH_HELP + ' — the sweep-proven gunner meets every warhead high and never lets the fire touch the ground', 'Press 2 at the title: two-player alternating vs the CPU — a human P2 joins on WASD + F; Z/X/C name the LEFT/CENTER/RIGHT batteries on P2 waves', '?: Pause and read the controls'],
     },
     {
         path: '/adventure',

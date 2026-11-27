@@ -5,6 +5,23 @@ warheads picks targets off the board; explosions clear the sky. Bonus between
 waves pays 100 per living city and 50 per spare missile, then reloads.
 
 ## Engine notes
+- **P2 BATTERY BUTTONS (#3760) — seat 2 gets the arcade's three buttons.**
+  Wikipedia §Gameplay: the player fires "by pressing one of three buttons to
+  launch a counter-missile from the appropriate battery" — the BUTTON names the
+  launcher. Seat 1 has lived that law since #3699 (keys 1/2/3 + pad FAST); the
+  hot-seat (slice 2 of #3630) left seat 2 with only nearest-battery fire on F,
+  so the arcade's rule covered half the board. Now `Z/X/C` name LEFT/CENTER/
+  RIGHT for seat 2: an edge latch (`p2Batt`, reset beside `p2Fire`) fired
+  through `fireBattery` — so the shared-silo gates ride for free (dead or empty
+  named battery = dud, never a reroute; `#3695` duds stay duds) and the sim
+  stays seat-agnostic — the duty guard lives in the shell, mirroring P1's
+  1/2/3-vs-Space guard: an off-duty press joins the seat but the shot is
+  swallowed whole, never queued for the next wave. Any Z/X/C press joins a
+  human into the CPU seat like the WASD/F keys do. The board teaches duty:
+  batteries wear `1/2/3` normally and `Z/X/C` while a human holds seat 2, and
+  the join card names the triangle. Two-human play stays the desktop keyboard
+  option (Jon's multiplayer ruling) — the phone pad is untouched. No dice:
+  a named shot is pure world-state, every `?seed=N` rollout stays byte-stable.
 - **BONUS CITY (#3753) — one town back every 10,000 points.** The arcade's
   revive law (the README pinned it; the original redraws a destroyed city as
   it counts the wave bonus). Rules as built: crossing every 10k in the books
@@ -146,8 +163,8 @@ waves pays 100 per living city and 50 per spare missile, then reloads.
    nearest-battery click law untouched, Space keeps crosshair fire — every
    existing solo/hot-seat proof replays byte-identical. Duds stay duds: naming a
    dead or empty battery spends nothing (never reroutes). Hot-seat: the battery
-   keys belong to the seat on duty — same guard as Space; a human P2's own
-   per-base buttons remain open work (see honest gaps). The HUD teaches it: each
+   keys belong to the seat on duty — same guard as Space; seat 2 got its own
+   triangle in #3760 (Z/X/C, see the note above). The HUD teaches it: each
    battery wears its key number; the center glows FAST while smart bombs are live.
 - **Restart was missing entirely before the batch-15 port** — the GAME OVER
   screen was dead. `startRun()` now rebuilds cities, silos, ammo, score, wave
@@ -203,7 +220,7 @@ waves pays 100 per living city and 50 per spare missile, then reloads.
 
 ## Verify
 ```
-npm run missilecmdcheck             # 170 checks: raid replay, sweep 24 seeds waves 1-5 clean,
+npm run missilecmdcheck             # 182 checks: raid replay, sweep 24 seeds waves 1-5 clean,
                                   #   doctrine pins (safe altitude, urgency, cover), saucers
                                   #   (byte-exact gate, entry/launch/kill/hold), deep doctrine
                                   #   A/B waves 6-10, #3711 deep-wave cluster (deficit gate
@@ -220,8 +237,9 @@ npm run missilecmdcheck             # 170 checks: raid replay, sweep 24 seeds wa
                                   #   one draw per break, dedicated-dice roll-for-roll spy),
                                   #   2P alternating (flip seq, bonus attribution, shared
                                   #   board, per-seat credits, dice-parity trace, CPU-seat
-                                  #   defense), wiring
-npm run missilecmdcheck -- --mutant # 47 mutants, all must die
+                                  #   defense), p2 batteries (#3760: named law rides P2's
+                                  #   wave, own magazines, kill pays score2, seat-agnostic sim), wiring
+npm run missilecmdcheck -- --mutant # 53 mutants, all must die
 npm run mcbatterydrive            # live browser three-button drive (13 checks): FAST pad
                                   #   declared, KeyB spends ONLY the center magazine, keys
                                   #   1/2/3 launch their battery from a foreign sector and
@@ -231,6 +249,11 @@ npm run mc2pdrive                 # live browser hot-seat drive (needs the dev s
                                   #   key opens the mode, real keys fire P1's wave only, turn
                                   #   flips after wave 1, the CPU defends P2's wave, real WASD
                                   #   + F join, dual-score HUD pixels, winner card, zero errors
+npm run mcp2battdrive             # live browser seat-2 battery drive (#3760, needs the dev
+                                  #   server, 16 checks): real Z joins + paints the teaching
+                                  #   line, Z/X/C sleep off-duty, on P2's wave they launch
+                                  #   40/400/760 spending their own magazines, P1 keys asleep,
+                                  #   one seed replays the button law byte-equal, zero errors
 npm run mcbonusdrive              # live browser bonus-city drive (#3753, needs the dev server):
                                   #   unbanked break never redraws, a banked 10k refills at the
                                   #   break with the cyan rise-in pixels, full board banks the
@@ -266,16 +289,26 @@ npm run attractcheck              # attract screen rule 6
   10k points) — the bonus-city law is shipped: every 10,000 points banked by
   the run's books redraws one destroyed city at the next wave break, after the
   bonus, on its own dice stream. See Engine notes #3753.
-- The gunner is proven clean to wave 5 (the sweep's bar) and the deep waves
-  stay volume losses — #3711 measured the ceiling from three directions (knots,
-  sacrifice, ferry-chain; see Engine notes) and it is the port's own spawn law,
-  not the driver's style: 28–32+ warheads vs 30 shells from wave ~9, and the
-  knot geometry that could beat it only closes near wave 18, past the fall.
-  The slack that DOES exist is banked (knot + silo-first, 12-seed A/B green).
-  What remains honestly open: a human with a trackball may still outplay the
-  watch deep — the harness can only certify what it can drive.
-- Outer batteries fire by nearest-silo |dx| like the human click law — the
-  original's field-of-fire arcs per battery are not modelled.
-- In hot-seat the battery keys (#3695) belong to seat 1, same guard as Space; a
-  human P2 still fires only the nearest battery on F — the arcade's three
-  buttons for the second seat are open work (needs its own key triangle + HUD).
+- **BLOCKED** The gunner is proven clean to wave 5 (the sweep's bar) and the
+  deep waves stay volume losses — #3711 measured the ceiling from three
+  directions (knots, sacrifice, ferry-chain; see Engine notes) and it is the
+  port's own spawn law, not the driver's style: 28–32+ warheads vs 30 shells
+  from wave ~9, and the knot geometry that could beat it only closes near wave
+  18, past the fall. The slack that DOES exist is banked (knot + silo-first,
+  12-seed A/B green). Blocked, not open: the only remaining claim is that a
+  human with a trackball may outplay the watch deep — a harness cannot certify
+  what it cannot drive, and there is no code this gate can grade for it.
+- **CLOSED by #3760** In hot-seat the battery keys (#3695) belonged to seat 1,
+  same guard as Space; a human P2 fired only the nearest battery on F. Seat 2
+  now names its batteries: Z/X/C = LEFT/CENTER/RIGHT on P2's wave (same join-
+  on-press, same duty swallow, same dud gates), the batteries wear the seat's
+  triangle, and the join card teaches it — the arcade's three-button law
+  (Wikipedia §Gameplay, "one of three buttons … from the appropriate battery")
+  now reaches both seats. See Engine notes #3760.
+- **BLOCKED** Outer batteries fire by nearest-silo |dx| like the human click
+  law — the arcade may per the original restrict each battery to a field-of-
+  fire arc, but no source inside this repo and no source reachable under
+  FORGE.md's network boundary states the sectors (Wikipedia §Gameplay, checked
+  #3760, documents only the three-button law), and the fidelity law forbids
+  inventing arcade angles (the game-number-table BLOCKED precedent above). If
+  a sourced chart ever lands on the shelf, model the arcs and retire this line.
