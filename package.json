@@ -38,6 +38,7 @@
     "blackholecheck": "node scripts/blackholecheck.mjs",
     "neonraincheck": "node scripts/neonraincheck.mjs",
     "starrynightcheck": "node scripts/starrynightcheck.mjs",
+    "koicheck": "node scripts/koicheck.mjs",
     "tidalcheck": "node scripts/tidalcheck.mjs",
     "volcanocheck": "node scripts/volcanocheck.mjs",
     "creditscheck": "node scripts/creditscheck.mjs",

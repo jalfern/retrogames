@@ -306,3 +306,27 @@ inventory, live index card href, boot, 4-beat transverse gait, flight phase,
 analytic + live rAF zero-slip, IK reach, loop seam, WebGL2 coat/meadow/shadow
 pixels, coat cycling, pointer orbit, mute toggle, and 390×844 phone layout;
 stance-slip mutant proven red and restored).
+
+## koi.html engine notes (#3603 — KOI POND)
+
+Guest Inkling v2 prototype shipped as a demo: a painted Japanese garden pond
+with seven drifting koi. Raw Canvas 2D, self-contained single file, zero
+libraries, zero image/audio assets — everything is synthesized at runtime.
+
+How it works: a fixed 1200×1400 design space letterboxed to any viewport.
+Seven koi (Kohaku, Sanke, Showa, Asagi, Ogon, Tancho, Bekko) are spawned via a
+seeded PRNG (`mulberry(31337)`) and drift with a sinusoidal wander + heading
+steering. A pointer tap drops a ripple (cap 24) and startles the pond: koi
+within ~520 units state-flip to `startle` and dash away; koi within ~230
+(and 85% chance) dash toward the nearest lily pad and may vanish; koi within
+~420 of a hidden koi are unhidden. A hidden koi stays underwater — not drawn,
+not updatable for the player — and comes back to the surface after a calm
+interval. Lily pads bloom with 4-palette palettes (3.4 s bloom cycle) over
+the pond; a seeded sun and a reflection layer round out the scene. Audio is
+synthesized Web Audio (tap plip + filtered noise), unlocked on first tap.
+
+**Preview**: open `public/demos/index.html`, tap anywhere — ripples, koi startle, lily
+blooms. `window.__koiTest` exposes `ready`, `frames`, `tapAt(x, y)` (design
+units), and `koi()` (per-koi state/position snapshot). `npm run koicheck`
+proves it: boots, frames advancing, 7 koi, painted pond + koi colours, tap
+ripples + startle, 390×844 portrait, frame-time budget (17 gates).
