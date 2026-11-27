@@ -12,7 +12,7 @@
 
 import { readFileSync } from 'node:fs'
 import { spawnSync } from 'node:child_process'
-import { mushroomField, scoreForSegment, MUSHROOM_POINTS, CELL_SIZE, START_LIVES } from '../src/games/Centipede/sim.js'
+import { mushroomField, scoreForSegment, MUSHROOM_POINTS, CELL_SIZE, START_LIVES, SPIDER_POINTS, SCORPION_POINTS, FLEA_POINTS, SPIDER_EVERY, SCORPION_EVERY, FLEA_COOLDOWN, poisonMushroom, bulletEscapes } from '../src/games/Centipede/sim.js'
 import { seedRng, seedFromQuery } from '../src/utils/gameContract.js'
 import { plant, pull } from './lib/mutateguard.mjs'
 
@@ -90,6 +90,78 @@ console.log('component wiring: pin, lives, head rule, terminal')
     ok(/GAME OVER/.test(src) && /FINAL SCORE/.test(src), 'the terminal says GAME OVER and keeps the score visible')
 }
 
+// ------------------------------------------------------- the menagerie ------
+console.log('#3604 menagerie: spider, scorpion, flea')
+{
+    ok(SPIDER_POINTS(40) === 900 && SPIDER_POINTS(150) === 600 && SPIDER_POINTS(400) === 300,
+        'spider pays the bravery bands 900/600/300')
+    ok(SPIDER_POINTS(99) === 900 && SPIDER_POINTS(100) === 600 && SPIDER_POINTS(200) === 300,
+        'bands break at the pinned edges (<100 / <200)')
+    ok(SCORPION_POINTS === 1000, 'scorpion pays 1000')
+    ok(FLEA_POINTS === 200, 'flea pays 200')
+    ok(SPIDER_EVERY > 120 && SCORPION_EVERY > 120 && FLEA_COOLDOWN > 120,
+        'cadences give the player breathing room (>2 s each)', `${SPIDER_EVERY}/${SCORPION_EVERY}/${FLEA_COOLDOWN}`)
+    const m = { x: 0, y: 0, health: 3 }
+    ok(poisonMushroom(m) === true && m.poison === true, 'a full cap takes the venom')
+    ok(poisonMushroom(m) === false, 'poison never double-dips')
+    ok(poisonMushroom({ x: 0, y: 0, health: 2 }) === false, 'a chewed cap refuses poison (it is already dying)')
+    ok(bulletEscapes(-1) === true && bulletEscapes(0) === false && bulletEscapes(64) === false,
+        'only a shot past the top of the field counts as a sky shot')
+}
+
+console.log('#3604 wiring: the garden walks, stings and rains')
+{
+    const src = readFileSync('src/games/Centipede/index.jsx', 'utf8')
+    ok(/if \(!state\.spider && tickN >= spiderAt\) spawnSpider\(\)/.test(src) &&
+        /if \(!state\.scorpion && tickN >= scorpionAt\) spawnScorpion\(\)/.test(src),
+        'spider and scorpion enter on their cadence, one at a time')
+    ok(/state\.bullets = \[\]/.test(src),
+        'a fresh board clears the gun — no stale volley rides across a reset to diverge seeded drives (#3604)')
+    ok(/!state\.flea && playerAlive\(\) && tickN >= fleaAt && bulletEscapes\(b\.y\)/.test(src),
+        'a sky shot summons the flea — only when none lives and the cooldown passed')
+    ok(/state\.spider = \{[\s\S]{0,400}?vy: 2,/.test(src),
+        'the spider enters with a diagonal bound')
+    ok(/s\.seekAt = tickN \+ 90/.test(src) && /Math\.sign\(best\.y - s\.y\)/.test(src),
+        'the spider re-aims at the nearest mushroom every 90 ticks (the eater seeks)')
+    ok(/state\.mushrooms = state\.mushrooms\.filter\(\(m\) => !\(Math\.abs\(m\.x - s\.x\) < 12 && Math\.abs\(m\.y - s\.y\) < 12\)\)/.test(src),
+        'the spider eats every mushroom it touches')
+    ok(/state\.score \+= SPIDER_POINTS\(dist\)/.test(src),
+        'the spider kill pays through the proximity band')
+    ok(/poisonMushroom\(m\)/.test(src), 'the scorpion poisons mushrooms on its path')
+    ok(/if \(hitPoison\) c\.fast = true/.test(src), 'a centipede crossing venom turns red')
+    ok(/c\.x \+= c\.fast \? c\.vx \* 2 : c\.vx/.test(src), 'the redened segment races at double pace')
+    ok(/if \(s\.x < -20 \|\| s\.x > state\.width \+ 4\)[\s\S]{0,120}?scorpionAt = tickN \+ SCORPION_EVERY/.test(src),
+        'the streak exits the far side and the cadence restarts')
+    ok(/rainMushrooms\(2\)/.test(src), 'every flea hit rains two bonus mushrooms')
+    ok(/state\.score \+= FLEA_POINTS/.test(src), 'the flea dies paying 200')
+    ok(/f\.life--/.test(src) && /if \(f\.life <= 0\) state\.flea = null/.test(src),
+        'the flea finishes eating and hops off')
+    ok(/state\.score \+= SCORPION_POINTS/.test(src), 'the scorpion dies in one shot paying 1000')
+    ok(/Math\.abs\(s\.x - state\.player\.x\) < 12 && Math\.abs\(s\.y - state\.player\.y\) < 12\) killPlayer\(\)/.test(src),
+        'the spider and scorpion kill the zapper on touch')
+    ok(/Math\.abs\(f\.x - state\.player\.x\) < 12 && Math\.abs\(f\.y - state\.player\.y\) < 12\) killPlayer\(\)/.test(src),
+        'the flea kills on touch too')
+    ok(/if \(state\.spider\) drawSpider\(state\.spider\)/.test(src) &&
+        /if \(state\.scorpion\) drawScorpion\(state\.scorpion\)/.test(src) &&
+        /if \(state\.flea\) drawFlea\(state\.flea\)/.test(src),
+        'all three menagerie sprites are drawn')
+    ok(/m\.poison\s*\n?\s*\? \{ cap: '#ff2d2d'/.test(src) || /m\.poison\n?\s*\?/.test(src),
+        'poisoned caps render red')
+    const respawn = src.match(/if \(!playerAlive\(\) && tickN >= respawnAt\) \{[\s\S]*?\n            \}/)
+    ok(!!respawn && /state\.spider = null/.test(respawn[0]) && /state\.flea = null/.test(respawn[0]) &&
+        /scorpionAt = tickN \+ SCORPION_EVERY/.test(respawn[0]),
+        'death clears the menagerie and restarts its cadence (fair respawn)')
+    ok(/spider: state\.spider \? 1 : 0,/.test(src) && /poisoned: state\.mushrooms\.filter\(m => m\.poison\)\.length,/.test(src),
+        'QA contract exposes spider/scorpion/flea/poisoned for the harness')
+    ok(/dodge = t\.x >= state\.player\.x \? -1 : 1/.test(src),
+        'the WATCH seat sidesteps an looming menace (attract survives the menagerie)')
+    // The spider enters clear of the zapper's strip — fairness, the same law
+    // the field bands carry (#1524).
+    const ss = src.match(/const spawnSpider = \(\) => \{[\s\S]*?\n        \}/)
+    ok(!!ss && /state\.height \* 0\.45/.test(ss[0]) && !/height - 30/.test(ss[0]),
+        'the spider enters in its roaming band, never on the start pad')
+}
+
 // ------------------------------------------------------------------ mutants ----
 if (process.argv.includes('--mutant')) {
     console.log('mutants (each MUST die)')
@@ -127,6 +199,34 @@ if (process.argv.includes('--mutant')) {
             `            state.score = 0
             lives = START_LIVES`,
             `            lives = START_LIVES`],
+        // #3604 menagerie — every new law must be mortal.
+        ['venom never races (poison is cosmetic)', I,
+            `if (hitPoison) c.fast = true`,
+            `void hitPoison`],
+        ['the redened never actually speeds up', I,
+            `c.x += c.fast ? c.vx * 2 : c.vx`,
+            `c.x += c.vx`],
+        ['flea hits never rain mushrooms', I,
+            `rainMushrooms(2) // every hit rains the bonus mushrooms`,
+            `void f.health`],
+        ['a sky shot never summons the flea', I,
+            `tickN >= fleaAt && bulletEscapes(b.y)`,
+            `tickN >= fleaAt && false`],
+        ['the spider never eats (garden stays full)', I,
+            `state.mushrooms = state.mushrooms.filter((m) => !(Math.abs(m.x - s.x) < 12 && Math.abs(m.y - s.y) < 12))`,
+            `state.mushrooms = state.mushrooms.filter(() => true)`],
+        ['spider kills pay nothing', I,
+            `state.score += SPIDER_POINTS(dist)`,
+            `void dist`],
+        ['the scorpion crosses harmless (no venom)', I,
+            `Math.abs(m.y - s.y) < 10 && poisonMushroom(m)`,
+            `Math.abs(m.y - s.y) < 10 && false`],
+        ['death never clears the menagerie', I,
+            `                state.spider = null
+                state.scorpion = null
+                state.flea = null
+                spiderAt = tickN + SPIDER_EVERY`,
+            `                spiderAt = tickN + SPIDER_EVERY`],
     ]
     let died = 0
     for (const [name, file, from, to] of MUTANTS) {

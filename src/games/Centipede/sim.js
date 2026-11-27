@@ -14,6 +14,35 @@ export const INVULN_TICKS = 90   // ~1.5 s blinking grace after a respawn
 export const scoreForSegment = (isHead) => (isHead ? 100 : 10)
 export const MUSHROOM_POINTS = 1
 
+// --- The menagerie (#3604): the garden's three wandering threats ----------
+// 1981 point table, continued: spider pays proximity bands — the closer the
+// kill, the braver the shot. 900/600/300 are the arcade's published values;
+// the exact pixel bands are UNVERIFIED in-repo, so the distances we ship are
+// the pinned spec here (never the arcade's, claimed).
+export const SPIDER_POINTS = (distance) => (distance < 100 ? 900 : distance < 200 ? 600 : 300)
+export const SCORPION_POINTS = 1000
+export const FLEA_POINTS = 200
+
+// Cadence lives (ticks): each menace crosses the garden on the run's stream,
+// one at a time, with a gap between visits. Arcade cadence is UNVERIFIED —
+// these numbers are the honest shipped spec.
+export const SPIDER_EVERY = 420
+export const SCORPION_EVERY = 560
+export const FLEA_COOLDOWN = 240
+
+// The scorpion poisons the mushroom it stands on — unless it is already
+// chewing apart under shots. Poison survives every fate except a full
+// rebuild (startRun): the garden remembers.
+export const poisonMushroom = (m) => {
+    if (m.poison || m.health < 3) return false
+    m.poison = true
+    return true
+}
+
+// The top-band fairness for the zapper's summons: a bullet that flies clear
+// out of the field has crossed everything the garden can offer.
+export const bulletEscapes = (y) => y < 0
+
 // The opening mushroom field: the port's baseline of 40, scattered on the
 // run's stream, kept off the top band where the centipede spawns AND off the
 // bottom strip the zapper owns — the arcade never plants the field in the

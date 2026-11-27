@@ -5,7 +5,7 @@ import VirtualControls from '../../components/VirtualControls'
 import { GAMES } from '../../config/games'
 import { attractFrame, DIM } from './attract.js'
 import { exposeGame, unexposeGame, exposeFeedbackState, unexposeFeedbackState, seedFromQuery, seedRng } from '../../utils/gameContract'
-import { CELL_SIZE, START_LIVES, INVULN_TICKS, scoreForSegment, MUSHROOM_POINTS, mushroomField } from './sim.js'
+import { CELL_SIZE, START_LIVES, INVULN_TICKS, scoreForSegment, MUSHROOM_POINTS, mushroomField, SPIDER_POINTS, SCORPION_POINTS, FLEA_POINTS, SPIDER_EVERY, SCORPION_EVERY, FLEA_COOLDOWN, poisonMushroom, bulletEscapes } from './sim.js'
 
 // CENTIPEDE (#1473 batch 16) — the Feb port's score was dead, one touch was
 // instant hard-reset, cut bodies never grew heads, and the mushroom field
@@ -42,8 +42,12 @@ const CentipedeGame = () => {
             height: 0,
             player: { x: 0, y: 0, w: 16, h: 16 },
             bullets: [],
-            mushrooms: [], // {x, y, health}
-            centipedes: [], // Array of Segments {x, y, vx, vy, head}
+            mushrooms: [], // {x, y, health, poison?}
+            centipedes: [], // Array of Segments {x, y, vx, vy, head, fast?}
+            // #3604 menagerie: the garden's three wandering threats.
+            spider: null,   // {x,y,vx,vy,health,seekAt} the bouncing eater
+            scorpion: null, // {x,y,vx,vy,wobble} the quicksilver streak
+            flea: null,     // {x,y,vx,vy,health,life} the summoned reward
             score: 0,
             frame: 0
         }
@@ -56,6 +60,68 @@ const CentipedeGame = () => {
         let over = false
         let respawnAt = -1       // tick the zapper returns, -1 = alive
         let invulnUntil = 0
+        let spiderAt = SPIDER_EVERY     // tick the next spider enters
+        let scorpionAt = SCORPION_EVERY // tick the next scorpion crosses
+        let fleaAt = 0                  // earliest tick a high shot may summon again
+
+        // --- #3604 menagerie: fairness of entry + the mushroom rain --------
+        // The spider enters on a side, in its roaming band (never inside the
+        // zapper's own strip at spawn); the scorpion crosses the garden band,
+        // never the player pad. Both enter from a side on the run's stream.
+        const spawnSpider = () => {
+            const fromLeft = rand() < 0.5
+            const y0 = Math.round((state.height * 0.45 + rand() * state.height * 0.3) / CELL_SIZE) * CELL_SIZE
+            state.spider = {
+                x: fromLeft ? 0 : state.width - 16,
+                y: y0,
+                vx: (fromLeft ? 1 : -1) * 2,
+                vy: 2,
+                health: 3,
+                seekAt: tickN + 90,
+            }
+        }
+        const spawnScorpion = () => {
+            const fromLeft = rand() < 0.5
+            const y0 = Math.round((70 + rand() * (state.height - 240)) / CELL_SIZE) * CELL_SIZE
+            state.scorpion = {
+                x: fromLeft ? -16 : state.width,
+                y: y0,
+                vx: (fromLeft ? 1 : -1) * 4,
+                vy: 1,
+                wobble: 0,
+            }
+        }
+        // The zapper calls the flea by firing past the whole garden: it drops
+        // in where the shot vanished, at the near edge of the spawn band, so a
+        // high empty shot always answers something.
+        const spawnFlea = (x) => {
+            const dir = rand() < 0.5 ? -1 : 1
+            state.flea = {
+                x: Math.max(0, Math.min(state.width - 16, Math.floor(x / CELL_SIZE) * CELL_SIZE)),
+                y: 50,
+                vx: dir * 1.5,
+                vy: 2.5,
+                health: 2,
+                life: 600,
+            }
+        }
+        // A flea hit rains two fresh mushrooms somewhere in the garden — on
+        // the grid, in the bands the field law already owns (never the spawn
+        // lane, never the zapper strip, never stacked on an existing cap).
+        const rainMushrooms = (n) => {
+            const cols = Math.floor(state.width / CELL_SIZE)
+            const top = Math.ceil(50 / CELL_SIZE)
+            const bottom = Math.floor((state.height - 150) / CELL_SIZE)
+            for (let i = 0; i < n; i++) {
+                for (let tries = 0; tries < 8; tries++) {
+                    const x = Math.floor(rand() * cols) * CELL_SIZE
+                    const y = (top + Math.floor(rand() * Math.max(1, bottom - top))) * CELL_SIZE
+                    if (state.mushrooms.some((m) => m.x === x && m.y === y)) continue
+                    state.mushrooms.push({ x, y, health: 3 })
+                    break
+                }
+            }
+        }
 
         const spawnCentipede = () => {
             state.centipedes = []
@@ -78,6 +144,14 @@ const CentipedeGame = () => {
             // Fresh board: zapper + seeded mushroom field + a centipede on top
             respawnAt = -1
             invulnUntil = 0
+            spiderAt = tickN + SPIDER_EVERY
+            scorpionAt = tickN + SCORPION_EVERY
+            fleaAt = 0
+            state.spider = null
+            state.scorpion = null
+            state.flea = null
+            state.bullets = [] // fresh board, fresh gun — a stale volley riding
+            // across a reset diverges two identical seeded drives (#3604 drive)
             state.player.x = state.width / 2
             state.player.y = state.height - 30
             state.mushrooms = mushroomField(rand, state.width, state.height)
@@ -182,10 +256,26 @@ const CentipedeGame = () => {
             if (!playerAlive() && tickN >= respawnAt) {
                 resetPlayer()
                 spawnCentipede()
+                // The garden calms for the respawned zapper — the menagerie
+                // leaves, and its cadence restarts from this tick.
+                state.spider = null
+                state.scorpion = null
+                state.flea = null
+                spiderAt = tickN + SPIDER_EVERY
+                scorpionAt = tickN + SCORPION_EVERY
+                fleaAt = 0
             }
 
             // --- AI LOGIC ---
             if (isAttractMode && playerAlive()) {
+                // #3604 — the demo dodges: when a menace looms within reach
+                // overhead, the WATCH seat sidesteps before it hunts.
+                let dodge = 0
+                ;[state.spider, state.flea, state.scorpion].forEach((t) => {
+                    if (t && t.y > state.player.y - 110 && t.y < state.player.y + 12 && Math.abs(t.x - state.player.x) < 56) {
+                        dodge = t.x >= state.player.x ? -1 : 1
+                    }
+                })
                 // Find lowest centipede
                 let target = null
                 let maxY = -1
@@ -196,7 +286,10 @@ const CentipedeGame = () => {
                     }
                 })
 
-                if (target) {
+                if (dodge !== 0) {
+                    keys.ArrowLeft = dodge < 0
+                    keys.ArrowRight = dodge > 0
+                } else if (target) {
                     const dx = target.x - state.player.x
                     if (Math.abs(dx) > 4) {
                         if (dx > 0) { keys.ArrowRight = true; keys.ArrowLeft = false }
@@ -274,19 +367,84 @@ const CentipedeGame = () => {
                     return
                 }
 
-                if (b.y < 0) state.bullets.splice(i, 1)
+                // #3604 — Hit the menagerie? Spider first (three shots, bravery
+                // bands), then scorpion (one shot, quicksilver), then flea (two
+                // shots, each hit rains mushrooms). All inside the garden only.
+                if (state.spider) {
+                    const s = state.spider
+                    if (Math.abs(b.x - (s.x + 8)) < 12 && Math.abs(b.y - (s.y + 8)) < 12) {
+                        s.health--
+                        state.bullets.splice(i, 1)
+                        if (s.health <= 0) {
+                            const dist = Math.abs(s.x - state.player.x) + Math.abs(s.y - state.player.y)
+                            state.score += SPIDER_POINTS(dist)
+                            state.spider = null
+                            spiderAt = tickN + SPIDER_EVERY
+                            audioController.playSweep(300, 90, 0.3, 'square')
+                        } else {
+                            audioController.playNoise(0.15, 0.25)
+                        }
+                        return
+                    }
+                }
+                if (state.scorpion) {
+                    const s = state.scorpion
+                    if (Math.abs(b.x - (s.x + 8)) < 12 && Math.abs(b.y - (s.y + 8)) < 10) {
+                        state.score += SCORPION_POINTS
+                        state.scorpion = null
+                        scorpionAt = tickN + SCORPION_EVERY
+                        audioController.playSweep(200, 900, 0.4, 'square')
+                        state.bullets.splice(i, 1)
+                        return
+                    }
+                }
+                if (state.flea) {
+                    const f = state.flea
+                    if (Math.abs(b.x - (f.x + 8)) < 12 && Math.abs(b.y - (f.y + 8)) < 12) {
+                        f.health--
+                        rainMushrooms(2) // every hit rains the bonus mushrooms
+                        state.bullets.splice(i, 1)
+                        if (f.health <= 0) {
+                            state.score += FLEA_POINTS
+                            state.flea = null
+                            audioController.playSweep(500, 180, 0.2, 'triangle')
+                        } else {
+                            audioController.playTone(520, 0.06, 'triangle')
+                        }
+                        return
+                    }
+                }
+
+                if (b.y < 0) {
+                    // A shot that flies clear out of the field was aimed at the
+                    // empty sky — the arcade answers with a flea, on cooldown so
+                    // mashing can't summon a plague.
+                    if (!state.flea && playerAlive() && tickN >= fleaAt && bulletEscapes(b.y)) {
+                        spawnFlea(b.x)
+                        fleaAt = tickN + FLEA_COOLDOWN
+                        audioController.playTone(1200, 0.05, 'square')
+                    }
+                    state.bullets.splice(i, 1)
+                }
             })
 
             // Centipede Logic
             // We need to look ahead for mushrooms
             state.centipedes.forEach(c => {
-                // Move
-                c.x += c.vx
+                // Move — a redened (poison-touched) segment races at double
+                // the pace until the wave rebuilds.
+                c.x += c.fast ? c.vx * 2 : c.vx
                 c.y += c.vy
 
                 // Turn/Drop Logic
                 let hitSide = (c.x < 0 || c.x > state.width - 16)
-                let hitShroom = state.mushrooms.some(m => Math.abs(c.x - m.x) < 10 && Math.abs(c.y - m.y) < 10)
+                let hitPoison = false
+                let hitShroom = state.mushrooms.some(m => {
+                    if (!(Math.abs(c.x - m.x) < 10 && Math.abs(c.y - m.y) < 10)) return false
+                    if (m.poison) hitPoison = true
+                    return true
+                })
+                if (hitPoison) c.fast = true // scorpion venom: red and racing
 
                 if (hitSide || hitShroom) {
                     // If just hit, drop down
@@ -313,6 +471,80 @@ const CentipedeGame = () => {
                 spawnCentipede() // Next level
                 audioController.playSweep(400, 800, 0.5, 'sine')
             }
+
+            // --- #3604 menagerie: the garden walks --------------------------
+            if (!state.spider && tickN >= spiderAt) spawnSpider()
+            if (!state.scorpion && tickN >= scorpionAt) spawnScorpion()
+
+            if (state.spider) {
+                const s = state.spider
+                // Seek: every so often the eater leans toward the nearest
+                // mushroom it can smell — that's the bounce grammar of the
+                // arcade's lunch run.
+                if (tickN >= s.seekAt) {
+                    let best = null, bestD = 1e9
+                    state.mushrooms.forEach((m) => {
+                        const d = Math.abs(m.x - s.x) + Math.abs(m.y - s.y)
+                        if (d < bestD) { bestD = d; best = m }
+                    })
+                    if (best) {
+                        if (Math.abs(best.x - s.x) > 4) s.vx = Math.sign(best.x - s.x) * 2
+                        if (Math.abs(best.y - s.y) > 4) s.vy = Math.sign(best.y - s.y) * 2
+                    }
+                    s.seekAt = tickN + 90
+                }
+                s.x += s.vx
+                s.y += s.vy
+                if (s.x < 0) { s.x = 0; s.vx = -s.vx }
+                if (s.x > state.width - 16) { s.x = state.width - 16; s.vx = -s.vx }
+                const sTop = Math.round(state.height * 0.3), sBottom = state.height - 16
+                if (s.y < sTop) { s.y = sTop; s.vy = -s.vy }
+                if (s.y > sBottom) { s.y = sBottom; s.vy = -s.vy }
+                // Eat everything it touches — the garden shrinks behind it.
+                const before = state.mushrooms.length
+                state.mushrooms = state.mushrooms.filter((m) => !(Math.abs(m.x - s.x) < 12 && Math.abs(m.y - s.y) < 12))
+                if (state.mushrooms.length < before) audioController.playNoise(0.08, 0.15)
+                if (playerAlive() && tickN >= invulnUntil && Math.abs(s.x - state.player.x) < 12 && Math.abs(s.y - state.player.y) < 12) killPlayer()
+            }
+
+            if (state.scorpion) {
+                const s = state.scorpion
+                s.wobble++
+                if (s.wobble % 36 === 0) s.vy = -s.vy // the zigzag dip
+                s.x += s.vx
+                s.y += s.vy
+                if (s.y < 60) { s.y = 60; s.vy = 1 }
+                if (s.y > state.height - 180) { s.y = state.height - 180; s.vy = -1 }
+                // Venom trail: every full cap under the streak turns red.
+                state.mushrooms.forEach((m) => {
+                    if (Math.abs(m.x - s.x) < 10 && Math.abs(m.y - s.y) < 10 && poisonMushroom(m)) {
+                        audioController.playTone(900, 0.04, 'sawtooth')
+                    }
+                })
+                if (playerAlive() && tickN >= invulnUntil && Math.abs(s.x - state.player.x) < 12 && Math.abs(s.y - state.player.y) < 12) killPlayer()
+                // The streak exits the far side and the desert resumes.
+                if (s.x < -20 || s.x > state.width + 4) {
+                    state.scorpion = null
+                    scorpionAt = tickN + SCORPION_EVERY
+                }
+            }
+
+            if (state.flea) {
+                const f = state.flea
+                f.life--
+                f.x += f.vx
+                f.y += f.vy
+                if (f.x < 0) { f.x = 0; f.vx = -f.vx }
+                if (f.x > state.width - 16) { f.x = state.width - 16; f.vx = -f.vx }
+                if (f.y <= 50) { f.y = 50; f.vy = Math.abs(f.vy) }
+                if (f.y >= state.height - 40) { f.y = state.height - 40; f.vy = -Math.abs(f.vy) }
+                // Fleas chew the garden too.
+                const beforeF = state.mushrooms.length
+                state.mushrooms = state.mushrooms.filter((m) => !(Math.abs(m.x - f.x) < 10 && Math.abs(m.y - f.y) < 10))
+                if (state.mushrooms.length < beforeF) audioController.playNoise(0.08, 0.15)
+                if (playerAlive() && tickN >= invulnUntil && Math.abs(f.x - state.player.x) < 12 && Math.abs(f.y - state.player.y) < 12) killPlayer()
+                if (f.life <= 0) state.flea = null // done eating, hops off
+            }
         }
 
         // art(#3413): original Centipede mushrooms — a toadstool silhouette (cap +
@@ -328,7 +560,9 @@ const CentipedeGame = () => {
             1: { cap: '#ff5c8a', dark: '#c22f5b', lite: '#ffb6c8' },
         }
         const drawMushroom = (m) => {
-            const c = MUSHROOM_SKIN[m.health] || MUSHROOM_SKIN[1]
+            const c = m.poison
+                ? { cap: '#ff2d2d', dark: '#a3111a', lite: '#ffb3b3' } // scorpion venom (arcade red)
+                : (MUSHROOM_SKIN[m.health] || MUSHROOM_SKIN[1])
             const capW = m.health === 3 ? 12 : m.health === 2 ? 10 : 8
             const capX = m.x + Math.round((16 - capW) / 2)
             const capY = m.y + 2
@@ -357,13 +591,83 @@ const CentipedeGame = () => {
             }
         }
 
+        // #3604 — the menagerie sprites. Chunky 16px pixel bugs in the
+        // arcade's roles: the purple eater with eight skittering legs, the
+        // orange streak with raised claws and curled tail, the tiny blue
+        // hopper. All drawn in code; legs animate on a frame parity like the
+        // centipede already does (one clock, one garden).
+        const drawSpider = (s) => {
+            const step = Math.floor(state.frame / 6) % 2 === 0
+            ctx.strokeStyle = '#b48cff'
+            for (let i = 0; i < 4; i++) {
+                const ly = s.y + 3 + i * 2
+                const dx = step ? 5 : 3, dy = step ? -2 : 3
+                ctx.beginPath(); ctx.moveTo(s.x + 3, ly); ctx.lineTo(s.x + 3 - dx, ly + dy); ctx.stroke()
+                ctx.beginPath(); ctx.moveTo(s.x + 13, ly); ctx.lineTo(s.x + 13 + dx, ly + dy); ctx.stroke()
+            }
+            ctx.fillStyle = '#7f5cff' // body
+            ctx.fillRect(s.x + 3, s.y + 2, 10, 9)
+            ctx.fillStyle = '#b48cff' // head + back highlight
+            ctx.fillRect(s.x + 5, s.y + 1, 6, 3)
+            ctx.fillStyle = '#ffd23f' // eyes
+            ctx.fillRect(s.x + 6, s.y + 5, 1, 1)
+            ctx.fillRect(s.x + 9, s.y + 5, 1, 1)
+        }
+        const drawScorpion = (s) => {
+            const flip = s.vx < 0
+            const px = (o) => (flip ? 15 - o : o) // face the travel direction
+            ctx.fillStyle = '#f0a02e'
+            ctx.fillRect(s.x + 4, s.y + 6, 8, 4)   // body
+            ctx.fillStyle = '#ffd98f'
+            ctx.fillRect(s.x + 5, s.y + 6, 5, 1)   // back shine
+            // tail: curls up over the back, stinger forward
+            const tailX = flip ? 3 : 12
+            ctx.fillStyle = '#f0a02e'
+            ctx.fillRect(s.x + tailX, s.y + 3, 2, 4)
+            ctx.fillRect(s.x + (flip ? 1 : 13), s.y + 1, 2, 2)
+            ctx.fillStyle = '#ff5c8a' // stinger tip
+            ctx.fillRect(s.x + (flip ? 2 : 12), s.y, 2, 2)
+            // claws reach ahead
+            ctx.fillStyle = '#f0a02e'
+            const clawX = flip ? -2 : 14
+            ctx.fillRect(s.x + clawX, s.y + 5, 3, 2)
+            ctx.fillRect(s.x + clawX + (flip ? -1 : 2), s.y + 8, 3, 2)
+            // legs
+            ctx.strokeStyle = '#b56d10'
+            const step = Math.floor(state.frame / 4) % 2 === 0
+            for (let i = 0; i < 3; i++) {
+                const ly = s.y + 7 + i
+                ctx.beginPath(); ctx.moveTo(s.x + px(5 + i * 2), ly); ctx.lineTo(s.x + px(4 + i * 2) - (step ? 1 : 0), ly + 3); ctx.stroke()
+            }
+        }
+        const drawFlea = (f) => {
+            const hop = Math.floor(state.frame / 5) % 2 === 0
+            ctx.fillStyle = '#5c6bff' // the arcade's tiny blue menace
+            ctx.fillRect(f.x + 5, f.y + 4, 6, 5)
+            ctx.fillStyle = '#a6b4ff'
+            ctx.fillRect(f.x + 6, f.y + 4, 3, 2)
+            ctx.fillStyle = '#2fd6c3' // eyes
+            ctx.fillRect(f.x + 9, f.y + 5, 1, 1)
+            // spring legs fold and snap as it drives down the garden
+            ctx.strokeStyle = '#5c6bff'
+            ctx.beginPath(); ctx.moveTo(f.x + 6, f.y + 9); ctx.lineTo(f.x + (hop ? 3 : 5), f.y + (hop ? 13 : 11)); ctx.stroke()
+            ctx.beginPath(); ctx.moveTo(f.x + 10, f.y + 9); ctx.lineTo(f.x + (hop ? 13 : 11), f.y + (hop ? 13 : 11)); ctx.stroke()
+        }
+
         const draw = () => {
             // Bg
             ctx.fillStyle = 'black'
             ctx.fillRect(0, 0, state.width, state.height)
 
-            // Mushrooms — colourful toadstools (was flat white squares)
+            // Mushrooms — colourful toadstools (was flat white squares); red
+            // caps are the scorpion's venom (#3604).
             state.mushrooms.forEach(drawMushroom)
+
+            // The menagerie (#3604): spider, scorpion, flea — over the garden,
+            // under the shots.
+            if (state.spider) drawSpider(state.spider)
+            if (state.scorpion) drawScorpion(state.scorpion)
+            if (state.flea) drawFlea(state.flea)
 
             // Centipede
             state.centipedes.forEach(c => {
@@ -497,6 +801,10 @@ const CentipedeGame = () => {
                 segments: state.centipedes.length,
                 heads: state.centipedes.filter(c => c.head).length,
                 mushrooms: state.mushrooms.length,
+                spider: state.spider ? 1 : 0,
+                scorpion: state.scorpion ? 1 : 0,
+                flea: state.flea ? 1 : 0,
+                poisoned: state.mushrooms.filter(m => m.poison).length,
                 playerX: Math.round(state.player.x),
                 playerY: Math.round(state.player.y),
             }),
