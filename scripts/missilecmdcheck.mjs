@@ -301,7 +301,6 @@ console.log('saucers (#3629): entry, launches, the 125 kill, the wave hold')
     ok(bonus && bonus.boom > g3.tick && bonus.aimY === 160, 'the bonus shot leads the ferry with its own detonation tick')
 }
 
-<<<<<<< HEAD
 // --------------------------------------------- #3638 deep doctrine (A/B) ---------
 // The watch's ferry opportunism, measured rather than asserted: run every
 // seed twice at waves 6–10 — bonus on, bonus off — and pin what the arcade
@@ -315,6 +314,7 @@ console.log('saucers (#3638): deep doctrine waves 6..10, bonus on vs off')
         const gs = makeRun(seed)
         gs.wave = wave
         startWave(gs)
+        gs.smartLeftInWave = 0 // #3630 isolation: ferry doctrine is graded without the wave-7 arrivals
         let guard = 0
         while (gs.wave <= wave && !gs.over && guard++ < 40000) tickMc(gs, gunnerStep(gs, { noBonus }))
         return { over: gs.over, wave: gs.wave, cities: citiesAlive(gs), score: gs.score }
@@ -401,7 +401,8 @@ console.log('saucers (#3638): kill juice, and the attract ferry scripted by tick
         if (g2.attractFerries === 2) second = { y: g2.saucers[g2.saucers.length - 1].y, dir: g2.saucers[g2.saucers.length - 1].dir }
     }
     ok(second && second.y === 156 && second.dir === -1, 'the second sighting alternates side and altitude (advertising, not a loop frozen on one frame)', JSON.stringify(second))
-=======
+}
+
 // ---------------------------------------------------------- smart bombs --------
 // #3630 — the evasive warhead and its arcade counter. Wikipedia (verbatim):
 // "The missiles of the center battery fly to their targets at much greater
@@ -576,7 +577,6 @@ console.log('smart bombs (#3630): the watch fights back with the center battery'
     ]
     const shot = gunnerStep(g)
     ok(shot && shot.wid === 9, 'cities before exotics: the uncovered ICBM owns the shot ahead of the smart bomb', `wid ${shot && shot.wid}`)
->>>>>>> 7ad8258 (missilecmdcheck: §smart — 23 new checks + 7 mutants (#3630 slice 1))
 }
 
 // -------------------------------------------------------------------- the law ----
@@ -653,7 +653,6 @@ if (process.argv.includes('--mutant')) {
         ['the wave clears regardless of owed ferries (spawned-after-clear ghost)', S,
             `gs.saucers.length === 0 && gs.saucersLeftInWave === 0`,
             `true`],
-<<<<<<< HEAD
         ['#3638: the bonus ignores its reserve (A/B cities pay for it)', S,
             `if (!anyLive && saucer && ammoLeft - 1 >= reserve) {`,
             `if (!anyLive && saucer) {`],
@@ -671,7 +670,6 @@ if (process.argv.includes('--mutant')) {
         ['#3638: the attract ferry rolls dice (determinism story dies)', S,
             `y: 130 + (n % 3) * 26,`,
             `y: SAUCER_Y_MIN + Math.floor(gs.rand() * (SAUCER_Y_MAX - SAUCER_Y_MIN)),`],
-=======
         ['the smart-bomb gate opens at wave 1 (byte-parity floor shatters)', S,
             `if (gs.wave >= SMART_FIRST_WAVE) {\n        gs.smartLeftInWave`,
             `if (gs.wave >= 1) {\n        gs.smartLeftInWave`],
@@ -693,7 +691,6 @@ if (process.argv.includes('--mutant')) {
         ['the watch sprays outer ammo at smart bombs (3-button doctrine lost)', S,
             `fired = { aimX: p.x, aimY: p.y, wid: w.id, boom: gs.tick + k, silo: centerIdx }`,
             `fired = { aimX: p.x, aimY: p.y, wid: w.id, boom: gs.tick + k, silo: gs.silos.findIndex((s) => s.alive && s.ammo > 0) }`],
->>>>>>> 7ad8258 (missilecmdcheck: §smart — 23 new checks + 7 mutants (#3630 slice 1))
     ]
     let died = 0
     for (const [name, file, from, to] of MUTANTS) {
