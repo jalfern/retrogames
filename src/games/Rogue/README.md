@@ -278,7 +278,22 @@ snake's line + blip (mutants: unplugged emit → 2 red; deleted line → 1 red).
   `Hp: cur(max)` hit-dice read was already faithful. What stays open: the
   cart's potion of raise (`P_RAISE` — exp to the next rung, "skillful") is a
   new generation type, deferred, not forgotten.
+ - Potion law, `chg_str` (#3702, fetched `misc.c`/`potions.c`): a potion of
+   gain lifts strength by 1 and **raises the ceiling with it** — `chg_str`
+   updates `max_stats` whenever current exceeds it; poison is ONE d3 bite with
+   a floor of 3, and the negative branch never touches `max_stats`. The old
+   port's `maxStr+3` band, floor-1 clamp and static ceiling were inventions;
+   past 18 the cart converts gains to percentile strength (`st_add`), which
+   the port does not model, so 18 caps. All eight quaff lines are now the
+   cart's verbatim `potions.c` effect lines — down to the cart's "It make you
+   feel warm all over" grammar; the cart has exactly ONE quaff voice (the
+   effect line prints regardless of `p_know`; knowledge renames, it doesn't
+   re-voice). Two dead premises documented: "poison is a duration clock" is
+   false — `P_POISON` carries no `lengthen`/`fuse`, unlike confuse/blind — and
+   the bite's `R_SUSTSTR` ring guard needs a rings system the port doesn't
+   have yet. roguecheck +7 pins (ceiling lift, 18 cap, floor 3, ceiling
+   untouched by poison, cart lines).
 - Food is the only light-source clock; no lamp/oil and torch-lit radius.
 
 RETRO bar: pure green-phosphor monospace look, original ASCII symbol set and
-the classic message line voice ("You feel much better!", "Welcome to level 4!").
+the classic message line voice ("You begin to feel much better.", "Welcome to level 4!").
