@@ -155,6 +155,13 @@ export function buildLevel() {
     addLadder(222, 2, 1, false)
     ladders[ladders.length - 1].dangles = true // foot hangs over girder 1's gap
     addLadder(222, 1, 0, false)
+    // R2 is a barrel-only outside ladder: its mouth hangs past girder 1's end,
+    // so the runner can meet it with falling barrels but never stands on it.
+    // The attract demo and the runner's mount scan skip it; barrels don't.
+    ladders[ladders.length - 1].barrelOnly = true
+    // Purely visual: the brace that hangs R2 off girder 1's corner (drawn by
+    // the shell; physics never reads it).
+    ladders[ladders.length - 1].braceFrom = { x: 208, y: getPlatformY(platforms[1], 208) }
 
     // Hammers (#2018) — two mallets ride the girders like the arcade's pair.
     // Placed at the RIGHT-hand ends of the ground floor and DK's girder: the
@@ -414,7 +421,7 @@ function attractPlan(gs) {
         let bestLadder = null
         let bestDist = Infinity
         for (const l of gs.ladders) {
-            if (l.broken) continue
+            if (l.broken || l.barrelOnly) continue
             const footY = p.y + p.h
             if (Math.abs(l.yBot - footY) < 6) {
                 const dist = Math.abs(p.x - l.x)
@@ -607,6 +614,7 @@ export function tickDonkeyKong(gs, input = null) {
     // girder below, never clings to rungs the route cannot prove.
     const human = !!(input && input.human)
     const nearLadder = gs.ladders.find(l => {
+        if (l.barrelOnly) return false // #3622 — the outside rung is the barrels'
         const cx = p.x + p.w / 2
         if (Math.abs(cx - l.x) >= 8) return false
         return l.broken
