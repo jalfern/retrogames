@@ -568,6 +568,41 @@ try {
     ok('JET LANE return: spinner turns rise (the feed returns through the spinner)',
         !!spinS && spinS.spinnerTurns > spin0, `spinnerTurns ${spin0}→${spinS && spinS.spinnerTurns}`)
 
+    // #3766 pixels: the rescue CHASE rides up its own column. The SET re-armed
+    // the left save — drop a fast ball down that column and sample the strip
+    // just behind where the head should be, while gs.kbSweep is riding. The
+    // same strip before the fire is the control: dark when the save is quiet.
+    const chaseCab = (await flankSt()).cab
+    const chX = chaseCab === 'ember-rider' ? 197 : 162      // kbL column centre per cabinet
+    const sampleChase = (yFrom, yTo) => page.evaluate(([cx, y0, y1]) => {
+        const d = document.querySelector('canvas').getContext('2d')
+            .getImageData(cx - 3, Math.round(y0), 7, Math.max(1, Math.round(y1 - y0))).data
+        let lit = 0
+        for (let i = 0; i < d.length; i += 4) if (d[i] > 150 && d[i + 1] > 150 && d[i + 2] > 150) lit++
+        return lit
+    }, [chX, yFrom, yTo])
+    await quiet()
+    const chaseCtrl = await sampleChase(556, 600)
+    await page.evaluate(() => window.__pinballTest.kbDrop('L'))
+    let chaseLit = -1, chaseSweep = -1
+    for (let i = 0; i < 50; i++) {
+        const cs = await page.evaluate((cx) => {
+            const s = window.__pinballTest.state()
+            if (!(s.kbSweep >= 8 && s.kbSweepL === 1)) return null
+            const t = Math.min(1, (18 - s.kbSweep) / 14)
+            const yNow = 604 + (549 - 604) * t
+            const px = document.querySelector('canvas').getContext('2d')
+                .getImageData(cx - 3, Math.round(yNow + 8), 7, Math.max(1, Math.min(604, yNow + 44) - Math.round(yNow + 8))).data
+            let lit = 0
+            for (let i = 0; i < px.length; i += 4) if (px[i] > 150 && px[i + 1] > 150 && px[i + 2] > 150) lit++
+            return { lit, sweep: s.kbSweep }
+        }, chX)
+        if (cs) { chaseSweep = cs.sweep; if (cs.lit > chaseLit) chaseLit = cs.lit; if (cs.lit >= 8) break }
+        await wait(16)
+    }
+    ok('#3766 the re-armed save chases live: white head+tail pixels ride the column while kbSweep runs',
+        chaseLit >= 8 && chaseSweep >= 8, `lit=${chaseLit} sweep=${chaseSweep} ctrl=${chaseCtrl}`)
+
     ok('zero page errors through the whole drive', errors.length === 0, errors.join(';'))
 } finally {
     await browser.close()

@@ -104,14 +104,21 @@ batch). The scripted route lives in `adventurecheck.mjs` and wins at tick
   its own fix: `VARIANTS` (V1 CLASSIC / V2 FAST / V3 SHUFFLE) and
   `DEFAULT_VARIANT` live in `sim.js`; the dot-matrix SELECT GAME page, the
   arrow pick and the `?variant=N` pin live in `attract.js`/`index.jsx`.
-- The drop-the-key gate rite keeps no written manual. A first-timer probe
+- **CLOSED by #3766 — audit:** the drop-the-key gate rite keeps no written
+  manual. A first-timer probe
   (#1568: 200 novice seeds x 5000 ticks, seeded random-walk in Node):
   56/200 seeds pick up the gold key, but **0/200 open any castle gate** and
   **0/200 open the secret rite**. The #1572 feel pass added a visible
   threshold mat that glints while the matching key is carried at the gate
   (see Restored below) — teaching where the drop counts; actually performing
   the rite is still the player's discovery, and the secret rite stays
-  Robinett's (no hint by design).
+  Robinett's (no hint by design). The claim was stale as written: the SAME
+  #1572 pass shipped its item 2 — the guidance tab (registered `guide:` in
+  `games.js`) names the three castles and their key colors and states the
+  drop-the-key law ("Walk its matching key up to a gate and it rises — or
+  drop the key in front (Space)"), pinned by nine `adventurecheck` guidance
+  gates (incl. "teaches the drop rite" and a drop-rite-removed mutant). The
+  rite HAS a written manual on the shelf; #1568 measured the pre-#1572 cart.
 - **CLOSED by #1572 — retro-marked in #3552:** no guidance surface. The
   original shipped a fold-out map and hint sheet (the manual was half the game);
   this port's only in-game text was `PauseOverlay`'s
@@ -456,8 +463,10 @@ was inflated by stale bullets: the variant-selector gap shipped in #1572
 (parsed to the next `##`) counted nine restored features as open gaps. Fixed
 here: the subsections are level-2 headings now, shipped notes carry CLOSED /
 DISCLAIMER markers — the picker sees one real gap (the gate-rite manual, with
-the 0/200 first-timer metrics) instead of thirteen.
+the 0/200 first-timer metrics) instead of thirteen. (That last gap CLOSED at
+the #3766 audit above — the picker now sees none.)
 
 Gated in `adventurecheck` 223/0 (+7 §3552 pins; route wins V1/V2/V3 10/10) and
-`advedrive` 10/10 real Chrome. Left open: the drop-the-key gate rite still has
-no written manual (the last honest gap above).
+`advedrive` 10/10 real Chrome. Left open: none — the drop-the-key gate rite
+manual claim closed with the #3766 audit above (the guide tab shipped with
+#1572); the gate-rite bullet was the last honest gap and is now marked CLOSED.
