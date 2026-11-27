@@ -75,21 +75,94 @@ export const ROWS = MAP.length
 export const COLS = MAP[0].length
 
 // ---------------------------------------------------------------------------
-// FRUIT (#1517) — the arcade drops bonus fruit twice per stage: it appears the
-// moment Pac-Man eats the 70th and 170th pellet (of 240), sits just below the
-// ghost house for ~10 s (600 fixed ticks), is worth 100 on stage 1, blinks
-// near the end, then vanishes. The timer is WORLD ticks — never wall-clock —
-// so the harness sees the blink phase and the lifetime exactly (AGENTS rule:
-// waits/budgets are world seconds). Pure + Node-testable: pacmancheck gates
-// thresholds, lifetime, eating and the maze placement.
+// PROGRESSION (#3661) — the arcade escalates as the player climbs. The LAWS are
+// sourced (Wikipedia, "Pac-Man" gameplay: ghosts become faster as the game
+// progresses; ghosts become slower entering/exiting the warp tunnels; the
+// energizers' effect decreases in duration, eventually disappearing entirely;
+// a fruit bonus appears after a number of dots; levels are marked by fruit
+// icons). The exact rates, thresholds and the fruit value table are THIS REPO's
+// pinned spec, in the centipede #3631 tradition: dice-free constants, so
+// `?seed=N` replay determinism holds and round 1 below 700 points outside the
+// tunnels is byte-identical to the pre-#3661 game. pacmancheck §progression
+// gates the ladder, the monotone law, the tunnel span and the round-1 identity.
+// ---------------------------------------------------------------------------
+
+// Score stages (the classic 80/75 → 85/80 → 90/85 → 95/90 % table, mapped onto
+// this repo's speeds: pac 0.15 = 80 %, ghost base = each ghost's own 75 %).
+export const SPEED_STAGES = [
+    { at: 0, pac: 0.15, ghost: 1.0 },     // stage 1 — today's baseline, unchanged
+    { at: 700, pac: 0.16, ghost: 1.067 }, // 85 % / 80 %
+    { at: 2000, pac: 0.169, ghost: 1.133 }, // 90 % / 85 %
+    { at: 5000, pac: 0.178, ghost: 1.2 }, // 95 % / 90 %
+]
+export function speedStage(score) {
+    const s = score || 0
+    let stage = 0
+    for (let i = 0; i < SPEED_STAGES.length; i++) if (s >= SPEED_STAGES[i].at) stage = i
+    return stage
+}
+export function pacSpeedForScore(score) {
+    return SPEED_STAGES[speedStage(score)].pac
+}
+
+// Ghosts crawl on the tunnel mouths — row 14 OUTSIDE the ghost-house walls
+// (x ≤ 9 / x ≥ 18). The house interior (x 11–16) is not a tunnel.
+export const TUNNEL_X_MAX = 9
+export const TUNNEL_X_MIN = 18
+export function ghostSlowsAt(x, y) {
+    return y === TUNNEL_ROW && (x <= TUNNEL_X_MAX || x >= TUNNEL_X_MIN)
+}
+
+// Energizer duration decays with the round and vanishes entirely from round 14
+// (the pellet still scores — the fright does not come back). Round 1 = the old
+// POWER_TICKS exactly.
+export function energizerTicks(round) {
+    const r = Math.max(1, round || 1)
+    if (r >= 14) return 0
+    return Math.max(120, POWER_TICKS - (r - 1) * 100) // 600, 500, 400, 320…
+}
+
+// ---------------------------------------------------------------------------
+// FRUIT (#1517, stage-keyed #3661) — the arcade drops bonus fruit twice per
+// stage: it appears the moment Pac-Man eats the 70th and 170th pellet (of 240),
+// sits just below the ghost house for ~10 s (600 fixed ticks), blinks near the
+// end, then vanishes. The KIND and its value follow the round: cherry 100 (r1),
+// strawberry 300 (r2), peach 500 (r3–4), galaxian 1000 (r5–6), bell 2000
+// (r7–8), key 5000 (r9–10), then the bell/key pair cycles (the commonly
+// published arcade table; the exact machine table is UNVERIFIED in-repo).
+// The timer is WORLD ticks — never wall-clock — so the harness sees the blink
+// phase and the lifetime exactly (AGENTS rule: waits/budgets are world seconds).
+// Pure + Node-testable: pacmancheck gates thresholds, lifetime, eating and the
+// maze placement.
 // ---------------------------------------------------------------------------
 export const FRUIT_TICKS = 600            // ~10 s at the fixed 60 Hz timestep
 export const FRUIT_BLINK = 120          // blink for the last 2 s before expiry
-export const FRUIT_POINTS = 100         // cherries, stage 1
 export const FRUIT_AT = [70, 170]       // pellet counts that drop the fruit
 // tile just below the ghost house, on the open corridor under it (arcade spot,
 // mapped onto this maze; pacmancheck asserts it is open floor)
 export const FRUIT_POS = { x: 13, y: 17 }
+
+// first round that shows each kind (rounds between entries keep the previous
+// kind — peach covers 3–4, galaxian 5–6, bell 7–8, key 9–10)
+export const FRUIT_TABLE = [
+    { at: 1, kind: 'cherry', points: 100 },
+    { at: 2, kind: 'strawberry', points: 300 },
+    { at: 3, kind: 'peach', points: 500 },
+    { at: 5, kind: 'galaxian', points: 1000 },
+    { at: 7, kind: 'bell', points: 2000 },
+    { at: 9, kind: 'key', points: 5000 },
+]
+export function fruitForRound(round) {
+    const r = Math.max(1, round || 1)
+    if (r >= 11) {
+        return Math.floor((r - 11) / 2) % 2 === 0
+            ? { kind: 'bell', points: 2000 }
+            : { kind: 'key', points: 5000 }
+    }
+    let pick = FRUIT_TABLE[0]
+    for (const f of FRUIT_TABLE) if (r >= f.at) pick = f
+    return pick
+}
 
 export function makeFruitTracker() {
     return { pellets: 0, dropped: 0, fruit: null }
@@ -98,13 +171,15 @@ export function makeFruitTracker() {
 // One tick of the fruit state machine.
 // ate     : true when THIS tick consumed a pellet (dot or power)
 // pacPos  : Pac-Man's current tile { x, y } (rounded)
+// round   : stage number (default 1 — pre-#3661 callers keep cherry behaviour)
 // returns fruit points scored this tick (0 when nothing happens).
-export function stepFruit(tr, ate, pacPos, hooks = {}) {
+export function stepFruit(tr, ate, pacPos, hooks = {}, round = 1) {
     if (ate) {
         tr.pellets++
         if (!tr.fruit && tr.dropped < FRUIT_AT.length && tr.pellets >= FRUIT_AT[tr.dropped]) {
             tr.dropped++
-            tr.fruit = { x: FRUIT_POS.x, y: FRUIT_POS.y, timer: FRUIT_TICKS }
+            const pick = fruitForRound(round)
+            tr.fruit = { x: FRUIT_POS.x, y: FRUIT_POS.y, timer: FRUIT_TICKS, kind: pick.kind, points: pick.points }
             hooks.drop?.()
             return 0 // the drop tick does not also age the fruit
         }
@@ -112,9 +187,10 @@ export function stepFruit(tr, ate, pacPos, hooks = {}) {
     if (!tr.fruit) return 0
     tr.fruit.timer--
     if (pacPos && Math.round(pacPos.x) === tr.fruit.x && Math.round(pacPos.y) === tr.fruit.y) {
+        const paid = tr.fruit.points
         tr.fruit = null
         hooks.eat?.()
-        return FRUIT_POINTS
+        return paid
     }
     if (tr.fruit.timer <= 0) tr.fruit = null
     return 0
@@ -159,6 +235,9 @@ const opposite = (a, b) => a.x === -b.x && a.y === -b.y
 // returns 'dot' | 'power' | null for the component's audio.
 export function stepPlayer(gs, held) {
     const P = gs.pacman
+    // #3661: the score stage sets Pac-Man's speed every tick (stage 1 = the
+    // classic 0.15; the ladder only bites past 700 points).
+    P.speed = pacSpeedForScore(gs.score)
     if (held.length === 2 && opposite(held[0], held[1])) held.length = 1
     const moving = P.dir.x !== 0 || P.dir.y !== 0
     let reversed = false
@@ -235,8 +314,13 @@ export function stepPlayer(gs, held) {
                     } else if (tile === 3) {
                         gs.map[my][mx] = 0
                         gs.score += 50
-                        P.poweredUp = true
-                        P.powerTimer = POWER_TICKS
+                        // #3661: the fright window decays with the round and is
+                        // gone entirely from round 14 — the pellet still scores.
+                        const ticks = energizerTicks(gs.round)
+                        if (ticks > 0) {
+                            P.poweredUp = true
+                            P.powerTimer = ticks
+                        }
                         eaten = 'power'
                     }
                 }
@@ -403,8 +487,13 @@ export function stepGhost(g, gs, rand, hooks = {}) {
     }
     if (g.nextDir) {
         let currentSpeed = g.speed
+        // #3661: the score stage lifts every ghost's base speed (stage 1 = 1×,
+        // today's baseline); scared/dead multipliers and the tunnel crawl then
+        // stack on top, in this fixed order.
+        currentSpeed *= SPEED_STAGES[speedStage(gs.score)].ghost
         if (g.state === 'scared') currentSpeed *= 0.6
         if (g.state === 'dead') currentSpeed *= 3.0
+        if (ghostSlowsAt(Math.round(g.x), Math.round(g.y))) currentSpeed *= 0.5
         g.progress += currentSpeed
         if (g.progress >= 1) {
             g.x += g.nextDir.x

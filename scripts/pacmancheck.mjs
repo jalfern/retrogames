@@ -13,7 +13,7 @@
 
 import { readFileSync, writeFileSync } from 'node:fs'
 import { spawnSync } from 'node:child_process'
-import { MAP, COLS, ROWS, CORNER_PX, makePacman, stepPlayer, tileOpen, cloneMap, stepGhost, scaredSkin, SCARED_FLASH_AT, SCARED_BLINK, POWER_TICKS, makeFruitTracker, stepFruit, FRUIT_TICKS, FRUIT_AT, FRUIT_POS, FRUIT_BLINK } from '../src/games/Pacman/move.js'
+import { MAP, COLS, ROWS, CORNER_PX, makePacman, stepPlayer, tileOpen, cloneMap, stepGhost, scaredSkin, SCARED_FLASH_AT, SCARED_BLINK, POWER_TICKS, makeFruitTracker, stepFruit, FRUIT_TICKS, FRUIT_AT, FRUIT_POS, FRUIT_BLINK, SPEED_STAGES, speedStage, pacSpeedForScore, ghostSlowsAt, FRUIT_TABLE, fruitForRound, energizerTicks, TUNNEL_ROW } from '../src/games/Pacman/move.js'
 import { seedRng, seedFromQuery } from '../src/utils/gameContract.js'
 import { plant, pull } from './lib/mutateguard.mjs'
 
@@ -368,6 +368,120 @@ console.log('dead ghosts: eyes race home and re-enter the pen (#1517)')
     ok(/if \(state === 'dead'\) \{[\s\S]{0,400}?dir\?\.x[\s\S]{0,800}?return/.test(src), 'dead eyes look along their heading (direction cue in the renderer)')
 }
 
+// ------------------------------------------------- progression (#3661) ----
+// The arcade escalates: score stages lift both pac and ghost speeds, ghosts
+// crawl at the tunnel mouths, the fruit kind/value follows the round, and the
+// energizer decays until round 14 where the pellet scores without frightening.
+// Laws sourced (Wikipedia, Pac-Man gameplay); exact rates THIS REPO's pinned
+// spec — dice-free, and round 1 below 700 outside the tunnels is identical to
+// the pre-#3661 game (the identity checks below pin that floor).
+console.log('progression: score stages, tunnel crawl, round-keyed fruit, energizer decay (#3661)')
+{
+    // stage selection on the pinned thresholds
+    const stageAt = [0, 699, 700, 1999, 2000, 4999, 5000, 99999].map(speedStage)
+    ok(stageAt.join(',') === '0,0,1,1,2,2,3,3', 'speed stages switch at 0 / 700 / 2000 / 5000', stageAt.join(','))
+    const pacs = SPEED_STAGES.map(s => s.pac)
+    const ghosts = SPEED_STAGES.map(s => s.ghost)
+    ok(pacs.every((v, i) => i === 0 || v > pacs[i - 1]), 'pac speed climbs monotonically with the stage', pacs.join(','))
+    ok(ghosts.every((v, i) => i === 0 || v > ghosts[i - 1]), 'ghost lift climbs monotonically', ghosts.join(','))
+
+    // the round-1 / stage-0 identity floor: today's game for a fresh run
+    ok(pacSpeedForScore(0) === 0.15 && SPEED_STAGES[0].ghost === 1, 'stage 1 keeps the pre-#3661 baseline speeds', `${pacSpeedForScore(0)}/${SPEED_STAGES[0].ghost}`)
+    ok(energizerTicks(1) === POWER_TICKS, 'round 1 energizer equals the old POWER_TICKS', `${energizerTicks(1)}`)
+    ok(fruitForRound(1).kind === 'cherry' && fruitForRound(1).points === 100, 'round 1 drops the old 100-point cherry')
+
+    // the ladder bites for real: same corridor, same input, high score travels
+    // further (0.178 / 0.15 ≈ 1.19 tiles at stage 4 vs stage 1)
+    const runCorridor = (score) => {
+        const gs = { map: CORRIDOR.map(r => [...r]), pacman: { x: 6, y: 2, dir: { ...V.left }, nextDir: { ...V.left }, progress: 0, speed: 0.15, poweredUp: false, powerTimer: 0 }, score }
+        for (let i = 0; i < 30; i++) stepPlayer(gs, [])
+        return gs.pacman.x
+    }
+    const xSlow = runCorridor(0), xFast = runCorridor(6000)
+    ok(xFast < xSlow, 'a stage-4 Pac-Man clears more corridor than a stage-1 one', `x ${xSlow} vs ${xFast}`)
+
+    // ghosts genuinely run faster at stage 4 (same start, same seeded choices,
+    // open ground away from the tunnels — the lift is the only difference)
+    const ghostRun = (score) => {
+        const g = { id: 1, x: 13, y: 8, color: '#ff0000', path: [], progress: 0, speed: 0.08, state: 'chase', type: 'blinky', penTimer: 0, nextDir: null }
+        const gs = { map: cloneMap(), pacman: { x: 1, y: 20, dir: { x: 1, y: 0 }, progress: 0 }, score }
+        const rand = seedRng(3661)
+        for (let i = 0; i < 120; i++) stepGhost(g, gs, rand, {})
+        return Math.abs(g.x - 13) + Math.abs(g.y - 8)
+    }
+    ok(ghostRun(6000) > ghostRun(0), 'a stage-4 ghost covers more ground than stage 1', `${ghostRun(6000)} vs ${ghostRun(0)}`)
+
+    // tunnel crawl: the mouths (row 14 x ≤ 9 / x ≥ 18) halve the base speed;
+    // the ghost-house span of the same row does NOT
+    const mk = (x, y) => ({ id: 1, x, y, color: '#ff0000', path: [], progress: 0, speed: 0.08, state: 'chase', type: 'blinky', penTimer: 0, nextDir: { x: 1, y: 0 } })
+    const gs1 = { map: cloneMap(), pacman: { x: 1, y: 20, dir: { x: 1, y: 0 }, progress: 0 }, score: 0 }
+    const rand = seedRng(9)
+    const gMouth = mk(3, TUNNEL_ROW), gHouse = mk(13, TUNNEL_ROW), gOpen = mk(3, 12)
+    stepGhost(gMouth, gs1, rand, {}); stepGhost(gHouse, gs1, rand, {}); stepGhost(gOpen, gs1, rand, {})
+    ok(Math.abs(gMouth.progress - gOpen.progress * 0.5) < 1e-9, 'ghosts crawl at half speed on the tunnel mouth', `${gMouth.progress} vs ${gOpen.progress}`)
+    ok(Math.abs(gHouse.progress - gOpen.progress) < 1e-9, 'the ghost-house span of row 14 is NOT a tunnel', `${gHouse.progress} vs ${gOpen.progress}`)
+    ok(ghostSlowsAt(3, TUNNEL_ROW) && ghostSlowsAt(24, TUNNEL_ROW) && !ghostSlowsAt(13, TUNNEL_ROW) && !ghostSlowsAt(3, 12),
+        'ghostSlowsAt spans both mouths only')
+    // half speed must never trap a ghost mid-tunnel: a crawling ghost still wraps
+    {
+        // pre-progressed so the nextDir sticks (decisions run at tile centres):
+        // one crawl step off x=0 must land the ghost on the far side.
+        const g = { id: 1, x: 0, y: TUNNEL_ROW, color: '#ff0000', path: [], progress: 0.99, speed: 0.08, state: 'chase', type: 'blinky', penTimer: 0, nextDir: { x: -1, y: 0 } }
+        const pacFar = { map: cloneMap(), pacman: { x: 25, y: 25, dir: { x: -1, y: 0 }, progress: 0 }, score: 0 }
+        stepGhost(g, pacFar, seedRng(4), {})
+        ok(g.x === COLS - 1, 'a crawling ghost still wraps the tunnel edge', `x=${g.x}`)
+    }
+
+    // round-keyed fruit: kinds, values, the r11+ bell/key cycle, and payment
+    const kinds = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14].map(r => fruitForRound(r).kind)
+    ok(kinds.join(',') === 'cherry,strawberry,peach,peach,galaxian,galaxian,bell,bell,key,key,bell,bell,key,key',
+        'fruit kind follows the round table (bell/key cycle from r11)', kinds.join(','))
+    const pts = [1, 3, 5, 7, 9].map(r => fruitForRound(r).points)
+    ok(pts.join(',') === '100,500,1000,2000,5000', 'fruit values rise with the round', pts.join(','))
+    ok(fruitForRound(0).kind === 'cherry' && fruitForRound(null).kind === 'cherry', 'a missing round falls back to cherry (pre-#3661 callers)')
+    const dropAt = (round) => {
+        const tr = makeFruitTracker()
+        for (let i = 1; i <= 70 && !tr.fruit; i++) stepFruit(tr, true, { x: 0, y: 0 }, {}, round)
+        return tr
+    }
+    const trP = dropAt(3)
+    ok(trP.fruit && trP.fruit.kind === 'peach', 'a round-3 drop carries the peach', trP.fruit?.kind)
+    ok(stepFruit(trP, false, { x: FRUIT_POS.x, y: FRUIT_POS.y }) === 500, 'eating the peach pays 500')
+    const trK = dropAt(9)
+    ok(trK.fruit.kind === 'key' && stepFruit(trK, false, { x: FRUIT_POS.x, y: FRUIT_POS.y }) === 5000, 'the round-9 key pays 5000')
+    const trC = dropAt(1)
+    ok(trC.fruit.kind === 'cherry' && stepFruit(trC, false, { x: FRUIT_POS.x, y: FRUIT_POS.y }) === 100, 'the round-1 cherry still pays 100')
+    ok(stepFruit(dropAt(11), false, { x: 0, y: 0 }) === 0 && dropAt(11).fruit.points === 2000,
+        'late rounds cycle back to the 2000-point bell')
+
+    // energizer decay: monotone, reaches zero, and round 14 really cannot frighten
+    const e = Array.from({ length: 20 }, (_, i) => energizerTicks(i + 1))
+    ok(e.every((v, i) => i === 0 || v <= e[i - 1]), 'the energizer window never grows', e.join(','))
+    ok(e[13] === 0 && e[19] === 0, 'the fright is gone entirely from round 14', `r14=${e[13]} r20=${e[19]}`)
+    const eatPower = (round) => {
+        const map = cloneMap()
+        map[23][13] = 3
+        const gs = { map, pacman: { x: 14, y: 23, dir: { ...V.left }, nextDir: { ...V.left }, progress: 0, speed: 0.15, poweredUp: false, powerTimer: 0 }, score: 0, round }
+        let ate = null
+        for (let i = 0; i < 20 && !ate; i++) ate = stepPlayer(gs, [])
+        return { ate, ...gs.pacman, score: gs.score }
+    }
+    const p1 = eatPower(1), p14 = eatPower(14)
+    ok(p1.ate === 'power' && p1.poweredUp && p1.powerTimer === POWER_TICKS, 'round 1 still lights the whole town blue')
+    ok(p14.ate === 'power' && p14.score === 50 && !p14.poweredUp, 'round 14: the pellet scores 50 and frightens nobody', `score ${p14.score} up ${p14.poweredUp}`)
+    const p5 = eatPower(5)
+    ok(p5.poweredUp && p5.powerTimer === energizerTicks(5) && p5.powerTimer < POWER_TICKS, 'a mid round gets the shorter window', `${p5.powerTimer}`)
+
+    // component wiring: the live loop must actually ride these laws
+    const src = readFileSync('src/games/Pacman/index.jsx', 'utf8')
+    ok(/stepFruit\(fruitTr,[\s\S]{0,400}, round\)/.test(src), 'the live fruit step carries the round')
+    ok(/stepGhost\(g, gs, rand/.test(src), 'ghosts step on the live gs (score stage reaches them)')
+    ok(/if \(!dotsLeft\) \{\s*\n\s*round\+\+/.test(src) && /round = 1/.test(src),
+        'the round advances on a cleared maze (inside resetGame) and resets at human start')
+    ok(/round: round/.test(src), 'the production report carries the round')
+    ok(/speedStage\(gs\.score\)/.test(src), 'the report/debug read the live score stage')
+}
+
 console.log(`\n${passes} passed, ${fails} failed`)
 
 // ----------------------------------------------------------------------- mutants ----
@@ -435,8 +549,8 @@ if (process.argv.includes('--mutate')) {
             `tr.dropped < FRUIT_AT.length && tr.pellets >= FRUIT_AT[tr.dropped]`,
             `tr.pellets >= FRUIT_AT[Math.min(tr.dropped, FRUIT_AT.length - 1)]`],
         ['fruit pays nothing', F,
-            `export const FRUIT_POINTS = 100`,
-            `export const FRUIT_POINTS = 0`],
+            `{ at: 1, kind: 'cherry', points: 100 }`,
+            `{ at: 1, kind: 'cherry', points: 0 }`],
         ['dead ghosts crawl home (3x boost lost) (#1517)', F,
             `        if (g.state === 'dead') currentSpeed *= 3.0`,
             ``],
@@ -445,6 +559,41 @@ if (process.argv.includes('--mutate')) {
                 const ey = dir?.y * 1.2 || 0`,
             `                const ex = 0
                 const ey = 0`],
+        // #3661 progression mutants
+        ['stage ladder frozen at stage 1 (#3661)', F,
+            `currentSpeed *= SPEED_STAGES[speedStage(gs.score)].ghost`,
+            `currentSpeed *= SPEED_STAGES[0].ghost`],
+        ['ghost stage lift removed (#3661)', F,
+            `currentSpeed *= SPEED_STAGES[speedStage(gs.score)].ghost`,
+            ``],
+        ['pac never speeds up with the score (#3661)', F,
+            `    P.speed = pacSpeedForScore(gs.score)`,
+            `    P.speed = 0.15`],
+        ['the tunnel never slows ghosts (#3661)', F,
+            `if (ghostSlowsAt(Math.round(g.x), Math.round(g.y))) currentSpeed *= 0.5`,
+            `if (false) currentSpeed *= 0.5`],
+        ['the whole tunnel row slows ghosts — house included (#3661)', F,
+            `return y === TUNNEL_ROW && (x <= TUNNEL_X_MAX || x >= TUNNEL_X_MIN)`,
+            `return y === TUNNEL_ROW`],
+        ['the energizer never decays (#3661)', F,
+            `    return Math.max(120, POWER_TICKS - (r - 1) * 100) // 600, 500, 400, 320…`,
+            `    return POWER_TICKS`],
+        ['round 14 still frightens (#3661)', F,
+            `                        if (ticks > 0) {`,
+            `                        if (true) {`],
+        ['the fruit kind is ignored on eat (#3661)', F,
+            `        const paid = tr.fruit.points`,
+            `        const paid = 100`],
+        ['late rounds stay on the r9-10 key (#3661)', F,
+            `    if (r >= 11) {
+        return Math.floor((r - 11) / 2) % 2 === 0
+            ? { kind: 'bell', points: 2000 }
+            : { kind: 'key', points: 5000 }
+    }`,
+            ``],
+        ['the round never advances on a cleared maze (#3661)', 'src/games/Pacman/index.jsx',
+            `                round++ // #3661: a cleared maze is a new round — new fruit, shorter fright`,
+            `                // round held (mutant)`],
     ]
     let died = 0
     for (const [name, file, from, to] of MUTANTS) {
