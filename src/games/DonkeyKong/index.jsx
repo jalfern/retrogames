@@ -736,6 +736,11 @@ const DonkeyKongGame = () => {
             // Orange body, hot core, a blue lick each side that swaps on a
             // flicker clock — the oil fire's own grammar, distinct from the
             // drum's decor flame and from the red girders.
+            // #3815 — playtest found the 1px licks vanish at phone scale, so
+            // blue becomes the ENEMY signature: the two side licks thicken to
+            // 2px and a blue under-glow rides the bottom in every frame. The
+            // drum's decor flame stays pure amber — on this tower, fire that
+            // carries blue is fire that kills. Drawing only; hitboxes untouched.
             {
                 const flip = Math.floor(gs.tickN / 6) % 2
                 for (const f of gs.fireballs) {
@@ -749,13 +754,15 @@ const DonkeyKongGame = () => {
                     ctx.fillRect(fx + 2, fy + 1, 5, 7)
                     ctx.fillStyle = flip ? '#ffffcc' : '#ffffff'
                     ctx.fillRect(fx + 3, fy + 3, 3, 3)
+                    ctx.fillStyle = '#3388ff'
+                    ctx.fillRect(fx + 1, fy + 8, 7, 1) // under-glow: always lit
                     ctx.fillStyle = '#66aaff'
                     if (flip) {
-                        ctx.fillRect(fx, fy + 2, 1, 3)
-                        ctx.fillRect(fx + 8, fy + 4, 1, 3)
+                        ctx.fillRect(fx, fy + 2, 2, 3)
+                        ctx.fillRect(fx + 7, fy + 4, 2, 3)
                     } else {
-                        ctx.fillRect(fx, fy + 4, 1, 3)
-                        ctx.fillRect(fx + 8, fy + 2, 1, 3)
+                        ctx.fillRect(fx, fy + 4, 2, 3)
+                        ctx.fillRect(fx + 7, fy + 2, 2, 3)
                     }
                 }
             }
