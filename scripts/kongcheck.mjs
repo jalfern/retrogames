@@ -14,8 +14,9 @@
 
 import { readFileSync } from 'node:fs'
 import { spawnSync } from 'node:child_process'
-import { START_LIVES, WIN_SCORE, BARREL_SPEED, HAMMER_SWINGS, RIVET_SCORE, PULL_TICKS, COLLAPSE_TICKS, RIVET_X, DK_PLAT, TOP_PLAT, DK_FALL_STOP, makeRun, tickDonkeyKong, watchStep, stateHash, rnd, getPlatformY, buildLevel, platformIndex } from '../src/games/DonkeyKong/sim.js'
+import { START_LIVES, WIN_SCORE, BARREL_SPEED, HAMMER_SWINGS, RIVET_SCORE, PULL_TICKS, COLLAPSE_TICKS, RIVET_X, DK_PLAT, TOP_PLAT, DK_FALL_STOP, BREAK_FRACS, makeRun, tickDonkeyKong, watchStep, stateHash, rnd, getPlatformY, buildLevel, platformIndex } from '../src/games/DonkeyKong/sim.js'
 import { seedRng, seedFromQuery } from '../src/utils/gameContract.js'
+import { parseGaps } from './lib/idle.mjs'
 import { plant, pull } from './lib/mutateguard.mjs'
 
 const SIM = readFileSync('src/games/DonkeyKong/sim.js', 'utf8')
@@ -57,7 +58,9 @@ console.log('the site: seven girders, dead broken ladders')
     ok(platforms.some(p => p.slope > 0) && platforms.some(p => p.slope < 0), 'girders slope both ways (barrels roll down-hill)')
     const broken = ladders.filter(l => l.broken)
     ok(broken.length === 4, 'four broken ladders flicker as bait', `${broken.length}`)
-    // A human standing at a broken ladder mouth who presses UP does not mount.
+    // #3618 half-rungs: the seat never trusts a broken ladder — untagged UP
+    // at its foot stays refused (the human half-climb lives in the section
+    // below; a human mounting from the foot with DOWN is refused too).
     const gs = makeRun(11)
     gs.attract = false
     const b0 = broken[0] // x=120 between ground and girder 1
@@ -65,7 +68,7 @@ console.log('the site: seven girders, dead broken ladders')
     gs.player.y = b0.yBot - gs.player.h
     gs.player.grounded = true
     tickDonkeyKong(gs, { up: true })
-    ok(!gs.player.climbing, 'broken ladders never mount (they only flicker)')
+    ok(!gs.player.climbing, 'the seat never trusts a broken rung (untagged UP is refused)')
     // The route ladder does mount and delivers to the girder above. Mounting
     // means standing ON the lower girder at the ladder x (feet on its surface)
     // and holding UP — the runner climbs out and snaps onto the girder above.
@@ -85,6 +88,85 @@ console.log('the site: seven girders, dead broken ladders')
     ok(climbed && arrived && Math.abs(gs2.player.y + gs2.player.h - surf) <= 2,
         'a held UP at the ladder foot climbs and snaps onto the girder above',
         `y=${gs2.player.y.toFixed(1)} surf=${surf.toFixed(1)}`)
+}
+
+// ------------------------------------------------------------- half-rungs ----
+// #3618 — the original let Mario climb broken ladders part-way. A broken
+// ladder keeps its lower span: mount with direct hands, climb to breakY, hang
+// on the last rung, descend back. The WATCH seat and attract demo refuse
+// broken rungs exactly as before (untagged input), so every seeded rollout
+// rides the byte-identical world it always did.
+console.log('half-rungs: broken ladders climb part-way (#3618)')
+{
+    const { ladders } = buildLevel()
+    ok(ladders.every(l => l.broken
+        ? l.breakY > l.yTop + 1 && l.breakY < l.yBot - 1
+        : l.breakY === l.yTop),
+        'break lines sit strictly inside the broken spans; sound ladders stay whole')
+    ok(JSON.stringify(buildLevel().ladders) === JSON.stringify(buildLevel().ladders),
+        'the break lines are deterministic — the level still carries no dice')
+
+    const climbBroken = (seed, ladderX) => {
+        const gs = makeRun(seed)
+        gs.attract = false
+        const bl = gs.ladders.find(l => l.x === ladderX && l.broken)
+        gs.player.x = bl.x - gs.player.w / 2
+        gs.player.y = bl.yBot - gs.player.h
+        gs.player.grounded = true
+        return { gs, bl }
+    }
+
+    const { gs, bl } = climbBroken(3, 120)
+    const ev0 = tickDonkeyKong(gs, { up: true, human: true })
+    ok(ev0.climbed && gs.player.climbing && gs.player.climbLadder === bl,
+        'hands on a broken ladder: the lower span mounts (#3618)')
+    let hangEvents = 0, minY = 999
+    for (let i = 0; i < 120; i++) {
+        const ev = tickDonkeyKong(gs, { up: true, human: true })
+        if (ev.hang) hangEvents++
+        minY = Math.min(minY, gs.player.y + gs.player.h)
+    }
+    ok(Math.abs(minY - bl.breakY) <= 1.5,
+        `the climb stops at the break line (feet ${minY.toFixed(1)} vs breakY ${bl.breakY.toFixed(1)})`)
+    ok(gs.player.climbing && gs.player.hanging, 'the runner hangs on the last rung, never falls')
+    ok(hangEvents === 1, 'the hang answers once, not every tick', `hangEvents=${hangEvents}`)
+    ok(gs.player.y + gs.player.h > bl.yTop + 4, 'the top of a broken ladder stays out of reach')
+
+    for (let i = 0; i < 120; i++) tickDonkeyKong(gs, { down: true, human: true })
+    ok(!gs.player.climbing && gs.player.grounded && Math.abs(gs.player.y + gs.player.h - bl.yBot) <= 2,
+        'from the hang you climb back down and step onto the girder')
+
+    // DOWN at the foot is refused — the half-ladder rises from its base, up only
+    const gsd = climbBroken(3, 120)
+    const evD = tickDonkeyKong(gsd.gs, { down: true, human: true })
+    ok(!gsd.gs.player.climbing && evD.noClimb, 'DOWN at a broken ladder foot is refused (rungs climb up)')
+
+    // the seat taking the wheel on a hang steps off — doctrine, not a deadlock
+    const gsh = climbBroken(3, 120)
+    for (let i = 0; i < 60; i++) tickDonkeyKong(gsh.gs, { up: true, human: true })
+    gsh.gs.watching = true
+    tickDonkeyKong(gsh.gs, null)
+    ok(!gsh.gs.player.climbing, 'the seat inherits a hang and steps off the broken rung')
+
+    // every broken ladder plays by the same rule (feet clamp to its breakY)
+    for (const [x, frac] of [[120, BREAK_FRACS[0]], [110, BREAK_FRACS[1]], [140, BREAK_FRACS[2]], [90, BREAK_FRACS[3]]]) {
+        const run = climbBroken(5, x)
+        for (let i = 0; i < 120; i++) tickDonkeyKong(run.gs, { up: true, human: true })
+        const stop = run.gs.player.y + run.gs.player.h
+        ok(Math.abs(stop - run.bl.breakY) <= 1.5 && run.gs.player.hanging &&
+            Math.abs(run.bl.breakY - (run.bl.yTop + (run.bl.yBot - run.bl.yTop) * frac)) < 1e-9,
+            `broken ladder x=${x} hands you the span up to its break line`,
+            `feet ${stop.toFixed(1)} vs ${run.bl.breakY.toFixed(1)}`)
+    }
+
+    // README honesty: the closed gaps must not score as open weakness again
+    const RD = readFileSync('src/games/DonkeyKong/README.md', 'utf8')
+    const gaps = parseGaps(RD)
+    ok(!gaps.some(g => /broken ladders only flicker/i.test(g)),
+        'the half-rung gap no longer scores as open (CLOSED marker reaches parseGaps)')
+    ok(!gaps.some(g => /dedicated 25 m rivet stage/i.test(g)),
+        'the rivet-screen phantom stays retired (CLOSED marker reaches parseGaps)')
+    ok(gaps.length === 2, 'two honest gaps remain (oil drum, mid-air geometry)', `gaps=${gaps.length}`)
 }
 
 // ------------------------------------------------------------- core physics ----
@@ -526,6 +608,7 @@ console.log('shell wiring: seed, terminal, seat chrome')
     // the shell actually sounds each new sim event.
     ok(/if \(ev\.barrel\) audioController\.play/.test(IDX), 'the barrel throw has a voice')
     ok(/if \(ev\.climbed\) audioController\.play/.test(IDX), 'the ladder mount has a voice')
+    ok(/if \(ev\.hang\) audioController\.play/.test(IDX), 'the half-rung hang (#3618) has a voice')
     ok([/ev\.hammerUp/, /ev\.swing/, /ev\.hammered/, /ev\.hammerDown/].every(re => new RegExp(re.source + '\\)\\s*audioController\\.play').test(IDX)),
         'all four mallet events are sounded')
     ok(/HAMMERS SMASH BARRELS/.test(readFileSync('src/games/DonkeyKong/attract.js', 'utf8')) && /gs\.hammer > 0/.test(IDX),
@@ -541,8 +624,8 @@ console.log('shell wiring: seed, terminal, seat chrome')
 // doesn't machine-gun.
 console.log('deny answer: the refused climb answers loudly (#3147)')
 {
-    ok(/if \(!p\.climbing && wantClimb && !nearLadder\) ev\.noClimb = true/.test(SIM),
-        'the sim stamps the climb deny when no ladder is in reach')
+    ok(/if \(!p\.climbing && wantClimb && !holdable\) ev\.noClimb = true/.test(SIM),
+        'the sim stamps the climb deny when no ladder is holdable (#3618: a broken rung held without hands or down-intent reads as no ladder)')
     ok(/if \(wantClimb\) ev\.noClimb = true/.test(SIM),
         'the sim stamps the climb deny under the mallet trade')
     ok(/if \(ev\.noClimb && noClimbCooldown/.test(IDX) && /audioController\.playTone\(140/.test(IDX),
@@ -610,11 +693,21 @@ if (process.argv.includes('--mutant')) {
         ['production report drops the seed', I,
             `tick: gs.tickN, score: gs.score, done: gs.over, seed: gs.seed, lives: gs.lives,\n        }))`,
             `tick: gs.tickN, score: gs.score, done: gs.over, lives: gs.lives,\n        }))`],
-        ['broken ladders become climbable (bait turns live)', S,
-            `        if (l.broken) return false
-        const cx = p.x + p.w / 2`,
-            `        if (false && l.broken) return false
-        const cx = p.x + p.w / 2`],
+        ['#3618 the half-rung clamp dies (broken ladders deliver to the girder above)', S,
+            `        if (cl && cl.broken && p.y + p.h < cl.breakY) {`,
+            `        if (false && cl && cl.broken && p.y + p.h < cl.breakY) {`],
+        ['#3618 the seat trusts a broken rung (human-tag gate dropped)', S,
+            `        (!nearLadder.broken || (human && wantClimbUp))`,
+            `        (!nearLadder.broken || wantClimbUp)`],
+        ['#3618 the hang buzzes every tick (event transition law broken)', S,
+            `            if (!p.hanging) ev.hang = true`,
+            `            ev.hang = true`],
+        ['#3618 the seat clings to inherited broken rungs (step-off guard gone)', S,
+            `    if (p.climbing && p.climbLadder && p.climbLadder.broken && !human) {`,
+            `    if (false && p.climbing && p.climbLadder && p.climbLadder.broken && !human) {`],
+        ['#3618 the break lines move to the ladder tops (bait becomes whole)', S,
+            `        const breakY = broken ? yTop + (yBot - yTop) * BREAK_FRACS[bk] : yTop`,
+            `        const breakY = yTop`],
         ['the barrel die leaves the stream (spacing unseeded)', S,
             `gs.barrelTimer = 150 + Math.floor(rnd(gs) * 100)`,
             `gs.barrelTimer = 150 + Math.floor(Math.random() * 100)`],
@@ -703,8 +796,14 @@ if (process.argv.includes('--mutant')) {
             `if (gs.hammer <= 0) {`,
             `if (false && gs.hammer <= 0) {`],
         ['#3147 the climb deny goes quiet (silence returns)', S,
-            `    if (!p.climbing && wantClimb && !nearLadder) ev.noClimb = true`,
-            `    if (false && !p.climbing && wantClimb && !nearLadder) ev.noClimb = true`],
+            `    if (!p.climbing && wantClimb && !holdable) ev.noClimb = true`,
+            `    if (false && !p.climbing && wantClimb && !holdable) ev.noClimb = true`],
+        ['#3618 the half-rung gap re-scores open (README CLOSED marker stripped)', 'src/games/DonkeyKong/README.md',
+            '**CLOSED by #3618:**',
+            '**Gap:**'],
+        ['#3618 the rivet-screen phantom returns (README CLOSED marker stripped)', 'src/games/DonkeyKong/README.md',
+            '**CLOSED by #3598, phantom-retired in #3618:**',
+            '**Gap:**'],
     ]
     let died = 0
     for (const [name, file, from, to] of MUTANTS) {
