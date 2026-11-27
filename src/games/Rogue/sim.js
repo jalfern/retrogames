@@ -88,6 +88,9 @@ export const POTION_TYPES = [
   { name: 'blindness',        effect: 'blind',        desc: 'A cloak of darkness falls around you.' },
   { name: 'confusion',        effect: 'confuse',      desc: "Wait, what's going on here. Huh? What? Who?" },
   { name: 'haste self',       effect: 'haste',        desc: 'You feel yourself moving much faster.' },
+  // #3709 — P_RAISE (potions.c). The cart's line carries NO period; verbatim
+  // means verbatim. Widens the cipher roster to nine for the colour map.
+  { name: 'raise',            effect: 'raise',        desc: 'You suddenly feel much more skillful' },
 ]
 
 export const SCROLL_TYPES = [
@@ -657,14 +660,20 @@ export function xpNeeded(level) {
 // roll(Δ, 10) — Δ REAL d10s, one die per level gained — clamped at max.
 // No class rolls: the cart has strength only (`rogue.h struct stats`), and
 // it rises from potions alone. See the README ruling and #3697's design note.
+// #3709 — the Welcome line now NAMES the dice ("+18 hp"): the cart says only
+// "Welcome to level %d" (fight.c), the hp suffix was already port voice, and
+// stating the roll is the port's addition that lets the HUD show what a
+// multi-rung jump actually paid. Returns the rungs climbed so the fx log can
+// carry Δ to the view (the fanfare stretches with it).
 export function checkLevel(p, msgs) {
   let jumped = 0
   while (p.level < 20 && p.exp >= xpNeeded(p.level + 1)) { p.level += 1; jumped += 1 }
-  if (!jumped) return
+  if (!jumped) return 0
   const gain = rollDice(`${jumped}d10`)
   p.maxHp += gain
   p.hp = Math.min(p.hp + gain, p.maxHp)
-  msgs.push(`Welcome to level ${p.level}! Hp:${p.hp}`)
+  msgs.push(`Welcome to level ${p.level}! +${gain} hp`)
+  return jumped
 }
 
 // #3697 — the cart's healing dice (`potions.c`): plain healing rolls d4s per
@@ -779,6 +788,7 @@ export function playerAttack(state, mIdx) {
   const { player } = state
   const mon = state.monsters[mIdx]
   let msgs = []
+  let lvlRungs = 0
   let newMonsters = [...state.monsters]
   let newPlayer = { ...player }
 
@@ -793,7 +803,7 @@ export function playerAttack(state, mIdx) {
       msgs.push(`You defeated the ${mon.name}!`)
       newMonsters = newMonsters.filter((_, i) => i !== mIdx)
       newPlayer.exp += mon.xp
-      checkLevel(newPlayer, msgs)
+      lvlRungs = checkLevel(newPlayer, msgs)
     } else {
       newMonsters[mIdx] = { ...mon, hp: newHp, chasing: true }
     }
@@ -805,7 +815,8 @@ export function playerAttack(state, mIdx) {
   for (const m of msgs) s = addMsg(s, m)
   if (msgs.some((m) => m.startsWith('You hit'))) s = emitFx(s, 'hit')
   if (msgs.some((m) => m.startsWith('You defeated'))) s = emitFx(s, 'kill')
-  if (msgs.some((m) => m.startsWith('Welcome to level'))) s = emitFx(s, 'levelup')
+  // #3709 — Δ rides the fx so the view can stretch the fanfare per rung.
+  if (msgs.some((m) => m.startsWith('Welcome to level'))) s = emitFx(s, 'levelup', { n: lvlRungs })
   return s
 }
 
@@ -1128,6 +1139,7 @@ export function handleQuaff(state, invIndex) {
   const potion = POTION_TYPES[item.subtype]
   let p = { ...player, inventory: player.inventory.filter((_, i) => i !== invIndex) }
   const newIdent = { ...state.identifiedPotions, [item.subtype]: true }
+  const lvlMsgs = []
 
   switch (potion.effect) {
     case 'heal':    healCart(p, p.level, 4); break   // #3697 roll(lvl,4) + ++max quirk
@@ -1145,12 +1157,23 @@ export function handleQuaff(state, invIndex) {
     case 'blind':   p.blind = 25; break
     case 'confuse': p.confused = 15; break
     case 'haste':   p.haste = 20; break
+    // #3709 — raise_level() verbatim (fight.c): the cart does NOT check whether
+    // you needed the bump — it parks exp one point past the next rung and let
+    // check_level climb. The math is self-guarding: e_levels[lvl-1]+1 sits below
+    // the rung after it, so exactly one rung climbs. At the port's level cap
+    // (20, #3697) the ladder has no next rung, so it stays a no-op there.
+    case 'raise':
+      if (p.level < 20) p.exp = xpNeeded(p.level + 1) + 1
+      checkLevel(p, lvlMsgs)
+      break
     default: break
   }
 
-  const s = addMsg({ ...state, phase: 'playing', player: p, identifiedPotions: newIdent },
+  let s = addMsg({ ...state, phase: 'playing', player: p, identifiedPotions: newIdent },
     `You drink the ${state.potionColorMap[item.subtype]} potion. ${potion.desc}`)
-  return emitFx(s, 'quaff')
+  s = emitFx(s, 'quaff')
+  for (const m of lvlMsgs) s = addMsg(s, m)
+  return lvlMsgs.length ? emitFx(s, 'levelup', { n: p.level - player.level }) : s
 }
 
 export function handleRead(state, invIndex) {
@@ -1248,8 +1271,11 @@ export function handleTakeOff(state) {
 // or staff books exactly like a kill by mace.
 function grantExp(s, xp, msgs) {
   const p = { ...s.player, exp: s.player.exp + xp }
-  checkLevel(p, msgs)
-  return { ...s, player: p }
+  const rungs = checkLevel(p, msgs)
+  const st = { ...s, player: p }
+  // #3709 — the rung count rides the fx here (the shoot path used a msgs scan,
+  // which cannot see Δ); the view stretches the fanfare with it.
+  return rungs ? emitFx(st, 'levelup', { n: rungs }) : st
 }
 
 // What answers to the throw command: counted arrows and charged staves.
@@ -1343,7 +1369,7 @@ export function handleThrow(state, invIndex, dx, dy) {
   for (const m of msgs) s = addMsg(s, m)
   if (msgs.some(m => m.startsWith('You hit'))) s = emitFx(s, 'hit')
   if (msgs.some(m => m.startsWith('You defeated'))) s = emitFx(s, 'kill')
-  if (msgs.some(m => m.startsWith('Welcome to level'))) s = emitFx(s, 'levelup')
+  // (#3709: the level-up fanfare now rides grantExp with the rung count.)
 
   s = tickHunger(s)
   if (s.phase === 'gameover') return s
