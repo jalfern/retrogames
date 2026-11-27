@@ -47,6 +47,12 @@ try {
         }
         return false
     }
+    // #3778: the DMD is one announce slot, and two says can land in the same
+    // step chain (the wrap feed crossing the spinner: 'SPINNER x2' overwrites
+    // 'ORBIT! +150' before any rAF paints it), so no strip sample — poll-side
+    // or rAF-side — can prove the callout. The sim rings every say() at the
+    // write funnel (display state, invisible to stateHash — #3766's shape);
+    // the drives read state().msgLog instead of sampling the strip.
     await page.waitForFunction('window.__game', { timeout: 20000 })
     ok('boots clean', errors.length === 0, errors.join(';'))
 
@@ -157,7 +163,7 @@ try {
         if (i % 15 === 14) await page.evaluate(() => window.__pinballTest.orbitFeed())
     }
     ok('ORBIT: the wrap completes live in Chrome', !!st && st.orbits >= 1, `orbits=${st && st.orbits}`)
-    ok('the wrap announces itself on the sim-owned DMD state', !!st && st.dmd.text === 'ORBIT! +100', st && st.dmd.text)
+    ok('the wrap announces itself on the sim-owned DMD state', !!st && st.msgLog.includes('ORBIT! +100'), `ring=${st && st.msgLog.join('|')}`)
 
     // rung 3 rig: the magnet grabs a drifting ball and holds it
     await page.evaluate(() => window.__pinballTest.magDrop())
@@ -198,22 +204,38 @@ try {
     // (announce fresh first — the idle crawl has blank scroll windows between words,
     // sampling blind was a standing flake; quiet-table too, #3452)
     await quiet()
+    // #3778 same lesson on pixels: the announce can scroll off between the poll
+    // that saw it and a post-break getImageData, so the strip is sampled INSIDE
+    // the paint loop while the line is up (the #3766 accumulator shape).
+    await page.evaluate(() => {
+        const can = document.querySelector('canvas')
+        window.__strip = { lit: 0 }
+        const tick = () => {
+            const s = window.__pinballTest && window.__pinballTest.state()
+            if (s && s.dmd.text) {
+                const d = can.getContext('2d').getImageData(112, 246, 136, 24).data
+                let n = 0
+                for (let i = 0; i < d.length; i += 4) if (d[i] > 120 && d[i + 1] > 70 && d[i + 2] < 120) n++
+                if (n > window.__strip.lit) window.__strip.lit = n
+            }
+            window.__stripRaf = requestAnimationFrame(tick)
+        }
+        window.__stripRaf = requestAnimationFrame(tick)
+    })
     await page.evaluate(() => window.__pinballTest.laneDrop())
-    let dmdLive = null
-    for (let i = 0; i < 30; i++) { await wait(100); dmdLive = await page.evaluate(() => window.__pinballTest.state()); if (dmdLive.dmd.text) break }
+    let stripLit = 0
+    for (let i = 0; i < 30; i++) { await wait(100); stripLit = await page.evaluate(() => window.__strip.lit); if (stripLit > 0) break }
+    await page.evaluate(() => { cancelAnimationFrame(window.__stripRaf) })
     const px = await page.evaluate(() => {
         const c = document.querySelector('canvas')
         const g = c.getContext('2d')
         const field = g.getImageData(60, 140, 240, 320).data
         let litField = 0
         for (let i = 0; i < field.length; i += 4) if (field[i] + field[i + 1] + field[i + 2] > 150) litField++
-        const strip = g.getImageData(112, 246, 136, 24).data
-        let litStrip = 0
-        for (let i = 0; i < strip.length; i += 4) if (strip[i] > 120 && strip[i + 1] > 70 && strip[i + 2] < 120) litStrip++
-        return { litField, litStrip }
+        return { litField }
     })
     ok('the playfield renders content (not a blank canvas)', px.litField > 500, `lit=${px.litField}`)
-    ok('the DMD strip shows lit dots after the announce', px.litStrip > 12, `lit=${px.litStrip}`)
+    ok('the DMD strip shows lit dots after the announce', stripLit > 12, `lit=${stripLit}`)
 
     // ? pauses and resumes the sim
     await page.keyboard.press('Shift+Slash')
@@ -333,7 +355,7 @@ try {
         for (let i = 0; i < 40; i++) { await wait(100); eorb = await page.evaluate(() => window.__pinballTest.state()); if (eorb.orbits >= 1) break }
     }
     ok('ember: the mirrored wrap completes live in Chrome', !!eorb && eorb.orbits >= 1, `orbits=${eorb && eorb.orbits}`)
-    ok('ember prices show on the strip live ("ORBIT! +150")', !!eorb && eorb.dmd.text === 'ORBIT! +150', eorb && eorb.dmd.text)
+    ok('ember prices show on the strip live ("ORBIT! +150")', !!eorb && eorb.msgLog.includes('ORBIT! +150'), `ring=${eorb && eorb.msgLog.join('|')}`)
 
     // #3250 rig: ember's mirrored kickback saves its LEFT column for its own price
     const ekbBefore = await page.evaluate(() => window.__pinballTest.state())
