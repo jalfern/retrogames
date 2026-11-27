@@ -57,6 +57,26 @@ export const poisonMushroom = (m) => {
     return true
 }
 
+// #3664 — mushroom revival, the arcade's own words (Wikipedia, Gameplay):
+// "The Bug Blaster is destroyed when hit by any enemy, after which any
+// poisonous or partially damaged mushrooms revert to normal. 5 points are
+// awarded for each regenerated mushroom." The sentence names exactly those
+// two states — poison and partial damage — so caps already shot away stay
+// gone. Dice-free: the rule reads and heals, it never rolls, so `?seed=N`
+// replays keep bit-exact while the garden still accumulates across waves.
+export const REVIVE_POINTS = 5
+export function reviveGarden(field) {
+    let revived = 0
+    for (const m of field) {
+        if (m.poison || m.health < 3) {
+            m.poison = false
+            m.health = 3
+            revived++
+        }
+    }
+    return revived
+}
+
 // The top-band fairness for the zapper's summons: a bullet that flies clear
 // out of the field has crossed everything the garden can offer.
 export const bulletEscapes = (y) => y < 0

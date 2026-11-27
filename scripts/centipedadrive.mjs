@@ -139,6 +139,55 @@ await new Promise((r) => setTimeout(r, 250))
         `score ${a.score}, lives ${a.lives}, spider ${a.spider}, scorpion ${a.scorpion}, flea ${a.flea}, done ${a.done}`)
 }
 
+// ---- #3664 §revive: the garden heals with the zapper, in the live browser ----
+// Stage the two healable states (DEV sting/chip hooks, the DebugKit road),
+// then let the zapper die HONESTLY to the descending chain (real contract
+// steps, no hurt hook), and audit the respawn: both states clear, the counter
+// reports exactly what was staged, and the score moved by exactly 5 per
+// regenerated cap (nothing else fires in the window — no shots are taken).
+await page.keyboard.press('?') // park the rAF loop — one driver
+await new Promise((r) => setTimeout(r, 120))
+const revive = await page.evaluate(async () => {
+    window.__game.reset(4242)
+    for (let i = 0; i < 500; i++) window.__game.step({}, 1) // let the run breathe
+    const p = () => window.__cTest.probe()
+    window.__cTest.sting()
+    window.__cTest.sting()
+    window.__cTest.chip()
+    const pre = p()
+    if (pre.poisoned + pre.damaged < 3) return { expected: -1, note: 'staging failed' }
+    let diedAt = null, scoreAtDeath = 0, expected = 0
+    for (let k = 0; k < 1600; k++) {
+        const before = p()
+        window.__game.step({}, 10)
+        const after = p()
+        if (after.lives < before.lives && diedAt === null) {
+            diedAt = after.tick
+            scoreAtDeath = after.score
+            // extra caps may have been stung since staging — the death-tick
+            // snapshot is what the respawn must heal
+            expected = after.poisoned + after.damaged
+        }
+        if (diedAt !== null && after.tick >= diedAt + 75 && after.alive) {
+            return { expected, prePoisoned: pre.poisoned, preDamaged: pre.damaged,
+                poisoned: after.poisoned, damaged: after.damaged,
+                revived: after.revived, scoreDelta: after.score - scoreAtDeath,
+                done: after.done, lives: after.lives }
+        }
+    }
+    return null
+})
+rep.check('§revive: death healed every staged cap in-browser', !!revive && revive.poisoned === 0 && revive.damaged === 0,
+    JSON.stringify(revive))
+rep.check('§revive: the run counted exactly the caps it healed', !!revive && revive.revived === revive.expected && revive.expected >= 3,
+    JSON.stringify(revive))
+rep.check('§revive: 5 points per regenerated mushroom, no phantom score', !!revive && revive.scoreDelta === revive.revived * 5,
+    JSON.stringify(revive))
+rep.check('§revive: the zapper came back alive with lives spent honestly', !!revive && revive.lives === 2 && revive.done === false,
+    JSON.stringify(revive))
+await page.keyboard.press('?') // un-pause
+await new Promise((r) => setTimeout(r, 120))
+
 // ---- the drawn world shows the menagerie (canvas is not blank, sprites paint) ----
 await page.evaluate(() => window.__game.reset(4242))
 await page.evaluate(async () => { for (let i = 0; i < 500; i++) window.__game.step({}, 1) })

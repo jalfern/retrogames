@@ -12,7 +12,7 @@
 
 import { readFileSync } from 'node:fs'
 import { spawnSync } from 'node:child_process'
-import { mushroomField, scoreForSegment, MUSHROOM_POINTS, CELL_SIZE, START_LIVES, SPIDER_POINTS, SCORPION_POINTS, FLEA_POINTS, SPIDER_EVERY, SCORPION_EVERY, FLEA_COOLDOWN, poisonMushroom, bulletEscapes, waveSpeed, splitSpd, SPEED_CAP, munchCue, MUNCH_FLOOR, MUNCH_CEIL, MUNCH_MIN_EVERY, MUNCH_MAX_EVERY } from '../src/games/Centipede/sim.js'
+import { mushroomField, scoreForSegment, MUSHROOM_POINTS, CELL_SIZE, START_LIVES, SPIDER_POINTS, SCORPION_POINTS, FLEA_POINTS, SPIDER_EVERY, SCORPION_EVERY, FLEA_COOLDOWN, poisonMushroom, bulletEscapes, waveSpeed, splitSpd, SPEED_CAP, munchCue, MUNCH_FLOOR, MUNCH_CEIL, MUNCH_MIN_EVERY, MUNCH_MAX_EVERY, reviveGarden, REVIVE_POINTS } from '../src/games/Centipede/sim.js'
 import { seedRng, seedFromQuery } from '../src/utils/gameContract.js'
 import { plant, pull } from './lib/mutateguard.mjs'
 
@@ -285,6 +285,52 @@ console.log('#3632 sound grammar: the munch law and layered cues')
         'audio law: every cue rides audioController (no raw WebAudio in the game)')
 }
 
+// ------------------------------------------------ #3664 revival (#revive) ----
+// Wikipedia (arcade article, Gameplay, verbatim): "The Bug Blaster is destroyed
+// when hit by any enemy, after which any poisonous or partially damaged
+// mushrooms revert to normal. 5 points are awarded for each regenerated
+// mushroom." The sentence names exactly two states — poison and partial
+// damage — so destroyed caps stay gone; and the rule must never roll dice.
+console.log('#3664 §revive: the garden heals with the zapper')
+{
+    ok(REVIVE_POINTS === 5, 'each regenerated mushroom pays 5 (verbatim scoring)')
+    const f = [
+        { x: 0, y: 64, health: 3 },              // intact — untouched
+        { x: 32, y: 64, health: 3, poison: true }, // poison — reverts
+        { x: 64, y: 96, health: 1 },            // chewed — heals
+        { x: 96, y: 96, health: 2 },           // chipped — heals
+        { x: 128, y: 128, health: 3, poison: true },
+    ]
+    const n = reviveGarden(f)
+    ok(n === 4, 'poison + partial damage all count as regenerations', `${n}`)
+    ok(f.every((m) => !m.poison && m.health === 3), 'every survivor reverts to normal')
+    ok(f[0] && f[0].health === 3, 'an intact cap is untouched by the heal')
+    ok(f.length === 5, 'destroyed caps stay destroyed — the field only heals, it never regrows (§names two states)')
+    ok(reviveGarden(f) === 0, 'a calm garden reports zero regenerations (idempotent)')
+    // Dice-free: revive must not consult the stream — twin streams, field from
+    // both, heal only one; the next draw must still match.
+    const a = seedRng(99), b = seedRng(99)
+    const fa = mushroomField(a, 480, 640)
+    mushroomField(b, 480, 640)
+    reviveGarden(fa)
+    ok(a() === b(), 'revival draws no dice — ?seed=N replays keep bit-exact')
+    // Wiring: the heal rides the respawn branch, scores, counts, and stays DEV-probed.
+    const src = readFileSync('src/games/Centipede/index.jsx', 'utf8')
+    const respawn = src.match(/if \(!playerAlive\(\) && tickN >= respawnAt\) \{[\s\S]*?\n            \}/)
+    ok(!!respawn && /reviveGarden\(state\.mushrooms\)/.test(respawn[0]),
+        'the respawn branch runs the garden heal')
+    ok(!!respawn && /state\.score \+= healed \* REVIVE_POINTS/.test(respawn[0]),
+        'the heal pays 5 per regenerated mushroom')
+    ok(!!respawn && !/init\(\)/.test(respawn[0]),
+        'the heal is a revive, not a rebuild — no init on the death path')
+    ok(/revivedTotal \+= healed/.test(src), 'the run counts its regenerations for the probe')
+    const sr = src.match(/const startRun = \(\) => \{[\s\S]*?\n        \}/)
+    ok(!!sr && /revivedTotal = 0/.test(sr[0]), 'startRun zeroes the revival counter')
+    ok(/damaged: state\.mushrooms\.filter\(m => m\.health < 3\)\.length/.test(src) &&
+        /revived: revivedTotal/.test(src), 'the QA probe watches damaged + revived')
+    ok(/if \(import\.meta\.env\.DEV\) \{\s*\n\s*window\.__cTest/.test(src), '__cTest is DEV-only')
+}
+
 // ------------------------------------------------------------------ mutants ----
 if (process.argv.includes('--mutant')) {
     console.log('mutants (each MUST die)')
@@ -395,6 +441,15 @@ if (process.argv.includes('--mutant')) {
         ['the flea never zooms in', I,
             `audioController.playSweep(1500, 420, 0.22, 'square', 0.08)`,
             `void 0`],
+        ['#3664: revival never heals (the §revert-to-normal rule is gone)', S,
+            `if (m.poison || m.health < 3) {`,
+            `if (false) {`],
+        ['#3664: the garden heal pays nothing (the §5-per-mushroom line deleted)', I,
+            `state.score += healed * REVIVE_POINTS`,
+            `state.score += healed * 0`],
+        ['#3664: poison outlives the zapper (only chips heal)', S,
+            `m.poison = false`,
+            `if (0) m.poison = false`],
     ]
     let died = 0
     for (const [name, file, from, to] of MUTANTS) {

@@ -5,7 +5,7 @@ import VirtualControls from '../../components/VirtualControls'
 import { GAMES } from '../../config/games'
 import { attractFrame, DIM } from './attract.js'
 import { exposeGame, unexposeGame, exposeFeedbackState, unexposeFeedbackState, seedFromQuery, seedRng } from '../../utils/gameContract'
-import { CELL_SIZE, START_LIVES, INVULN_TICKS, scoreForSegment, MUSHROOM_POINTS, mushroomField, SPIDER_POINTS, SCORPION_POINTS, FLEA_POINTS, SPIDER_EVERY, SCORPION_EVERY, FLEA_COOLDOWN, poisonMushroom, bulletEscapes, waveSpeed, splitSpd, munchCue } from './sim.js'
+import { CELL_SIZE, START_LIVES, INVULN_TICKS, scoreForSegment, MUSHROOM_POINTS, mushroomField, SPIDER_POINTS, SCORPION_POINTS, FLEA_POINTS, SPIDER_EVERY, SCORPION_EVERY, FLEA_COOLDOWN, poisonMushroom, bulletEscapes, waveSpeed, splitSpd, munchCue, reviveGarden, REVIVE_POINTS } from './sim.js'
 
 // CENTIPEDE (#1473 batch 16) — the Feb port's score was dead, one touch was
 // instant hard-reset, cut bodies never grew heads, and the mushroom field
@@ -68,6 +68,7 @@ const CentipedeGame = () => {
         let wave = 1              // #3631 — the speed ladder; cleared fields climb it
         let respawnAt = -1       // tick the zapper returns, -1 = alive
         let invulnUntil = 0
+        let revivedTotal = 0     // #3664 — mushrooms healed since run start (score attribution)
         let spiderAt = SPIDER_EVERY     // tick the next spider enters
         let munchAt = 0                // #3632 — the swarm's chewing clack clock
         let munchAlt = false           // two-syllable click-et-a texture
@@ -190,6 +191,7 @@ const CentipedeGame = () => {
             rand = seedRng(seed)
             state.score = 0
             lives = START_LIVES
+            revivedTotal = 0 // #3664
             over = false
             isAttractMode = false
             init()
@@ -294,6 +296,21 @@ const CentipedeGame = () => {
                 resetPlayer()
                 spawnCentipede()
                 audioController.playSweep(200, 600, 0.15, 'square', 0.07) // re-seat blip (#3632)
+                // #3664 — the garden heals with the zapper (Wikipedia, verbatim):
+                // poisoned and partially damaged mushrooms revert to normal,
+                // 5 points each; caps shot away stay gone. Soft green sparkles
+                // carry which caps came back; the two-note bell is ours.
+                const hurt = state.mushrooms.filter((m) => m.poison || m.health < 3)
+                const healed = reviveGarden(state.mushrooms)
+                if (healed > 0) {
+                    state.score += healed * REVIVE_POINTS
+                    revivedTotal += healed
+                    for (const m of hurt) {
+                        state.fx.push({ x: m.x + 8, y: m.y + 8, vx: 0, vy: -0.4, life: 18, max: 18, color: '#8fe388' })
+                    }
+                    audioController.playTone(880, 0.05, 'triangle', 0.05)
+                    audioController.playTone(1175, 0.08, 'triangle', 0.05, 0.07)
+                }
                 // The garden calms for the respawned zapper — the menagerie
                 // leaves, and its cadence restarts from this tick.
                 state.spider = null
@@ -991,6 +1008,7 @@ const CentipedeGame = () => {
                 rand = seedRng(seed)
                 state.score = 0
                 lives = START_LIVES
+                revivedTotal = 0 // #3664
                 over = false
                 isAttractMode = false
                 keys.ArrowLeft = keys.ArrowRight = keys.ArrowUp = keys.ArrowDown = keys.Space = false
@@ -1014,6 +1032,8 @@ const CentipedeGame = () => {
                 scorpion: state.scorpion ? 1 : 0,
                 flea: state.flea ? 1 : 0,
                 poisoned: state.mushrooms.filter(m => m.poison).length,
+                damaged: state.mushrooms.filter(m => m.health < 3).length, // #3664 revival watch
+                revived: revivedTotal, // #3664 — healed since run start
                 pops: state.fx.length, // #3620 — QA can catch a kill-pop mid-flight
                 wave, // #3631 — speed ladder rung
                 rearSpd: Math.round(100 * state.centipedes.reduce((m, c) => Math.max(m, c.spd || 1), 1)) / 100,
@@ -1028,6 +1048,32 @@ const CentipedeGame = () => {
         exposeFeedbackState(() => ({
             tick: tickN, score: state.score, done: over, seed: seed, lives,
         }))
+
+        // DEV-only drive hooks (#3664): a harness must be able to stage the
+        // revival — sting, chip and kill on demand — not wait for luck.
+        if (import.meta.env.DEV) {
+            window.__cTest = {
+                probe: () => ({
+                    tick: tickN, score: state.score, done: over, lives,
+                    poisoned: state.mushrooms.filter((m) => m.poison).length,
+                    damaged: state.mushrooms.filter((m) => m.health < 3).length,
+                    mushrooms: state.mushrooms.length,
+                    revived: revivedTotal,
+                    alive: playerAlive(),
+                }),
+                hurt: () => { if (!over && playerAlive()) killPlayer() },
+                sting: () => {
+                    const cap = state.mushrooms.find((x) => !x.poison && x.health === 3)
+                    return cap ? poisonMushroom(cap) : false
+                },
+                chip: () => {
+                    const m = state.mushrooms.find((x) => !x.poison && x.health === 3)
+                    if (!m) return false
+                    m.health = 1
+                    return true
+                },
+            }
+        }
 
         return () => {
             window.removeEventListener('keydown', handleKeyDown)
