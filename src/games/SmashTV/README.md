@@ -58,6 +58,11 @@ co-op rather than a shared run:
   per-weapon gun silhouettes, layer order: feet under the gun layer) and the
   over-the-shoulder carriage geometry (`gunPose`) the renderer stamps exactly.
 - `art.js` — every sprite/texture synthesized at runtime.
+- The studio floor (`art.js buildFloor`) is painted as a lit stage: a
+  vertical gradient from the horizon to the foreground, a warm spotlight pool
+  centred on the board, a faint minor grid + stronger majors, the cracked
+  SMASH diamond with a soft glow, and a crowd band with lit shirt
+  accents along the top edge. (#3804)
 - `index.jsx` — canvas loop (fixed 60 Hz timestep, 256x248 internal), attract
   with seat pick (C/P), `'?'` PauseOverlay, VirtualControls (A = fire, B =
   firebomb), P2 keyboard map and the seat-2 slot wiring.
