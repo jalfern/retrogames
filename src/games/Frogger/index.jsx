@@ -6,10 +6,11 @@ import { GAMES } from '../../config/games'
 import WatchButton, { WatchToast, AttractWatchButton } from '../../components/WatchButton'
 import { isWatchKey, isTakeoverKey, playWatchStart, playWatchStop, watchSfxLog, WATCH_ATTRACT_HINT } from '../../utils/watch'
 import { attractFrame, DIM } from './attract.js'
+import { OPENING_VERSE, ONE_UP_STING, GAME_OVER_STING, freqOf } from './tunes.js'
 import {
     CELL, COLS, W, HOME_ROW, RIVER_TOP, RIVER_BOT, MEDIAN_ROW, ROAD_TOP, ROAD_BOT, START_ROW,
     TIME_LIMIT, HOP_ANIM, DIE_ANIM, DIVE_CYCLE, ROW_FREEZE, SCORE_WRAP,
-    makeRun, tickFrogger, hop as simHop, supportAt as simSupportAt, spansOf, surfaced, houseAt, deathStyle, stateHash,
+    makeRun, tickFrogger, hop as simHop, supportAt as simSupportAt, spansOf, surfaced, houseAt, deathStyle, bankEdgeX, stateHash,
 } from './sim.js'
 import { exposeGame, unexposeGame, exposeFeedbackState, unexposeFeedbackState, seedFromQuery, contractHoldsLoop } from '../../utils/gameContract'
 import { mountDbg, unmountDbg } from '../../utils/DebugKit'
@@ -54,6 +55,7 @@ const FroggerGame = () => {
         // start, so ?seed=N replays the exact traffic.
         let seed = Math.floor(Math.random() * 1000000)
         let gs = makeRun(seed, { attract: true })
+        let gameOverShown = false // the defeat sting plays once per run, not per frame
         let attractTick = 0
         let hiScore = Number(localStorage.getItem('frogger.hi') || 0)
 
@@ -92,12 +94,16 @@ const FroggerGame = () => {
             }
         }
         // #3692 — finding her on a log: a rising two-octave chirp (distinct
-        // from home/hop/enter); one-up frog: the classic fast arcade run-up.
+        // from home/hop/enter); #3703 — the 1981 cabinet tunes (opening verse,
+        // one-up sting, game-over sting): original note tables (./tunes.js),
+        // played through AudioController, pinned by froggercheck.
         const playLadyPick = () => audioController.playSweep(880, 1760, 0.12, 'square', 0.09)
-        const playOneUp = () => {
-            audioController.playTone(659, 0.05, 'square', 0.09)
-            audioController.playSweep(880, 1760, 0.2, 'triangle', 0.1)
+        const playTune = (table, type = 'square') => {
+            for (const e of table) audioController.playTone(freqOf(e.midi), e.dur, type, e.vol, e.at)
         }
+        const playOpeningVerse = () => playTune(OPENING_VERSE)
+        const playOneUp = () => playTune(ONE_UP_STING)
+        const playGameOver = () => playTune(GAME_OVER_STING)
         // #3676 gap 0 — row-entry bleep: a short chirp that climbs with the
         // row, riding the same octave curve as the hop tone but brighter.
         const playEnter = row => audioController.playTone(520 + (START_ROW - row) * 34, 0.09, 'square', 0.09)
@@ -123,7 +129,8 @@ const FroggerGame = () => {
             setAttractUi(false)
             gs.watching = false // watch never lingers — a new run starts in your hands
             setWatching(false)
-            audioController.playSweep(220, 440, 0.15, 'square', 0.1)
+            gameOverShown = false
+            playOpeningVerse() // the run begins — the opening verse, not a blip
         }
 
         const handleKeyDown = e => {
@@ -195,6 +202,9 @@ const FroggerGame = () => {
             if (ev.beep) audioController.playTone(1000, 0.04, 'square', 0.08)
             if (ev.level) audioController.playSweep(440, 1320, 0.6, 'square', 0.12)
             if (ev.over && !gs.attract) {
+                // the sim re-emits ev.over on every tick once the run ends —
+                // the sting plays once per run
+                if (!gameOverShown) { gameOverShown = true; playGameOver() }
                 const top = Math.max(gs.scores[gs.player - 1], gs.players === 2 ? Math.max(...gs.scores) : 0)
                 if (top > hiScore) {
                     hiScore = top
@@ -500,13 +510,17 @@ const FroggerGame = () => {
                     ctx.fillStyle = st.color
                     ctx.fillRect(frog.x - 12 * p - 2, frog.row === 0 ? 0 : rowMid(frog.row) - 3, 24 * p + 4, 6)
                 } else if (st.kind === 'splat') {
-                    // off-board: a warm X that bursts — distinct from the water ring (#1508)
+                    // off-board carry-off: a warm X that bursts at the bank edge
+                    // — distinct from the water ring (#1508). The frog rides a log
+                    // past the edge, so frog.x is off-canvas — clamp the burst to
+                    // the shoreline so it is actually visible (#3703).
                     const yy = frog.row === 0 ? HUD_H + 6 : rowMid(frog.row)
+                    const sx = bankEdgeX(frog.x)
                     const s = 4 + 9 * p
                     ctx.strokeStyle = st.color
                     ctx.beginPath()
-                    ctx.moveTo(frog.x - s, yy - s); ctx.lineTo(frog.x + s, yy + s)
-                    ctx.moveTo(frog.x + s, yy - s); ctx.lineTo(frog.x - s, yy + s)
+                    ctx.moveTo(sx - s, yy - s); ctx.lineTo(sx + s, yy + s)
+                    ctx.moveTo(sx + s, yy - s); ctx.lineTo(sx - s, yy + s)
                     ctx.stroke()
                 } else {
                     ctx.strokeStyle = st.color

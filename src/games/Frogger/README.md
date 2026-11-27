@@ -35,10 +35,11 @@ turtles, beat the clock. Fly house = +200, level clear = +1000, lanes speed up
 
 ## Verify
 ```
-npm run froggercheck             # 61 checks: attract rule 6 + seed replay +
+npm run froggercheck             # 97 checks: attract rule 6 + seed replay +
                                #   death distinctness + the 40-seed driver sweep +
-                               #   the #3676 duel & tell block
-npm run froggercheck -- --mutate # 19 mutants, all must die
+                               #   the #3676 duel & tell block +
+                               #   the #3703 1981 tune block & carry-off splat pin
+npm run froggercheck -- --mutate # 20 mutants, all must die
 npm run watchcheck -- --only frogger   # seat/handoff pilot (dev server)
 npm run feedbackcheck            # pin law + rollout floor (48)
 ```
@@ -64,9 +65,17 @@ byte-equal, every seed banks ≥1 level, 36/40 zero-death, ≥20 homes per seed,
   delivered. A single bonus frog at 20,000 (§Scoring, once per seat), and the
   score rolls over past 99,990 keeping five digits. Her dice roll after the
   fly's, so every seed's traffic is byte-identical to pre-#3692 (pinned).
-- Original logs-turtles carry frogs off-screen only via riding; a frog riding
+- ~~Original logs-turtles carry frogs off-screen only via riding; a frog riding
   off the edge dies as "off" — faithful, but the arcade shows a distinct
-  off-screen splat.
+  off-screen splat~~ **CLOSED by #3703**: the off-cause splat draws on the
+  shore line, clamped to the bank by `bankEdgeX` in `sim.js` (pinned by the
+  harness) instead of off-canvas, so a carry-off stays readable at both banks.
+- Audio: original 1981 arcade-style stings synthesized via
+  audioController — an ascending opening verse at the run start (`tunes.js`), a
+  fast one-up climb on the bonus frog, and a descending game-over sting, each
+  once per run (a shell-local guard keeps the over-frame replays from
+  re-firing). Original note tables in `tunes.js`, pinned by the harness —
+  never a copied cabinet tune.
 - The driver is survival-greedy, not perfect: on 4 of 40 seeds it sheds one
   life to a dive-phase shuffle on the turtle lane (it still banks levels there).
   It plans 7 s ahead (420 ticks) plus a 15 s drift carry-out projection; a

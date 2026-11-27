@@ -82,6 +82,12 @@ export function deathStyle(cause) {
     return { kind: 'ripple', color: 'rgba(160,210,255,0.9)' } // water / default
 }
 
+// The carry-off splat belongs at the bank edge the frog left — it rides a log
+// past the edge, so frog.x is off-canvas and an unclamped splat lands off
+// screen. Pure so froggercheck can pin the clamp without a browser.
+export const SPLAT_BANK_PAD = CELL / 2
+export const bankEdgeX = x => Math.max(SPLAT_BANK_PAD, Math.min(W - SPLAT_BANK_PAD, x))
+
 export function makeLane({ dir, speed, kind, widths, gap, phase = 0, dive = false }, rand) {
     const pattern = [...widths]
     let list = []

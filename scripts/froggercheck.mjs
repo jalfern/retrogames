@@ -8,9 +8,10 @@
 import { readFileSync, writeFileSync } from 'node:fs'
 import { spawnSync } from 'node:child_process'
 import { attractFrame, INFO_MSGS, HOLD, PRESS, DIM, HUD, estWidth } from '../src/games/Frogger/attract.js'
-import { makeLane, DIVE_CYCLE, deathStyle, makeRun, tickFrogger, watchStep,
-    ROW_FREEZE, timeBonus, TIME_LIMIT, START_ROW, ROAD_BOT, CELL,
+import { makeLane, DIVE_CYCLE, deathStyle, bankEdgeX, SPLAT_BANK_PAD, makeRun, tickFrogger, watchStep,
+    ROW_FREEZE, timeBonus, TIME_LIMIT, START_ROW, ROAD_BOT, CELL, W,
     addScore, die, ONE_UP_AT, LADY_BONUS, RIVER_CFG, RIVER_TOP, HOUSE_COLS, spansOf } from '../src/games/Frogger/sim.js'
+import { OPENING_VERSE, ONE_UP_STING, GAME_OVER_STING, freqOf } from '../src/games/Frogger/tunes.js'
 import { seedRng, seedFromQuery } from '../src/utils/gameContract.js'
 import { plant, pull } from './lib/mutateguard.mjs'
 
@@ -117,6 +118,59 @@ console.log('off-board death is distinct from a water splash')
     const src = readFileSync('src/games/Frogger/index.jsx', 'utf8')
     ok(/deathStyle\(\s*frog\.cause\s*\)/.test(src), 'the death animation consults deathStyle(cause)')
     ok(!/cause === 'time' \? '#ffe14d' : 'rgba\(160,210,255/.test(src), 'no hard-coded blue ring for every death')
+}
+
+// ------------- 1981 tunes + the carry-off splat (#3703) --------------------
+// The opening verse, one-up sting and game-over sting are ORIGINAL note tables
+// (never a recording of the cabinet); the harness pins their shape and the
+// shell wiring so a silent one-shot can't regress. The carry-off splat is the
+// off-board death's own mark — clamped to the bank edge (its x is off-canvas).
+console.log('1981 tunes (#3703)')
+{
+    const TABLES = [
+        ['OPENING_VERSE', OPENING_VERSE],
+        ['ONE_UP_STING', ONE_UP_STING],
+        ['GAME_OVER_STING', GAME_OVER_STING],
+    ]
+    for (const [name, table] of TABLES) {
+        ok(table.length >= 4, `${name}: at least four notes`, `${table.length}`)
+        ok(table.every(e => isFinite(freqOf(e.midi)) && e.midi >= 36 && e.midi <= 96 && e.dur > 0 && e.at >= 0 && e.vol > 0 && e.vol <= 0.2),
+            `${name}: every note is valid and within the cabinet's loud band`)
+        ok(table.every((e, i) => i === 0 || e.at > table[i - 1].at),
+            `${name}: notes are ascending in time`)
+    }
+    ok(OPENING_VERSE.every((e, i) => i === 0 || e.midi > OPENING_VERSE[i - 1].midi),
+        'the opening verse climbs')
+    ok(ONE_UP_STING.every((e, i) => i === 0 || e.midi > ONE_UP_STING[i - 1].midi),
+        'the one-up sting climbs')
+    ok(ONE_UP_STING.slice(0, 4).every(e => e.dur <= 0.06),
+        'the one-up sting is fast (four notes <= 60 ms)')
+    ok(GAME_OVER_STING.every((e, i) => i === 0 || e.midi < GAME_OVER_STING[i - 1].midi),
+        'the game-over sting descends')
+    ok(JSON.stringify(OPENING_VERSE) !== JSON.stringify(ONE_UP_STING) &&
+        JSON.stringify(OPENING_VERSE) !== JSON.stringify(GAME_OVER_STING) &&
+        JSON.stringify(ONE_UP_STING) !== JSON.stringify(GAME_OVER_STING),
+        'the three tunes are three distinct figures')
+
+    // Shell wiring: the verse plays at game start, the defeat sting on game
+    // over, once per run, and the one-up sting from the same table.
+    const srcT = readFileSync('src/games/Frogger/index.jsx', 'utf8')
+    ok(/const playOpeningVerse \= \(\) => playTune\(OPENING_VERSE\)/.test(srcT) &&
+        /playOpeningVerse\(\)/.test(srcT), 'the shell plays the opening verse')
+    ok(/const playGameOver \= \(\) => playTune\(GAME_OVER_STING\)/.test(srcT) &&
+        /playGameOver\(\)/.test(srcT), 'the shell plays the game-over sting')
+    ok(/const playOneUp \= \(\) => playTune\(ONE_UP_STING\)/.test(srcT),
+        'the shell plays the one-up sting from the 1981 table')
+    ok(/if \(!gameOverShown\) \{ gameOverShown = true; playGameOver\(\) \}/.test(srcT),
+        'the defeat sting fires once per run')
+
+    // The carry-off splat: a pure clamp so the splat lands at the shoreline.
+    ok(bankEdgeX(-100) === SPLAT_BANK_PAD, 'an off-left splat is clamped to the left bank pad', `${bankEdgeX(-100)}`)
+    ok(bankEdgeX(W + 100) === W - SPLAT_BANK_PAD, 'an off-right splat is clamped to the right bank pad', `${bankEdgeX(W + 100)}`)
+    ok(bankEdgeX(120) === 120, 'an on-board splat stays where the frog was', `${bankEdgeX(120)}`)
+    ok(isFinite(SPLAT_BANK_PAD) && SPLAT_BANK_PAD > 0 && SPLAT_BANK_PAD < CELL && CELL > 0,
+        'the bank pad is a small shoreline inset')
+    ok(/bankEdgeX\(frog\.x\)/.test(srcT), 'the carry-off splat draws clamped to the bank edge')
 }
 
 // --------------------------------- watch driver: crossings on the shipped tick ----
@@ -473,6 +527,23 @@ if (process.argv.includes('--mutate')) {
             `            const houseBehind = ridesAway(gs, row, x) // #2869: was row-1/columns-left only`,
             `            const houseBehind = row === RIVER_TOP && openSide(gs, x) === -1`,
             'src/games/Frogger/sim.js'],
+        // #3703 — tunes + carry-off splat mutants, each pinned by the block above.
+        ['the opening verse never plays',
+            `            playOpeningVerse() // the run begins — the opening verse, not a blip`,
+            `            // (verse removed)`,
+            'src/games/Frogger/index.jsx'],
+        ['the defeat sting replays every frame',
+            `                if (!gameOverShown) { gameOverShown = true; playGameOver() }`,
+            `                gameOverShown = true; playGameOver()`,
+            'src/games/Frogger/index.jsx'],
+        ['the one-up sting stops climbing',
+            `    { midi: 67, dur: 0.05, at: 0.10, vol: 0.10 },`,
+            `    { midi: 62, dur: 0.05, at: 0.10, vol: 0.10 },`,
+            'src/games/Frogger/tunes.js'],
+        ['the carry-off splat draws off-canvas',
+            `                    const sx = bankEdgeX(frog.x)`,
+            `                    const sx = frog.x`,
+            'src/games/Frogger/index.jsx'],
         // #3676 — duel + tell mutants, each pinned by the §duel block above.
         ['the handoff gate is closed (P1 never passes the seat, #3676)',
             `    if (gs.players === 2 && gs.player === 1) {`,
