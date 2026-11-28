@@ -631,8 +631,17 @@ export function solve(g, horizon = 1500) {
 }
 
 /** Apply a recorded script to a fresh game. Used by attract mode (a replay of
- *  the solver's script) and by lemcheck's determinism proof. The command takes
- *  effect on the tick AFTER its stamp — exactly how solve() applied it. */
+ *  the solver's script) and by lemcheck's determinism proof.
+ *  #3892 THE PHASE: a command stamped T is assigned when g.tick === T, i.e.
+ *  between the steps — its effect is processed by the step that advances to
+ *  T+1. That is exactly when solve() applied it (assign at g.tick===T, then
+ *  step) and exactly when a human keypress applies it (assign lands on the
+ *  live tick, the next step moves the body), so replay must fetch by the
+ *  CURRENT tick. The pre-fix fetch `byTick.get(g.tick + 1)` fired every
+ *  command one tick early — bodies sat a tick of motion off when boundaries
+ *  arrived, and THE DOOR's pond cascade drowned two walkers the oracle never
+ *  claimed (6/1 solve, 6/3 replay). BoulderDash/Sonar/ArenaArchery already
+ *  fetch by the current tick; Lemmings was the shelf's only offender. */
 export function replay(level, grid, cmds, opts = {}) {
     const g = makeGame(level, grid)
     const byTick = new Map()
@@ -641,7 +650,7 @@ export function replay(level, grid, cmds, opts = {}) {
         byTick.get(c.tick).push(c)
     }
     while (!g.end && g.tick < (opts.maxTicks || level.time * 60 + 60)) {
-        const todo = byTick.get(g.tick + 1)
+        const todo = byTick.get(g.tick)
         if (todo) for (const c of todo) assign(g, c.id, c.skill)
         step(g)
         if (opts.onTick) opts.onTick(g)

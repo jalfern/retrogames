@@ -21,7 +21,7 @@
 
 import { LEVELS, buildLevel } from '../src/games/Lemmings/levels.js'
 import { LAYOUT } from '../src/games/Lemmings/layout.js'
-import { PRESS, MESSAGES, demoFloatPick } from '../src/games/Lemmings/attract.js'
+import { PRESS, MESSAGES, demoFloatPick, certifyDemoFloat } from '../src/games/Lemmings/attract.js'
 import * as sim from '../src/games/Lemmings/sim.js'
 import { MUSIC } from '../src/utils/AudioController.js'
 import { readFileSync } from 'node:fs'
@@ -111,6 +111,51 @@ for (let i = 0; i < LEVELS.length; i++) {
     const c = sim.replay(meta, grid, tampered)
     ok(sim.stateHash(c) !== sim.stateHash(a) || c.exited !== a.exited,
         'the hash ignores a one-tick script change — the determinism check could not catch a desync')
+}
+
+{
+    section('REPLAY PHASE (#3892) — stamp T lands between the steps; effect at T+1')
+    // The pre-fix replay fetch was `byTick.get(g.tick + 1)`: every command fired one
+    // tick early, so the demo ran a line the oracle never verified — bodies a tick of
+    // motion off when a boundary arrived, and THE DOOR drowned two walkers it had
+    // promised it wouldn't (6/1 solve, 6/3 replay). Two layers of pins:
+    //  (1) every board: replay's outcome must equal solve's outcome — the product
+    //      promise that the attract autopilot loses EXACTLY what the oracle predicted.
+    //  (2) THE DOOR directly: a command stamped T must not be live at tick T and must
+    //      be live at T+1 — the very phase solve used and a human keypress has, so
+    //      replay may shift neither. Disabling the phase fix reddens layer (2) three
+    //      ways and layer (1) on DOOR (hand-mutation proof shipped with the fix).
+    for (let i = 0; i < LEVELS.length; i++) {
+        const { meta, grid } = buildLevel(i)
+        const r = sim.solve(sim.makeGame(meta, grid))
+        const rp = sim.replay(meta, grid, r.cmds)
+        ok(rp.exited === r.exited && rp.dead === r.dead,
+            `${meta.name}: replay ${rp.exited}/${rp.dead} disagrees with solve ${r.exited}/${r.dead} — the demo runs a line the oracle did not verify`)
+    }
+    const EFFECT = {
+        block: (L) => L.state === 'block', bomb: (L) => L.state === 'bomb',
+        climb: (L) => L.climber, dig: (L) => L.digger,
+        float: (L) => L.floater, build: (L) => L.builder,
+    }
+    const { meta, grid } = buildLevel(2)          // THE DOOR: bomb + block at the pond rim
+    const r = sim.solve(sim.makeGame(meta, grid))
+    ok(r.cmds.length >= 2, `THE DOOR: script has ${r.cmds.length} commands — the direct phase probe needs the bomb + block line`)
+    for (const cmd of r.cmds) {
+        const seen = {}
+        sim.replay(meta, grid, r.cmds, {
+            onTick: (g) => { const L = g.lemmings[cmd.id]; if (L) seen[g.tick] = EFFECT[cmd.skill](L) },
+        })
+        ok(seen[cmd.tick] === false, `THE DOOR: ${cmd.skill} for lem ${cmd.id} already live at stamp tick ${cmd.tick} — the one-tick-early fetch is back (#3892)`)
+        ok(seen[cmd.tick + 1] === true, `THE DOOR: ${cmd.skill} for lem ${cmd.id} not live at stamp+1 — replay phase shifted late`)
+    }
+    // The sim pin cannot see the shell. On screen, the attract replay and the
+    // WATCH line are what the player actually watches — audit the source so a
+    // `+ 1` cannot silently return to the component layer.
+    {
+        const src = readFileSync(new URL('../src/games/Lemmings/index.jsx', import.meta.url), 'utf8')
+        ok(/plan\.find\(cc => cc\.tick === gs\.tick\)/.test(src), '#3892 attract applies its plan off-phase in the shell — the on-screen demo runs ahead of the proof')
+        ok(/watchScript\.find\(cc => cc\.tick === gs\.tick\)/.test(src), '#3892 WATCH applies its script off-phase in the shell — the guided line runs ahead of the proof')
+    }
 }
 
 // ---------------------------------------------------------------- rule pins ----
@@ -938,10 +983,13 @@ if (MUT) {
 
 section('ATTRACT PARACHUTE (#3853: the demo shows all five skills)')
 {
-    // The picker is pure — pin it against fabricated boards, then replay every
-    // level's demo the way the shell does and demand: win, a canopy in every
-    // cycle, never more than the level's own supply, and at least one canopy
-    // that actually OPENS (its carrier is caught mid-fall).
+    // The picker is pure — pin it against fabricated boards, then drive every
+    // level's demo the way the shell does (#3892: through certifyDemoFloat —
+    // grants scheduled at plan time and certified against the replay world) and
+    // demand: win, a canopy every cycle, never more than the level's own
+    // supply, the demo world's outcome equal the proven script's, and at least
+    // one canopy that actually OPENS — an airborne grant whose carrier lands
+    // soft is the parachute deploying on screen.
     const fakeL = (id, over = {}) => ({ id, live: true, floater: false, state: 'walk', fallDist: 0, x: 5, y: 10, dir: 1, ...over })
     const dryBoard = (lemmings, tick = 0) => ({ tick, lemmings, grid: new Uint8Array(sim.W * sim.H).fill(sim.DIRT) })
 
@@ -957,33 +1005,39 @@ section('ATTRACT PARACHUTE (#3853: the demo shows all five skills)')
         ok(demoFloatPick(gb, []) === 1, '#3853 water skip gone: the demo parachutes a lemming straight into the pond')
     }
 
-    let demoCanopies = 0, demoAir = 0
+    let demoCanopies = 0, demoAir = 0, demoOpened = 0
     for (let i = 0; i < LEVELS.length; i++) {
         const { meta, grid } = buildLevel(i)
+        const plan = sim.solve(sim.makeGame(meta, grid)).cmds
+        const fl = certifyDemoFloat(meta, grid, plan, { maxGrants: 2 })
+        ok(fl.length >= 1, `#3853 ${meta.name}: no certified float grant — attract cycle shows no parachute — the five-skills gap is back`)
+        ok(fl.length <= meta.skills.float, `#3853 ${meta.name}: demo spent more float than the level carries`)
+        ok(fl.every(f => f.tick > 0 && f.tick < meta.time * 60), `#3853 ${meta.name}: grant scheduled outside the level clock`)
+        ok(fl.every(f => f.air || !plan.some(c => c.id === f.id)), '#3892 a walker grant got scripted — the picker exclusion is gone (air grants may be scripted bodies, but only under the certifier)')
         let g = sim.makeGame(meta, grid)
-        const plan = sim.solve(g).cmds
-        g = sim.makeGame(meta, grid)
-        let grants = 0, air = 0, tick = 0
+        let grants = 0, air = 0, opened = 0, tick = 0
         while (!g.end && tick < meta.time * 60 + 60) {
-            const c = plan.find(cc => cc.tick === g.tick + 1)
+            const c = plan.find(cc => cc.tick === g.tick)   // #3892 solve-phase
             if (c) sim.assign(g, c.id, c.skill)
-            if (grants < 2) {                          // DEMO_FLOATS, mirrored from index.jsx
-                const fid = demoFloatPick(g, plan)
-                if (fid != null && sim.assign(g, fid, 'float')) { grants++; air |= g.lemmings[fid].state === 'fall' ? 1 : 0 }
+            while (grants < fl.length && g.tick === fl[grants].tick) {
+                if (sim.assign(g, fl[grants].id, 'float')) air |= fl[grants].air ? 1 : 0
+                grants++
             }
-            // a canopy rides on show and auto-opens on the next fall: a granted
-            // carrier that later falls IS the parachute opening
-            for (const L of g.lemmings) if (L.live && L.floater && L.state === 'fall' && !plan.some(cc => cc.id === L.id)) air = 1
             sim.step(g)
             tick++
+            for (const e of g.events) if (e.type === 'landsoft') opened++
         }
         demoCanopies += grants
         demoAir |= air
+        demoOpened += opened
         ok(g.win === true, `#3853 ${meta.name}: the demo float broke the solver's win`)
-        ok(grants >= 1, `#3853 ${meta.name}: attract cycle shows no parachute — the five-skills gap is back`)
-        ok(grants <= meta.skills.float, `#3853 ${meta.name}: demo spent more float than the level carries`)
+        ok(grants === fl.length, `#3853 ${meta.name}: certified grant fell on deaf ears — applied ${grants} of ${fl.length}`)
+        const base = sim.replay(meta, grid, plan)
+        ok(g.exited === base.exited && g.dead === base.dead,
+            `#3892 ${meta.name}: demo with its certified floats ended ${g.exited}/${g.dead}, the proof said ${base.exited}/${base.dead} — a grant shifted the world off its certificate`)
     }
-    ok(demoAir === 1, '#3853 no level demo opens a canopy in the air — the parachute never deploys on screen')
+    ok(demoCanopies >= LEVELS.length, '#3853 fewer canopies than cycles — some level attracts without a parachute')
+    ok(demoAir === 1 && demoOpened > 0, '#3853 no level demo opens a canopy in the air — the parachute never deploys on screen')
 }
 
 section('PHANTOM HYGIENE (#3876: the autopilot never flashes a skill it never uses)')
@@ -1027,7 +1081,11 @@ section('PHANTOM HYGIENE (#3876: the autopilot never flashes a skill it never us
         const planted = [...plan, { tick: plantT, id: 0, skill: 'build' }]
         let applied = false
         const full = sim.replay(meta, grid, planted, {
-            onTick: (g) => { if (g.tick === plantT && g.lemmings[0].builder) applied = true },
+            // #3892 phase: a stamp-T command is assigned between the steps and
+            // first moves the world in the step that advances to T+1 — so the
+            // grant is first visible at plantT+1, exactly as solve would apply
+            // it. (Pre-#3892 this read plantT, the early-fetch's signature.)
+            onTick: (g) => { if (g.tick === plantT + 1 && g.lemmings[0].builder) applied = true },
         })
         ok(full.win === true, '#3876 mutation harness broken: the planted script does not even win')
         ok(applied, `#3876 plant was never a live grant (id0 not carrying builder at tick ${plantT}) — the probe would pass vacuously`)

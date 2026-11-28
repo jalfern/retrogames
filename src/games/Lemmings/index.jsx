@@ -22,7 +22,7 @@ import { currentPad, setPointer, pointerGesture } from '../../utils/onePad'
 import { makeFitCanvas } from '../../utils/fitCanvas'
 import { LEVELS, buildLevel } from './levels.js'
 import { LAYOUT } from './layout.js'
-import { PRESS, MESSAGES, demoFloatPick } from './attract.js'
+import { PRESS, MESSAGES, certifyDemoFloat } from './attract.js'
 import { makeGame, step, solve, assign, nearestLemming, stateHash, SKILLS, SKILL_NAME, SKILL_KEY, CFG, W, H, DIRT, STEEL, WATER, PLANK, FIXED_DT, defaultSkill } from './sim.js'
 import WatchButton, { WatchToast, AttractWatchButton } from '../../components/WatchButton'
 import { isWatchKey, isTakeoverKey, playWatchStart, playWatchStop, watchSfxLog, WATCH_ATTRACT_HINT } from '../../utils/watch'
@@ -39,6 +39,17 @@ const planFor = (idx) => {
         planCache.set(idx, solve(makeGame(meta, grid)).cmds)
     }
     return planCache.get(idx)
+}
+
+// #3892: the demo float grants are certified at plan time against the replay
+// world (attract.js certifyDemoFloat) — same cache discipline as the plans.
+const floatCache = new Map()
+const floatFor = (idx) => {
+    if (!floatCache.has(idx)) {
+        const { meta, grid } = buildLevel(idx)
+        floatCache.set(idx, certifyDemoFloat(meta, grid, planFor(idx), { maxGrants: DEMO_FLOATS }))
+    }
+    return floatCache.get(idx)
 }
 
 const speck = (x, y) => ((x * 7349 + y * 8453) % 7) / 7
@@ -118,6 +129,7 @@ const LemGame = () => {
         let levelIdx = 0
         let meta = null, grid = null, gs = null
         let plan = [], planI = 0
+        let floatPlan = []                          // #3892 certified demo float grants [{tick,id,air}]
         let demoFloats = 0                            // #3853 canopies spent by the attract demo this cycle
         let raf = 0, last = 0, acc = 0
         let runCmds = []                          // player-command log of the live run
@@ -150,6 +162,7 @@ const LemGame = () => {
             gs = makeGame(meta, grid)
             if (freshScore) gs.score = 0
             plan = planFor(levelIdx); planI = 0
+            floatPlan = floatFor(levelIdx)          // #3892 parachute grants, certified for this board
             demoFloats = 0                            // #3853 each demo cycle may show its own parachute
             runCmds = []
             cursor.x = meta.spawn.x; cursor.y = meta.spawn.y - 1
@@ -299,21 +312,35 @@ const LemGame = () => {
             for (let i = splashes.length - 1; i >= 0; i--) { if (++splashes[i].t > 30) splashes.splice(i, 1) }
             for (let i = cries.length - 1; i >= 0; i--) { if (++cries[i].t > OHNO_LIFE) cries.splice(i, 1) }
             if (screenRef.current === 'attract') {
-                // attract = the solver's proven script, replayed on screen
-                const c = plan.find(cc => cc.tick === gs.tick + 1)
+                // attract = the solver's proven script, replayed on screen.
+                // #3892 PHASE: apply stamp T at g.tick===T — the same phase
+                // solve() verified and a human keypress has (assign between the
+                // steps; the step advancing to T+1 moves the body). The old
+                // `+ 1` fired every command a tick early, desyncing the demo
+                // from the proven line — THE DOOR visibly drowned two walkers
+                // the oracle never claimed.
+                const c = plan.find(cc => cc.tick === gs.tick)
                 if (c) assign(gs, c.id, c.skill)
-                // #3853 attract-parachute: the solver never needs floaters, so the
-                // replay showed four skills while the game offers five. Once per
-                // level cycle the demo spends one of the level's OWN float charges
-                // on an unsripted faller — the canopy catches air (deploy swoosh,
-                // soft landing), so the player sees all five skills before ever
-                // touching the game. Script lines stay exactly as proven: the picker
-                // excludes script targets, and a rescued life can only ever help the
-                // quota. startPlay() rebuilds the level fresh, so demo floats never
-                // eat into the player's supply.
-                if (demoFloats < DEMO_FLOATS) {
-                    const fid = demoFloatPick(gs, plan)
-                    if (fid != null && assign(gs, fid, 'float')) { demoFloats++; skillSfx('float') }
+                // #3853 attract-parachute, #3892 honest edition: the solver never
+                // needs floaters, so the replay showed four skills while the game
+                // offers five. The demo now spends the level's OWN float charges on
+                // candidates CERTIFIED at plan time (attract.js certifyDemoFloat):
+                // each grant replayed against the script with win/exited/dead
+                // demanded identical. Where an airborne body certifies (SPIRE's
+                // descent, DOOR's post-bomb drop) the canopy is shown DEPLOYING
+                // mid-fall — the original's attract did exactly this; where only a
+                // walker certifies, the canopy rides on show and the world is
+                // proven unmoved. The pre-#3892 demo caught its air from the
+                // desync itself (crowds tossed over lips the solver actually
+                // held); an honest board may not promise a deploy it cannot
+                // deliver, so every grant is now proven, never hoped.
+                // startPlay() rebuilds the level fresh, so demo floats never eat
+                // into the player's supply. Exact tick only, and the counter
+                // advances whether the grant lands or is refused — retrying late
+                // would put a chute on a body in a state that was never certified.
+                while (demoFloats < floatPlan.length && gs.tick === floatPlan[demoFloats].tick) {
+                    if (assign(gs, floatPlan[demoFloats].id, 'float')) skillSfx('float')
+                    demoFloats++
                 }
                 handleEvents(step(gs).events)
                 if (gs.end) loadLevel((levelIdx + 1) % LEVELS.length, true)
@@ -324,9 +351,10 @@ const LemGame = () => {
                 if (keys.has('ArrowUp')) cursor.y = Math.max(2, cursor.y - sp)
                 if (keys.has('ArrowDown')) cursor.y = Math.min(H - 1, cursor.y + sp)
                 if (watchingRef.current && watchScript) {
-                    // #1637 same stamp rule as attract's replay: the command lands
-                    // on the tick after its stamp — the proven line, live.
-                    const c = watchScript.find(cc => cc.tick === gs.tick + 1)
+                    // #1637/#3892 same stamp rule as attract's replay: apply
+                    // stamp T at g.tick===T — the proven line, live, in the
+                    // exact phase the solver verified it in.
+                    const c = watchScript.find(cc => cc.tick === gs.tick)
                     if (c) assign(gs, c.id, c.skill)
                 }
                 handleEvents(step(gs, { x: cursor.x, y: cursor.y }).events)
