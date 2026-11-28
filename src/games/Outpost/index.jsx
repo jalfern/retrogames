@@ -32,6 +32,18 @@ const PXH = H * CH
 const TOOLS = ['dig', 'farm', 'rally']
 const TOOLCOL = { dig: '#ff7d5d', farm: '#7ddc5d', rally: '#ffd23e' }
 
+// Deterministic per-tile grain for the rock field: the sim never gambles,
+// so the wall never does either — the shade is a pure function of the tile
+// index. Same grain every paint, valid for every seed.
+const ROCK_SHADES = ['#1d2230', '#20263a', '#232838', '#262c42', '#2a3348', '#2f3a52']
+const rockShade = (i) => {
+    let h = (i * 2654435761) >>> 0
+    h ^= h >>> 13
+    h = (h * 1274126177) >>> 0
+    h ^= h >>> 16
+    return ROCK_SHADES[h % ROCK_SHADES.length]
+}
+
 let demos = {}
 const demoRun = (seed) => {
     if (!demos[seed]) demos[seed] = plan(seed).script
@@ -158,7 +170,7 @@ const OutpostGame = () => {
                     const px = x * CW, py = y * CH
                     const t = gs.cave.t[i]
                     if (t === ROCK) {
-                        bgx.fillStyle = '#232838'
+                        bgx.fillStyle = rockShade(i)
                         bgx.fillText('#', px + CW / 2, py + CH - 7)
                         if (gs.cave.ore[i]) { bgx.fillStyle = '#d8b23e'; bgx.fillText('%', px + CW / 2, py + CH - 7) }
                     } else {
