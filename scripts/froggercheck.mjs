@@ -10,7 +10,7 @@ import { spawnSync } from 'node:child_process'
 import { attractFrame, INFO_MSGS, HOLD, PRESS, FOOTER, DIM, HUD, estWidth } from '../src/games/Frogger/attract.js'
 import { makeLane, DIVE_CYCLE, deathStyle, bankEdgeX, SPLAT_BANK_PAD, makeRun, tickFrogger, watchStep,
     ROW_FREEZE, timeBonus, TIME_LIMIT, START_ROW, ROAD_BOT, CELL, W,
-    addScore, die, ONE_UP_AT, LADY_BONUS, RIVER_CFG, RIVER_TOP, HOUSE_COLS, spansOf } from '../src/games/Frogger/sim.js'
+    addScore, die, ONE_UP_AT, LADY_BONUS, RIVER_CFG, RIVER_TOP, HOUSE_COLS, spansOf, speedMult } from '../src/games/Frogger/sim.js'
 import { OPENING_VERSE, ONE_UP_STING, GAME_OVER_STING, freqOf } from '../src/games/Frogger/tunes.js'
 import { seedRng, seedFromQuery } from '../src/utils/gameContract.js'
 import { plant, pull } from './lib/mutateguard.mjs'
@@ -132,6 +132,48 @@ console.log('off-board death is distinct from a water splash')
     const src = readFileSync('src/games/Frogger/index.jsx', 'utf8')
     ok(/deathStyle\(\s*frog\.cause\s*\)/.test(src), 'the death animation consults deathStyle(cause)')
     ok(!/cause === 'time' \? '#ffe14d' : 'rgba\(160,210,255/.test(src), 'no hard-coded blue ring for every death')
+}
+
+// ---------------- difficulty eases after level 5 (#3854, Wikipedia §Gameplay) ----
+// "the game progresses to the next level with increased difficulty. After five
+// levels, the difficulty briefly eases and yet again progressively increases
+// after each level." Pre-#3854 the ramp climbed monotonically to 1.8× and
+// stayed there — level 6+ never breathed.
+console.log('difficulty eases after level 5 (#3854)')
+{
+    const near = (a, b) => Math.abs(a - b) < 1e-9
+    const shipped = [1, 2, 3, 4, 5].map(l => 1 + (l - 1) * 0.12)
+    ok(shipped.every((v, i) => near(speedMult(i + 1), v)),
+        'levels 1–5 keep the shipped +12% ramp byte-equal',
+        [1, 2, 3, 4, 5].map(l => speedMult(l).toFixed(2)).join(' '))
+    ok(speedMult(6) < speedMult(5), 'level 6 eases BELOW level 5 (the §Gameplay breath)',
+        `${speedMult(5).toFixed(2)} → ${speedMult(6).toFixed(2)}`)
+    ok(near(speedMult(6), 1.36), 'the ease is exactly one notch below (1.36)', `${speedMult(6)}`)
+    ok([7, 8, 9].every(l => near(speedMult(l), speedMult(l - 1) + 0.12)),
+        'the ramp re-climbs +12%/level after the ease')
+    ok(near(speedMult(10), 1.8) && near(speedMult(11), 1.8) && near(speedMult(40), 1.8),
+        'the 1.8× cap lands after the re-climb (level 10) and holds')
+    ok(Array.from({ length: 60 }, (_, i) => 1 + i).every(l => speedMult(l) <= 1.8 + 1e-9),
+        'no level escapes the cap')
+
+    // The rule bites the shipped tick, not just the constant: two identical
+    // seeded worlds differing only in level — level 6 traffic marches measurably
+    // slower than level 5 traffic. min(|d|, cycle-|d|) so mod-wrap can't fake it.
+    const march = level => {
+        const gs = makeRun(99)
+        gs.level = level
+        gs.frog.state = 'alive'
+        const before = gs.riverLanes.map(l => l.items.map(it => it.x))
+        tickFrogger(gs)
+        return gs.riverLanes.reduce((s, l, i) => s + l.items.reduce((t, it, j) => {
+            const d = Math.abs(it.x - before[i][j])
+            return t + Math.min(d, l.cycle - d)
+        }, 0), 0)
+    }
+    ok(march(6) < march(5), 'tick proof: level-6 lanes displace slower than level-5',
+        `L5 ${march(5).toFixed(2)} px/tick vs L6 ${march(6).toFixed(2)} px/tick`)
+    ok(march(8) > march(6), 'tick proof: the re-climb is real on the tick',
+        `L6 ${march(6).toFixed(2)} px/tick vs L8 ${march(8).toFixed(2)} px/tick`)
 }
 
 // ------------- 1981 tunes + the carry-off splat (#3703) --------------------
@@ -598,6 +640,11 @@ if (process.argv.includes('--mutate')) {
         ['a filled home is reported as home, jingle over the splat (#3676)',
             `            if (!res) return { kind: 'died', cause: 'wall', row }`,
             `            if (!res) return { kind: 'home', row, fly: false, bonus: 0 }`,
+            'src/games/Frogger/sim.js'],
+        // #3854 — the §Gameplay breath at the level-5 boundary.
+        ['the level-6 ease is removed (difficulty never breathes, #3854)',
+            `    const step = level > 5 ? level - 3 : level - 1`,
+            `    const step = level - 1`,
             'src/games/Frogger/sim.js'],
     ]
     // --mutant-only <substr>: re-verify a slice (by name) without re-running

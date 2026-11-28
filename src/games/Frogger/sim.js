@@ -107,7 +107,17 @@ export function makeLane({ dir, speed, kind, widths, gap, phase = 0, dive = fals
     return { dir, speed, kind, items, cycle, maxW, dive, t: Math.floor(rand() * DIVE_CYCLE) }
 }
 
-export const speedMult = level => Math.min(1 + (level - 1) * 0.12, 1.8)
+// #3854 §Gameplay — "the game progresses to the next level with increased
+// difficulty. After five levels, the difficulty briefly eases and yet again
+// progressively increases after each level." Past the level-5 boundary the ramp
+// steps back below level 5 (1.48 → 1.36 at level 6 — the arcade's breath),
+// then re-climbs at the same +12%/level; levels 1–5 keep their shipped
+// values and the 1.8× cap still lands, one level later than before (level 10).
+// Pure function of the level — no dice, no seed stream, replay determinism kept.
+export const speedMult = level => {
+    const step = level > 5 ? level - 3 : level - 1
+    return Math.min(1 + step * 0.12, 1.8)
+}
 
 export const spansOf = lane => lane.items.map(it => ({
     x: mod(it.x, lane.cycle) - lane.maxW * CELL,
