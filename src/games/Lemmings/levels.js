@@ -47,6 +47,11 @@ export const LEVELS = [
         defaultSkill: 'climb',
         skills: { block: 1, bomb: 0, climb: 6, dig: 0, float: 2, build: 12 },
         proves: ['climb'],
+        // #3879 WIND VENT: a ground grate east of the spire's foot blows the
+        // descent east — floaters caught low on the stair ride the gust onto
+        // the exit plinth (assist), and the ones carried past the door meet
+        // the bay (tax). Walkers never feel it; the solver never floats.
+        vents: [{ x: 39, y: 23, dir: 1, reach: 8 }],
         build() {
             const c = new Carve()
             c.sky(); c.floor(24)
@@ -112,6 +117,11 @@ export const LEVELS = [
         // loses: `proves: build`.
         skills: { block: 2, bomb: 0, climb: 0, dig: 3, float: 2, build: 12 },
         proves: ['dig', 'build'],
+        // #3879 WIND VENT (threat shape): mouth on the plinth's west face blows
+        // back over the trench — a floater taken to skip the plank road gets
+        // shoved off the plinth's doorstep and into the trench's mouth zone.
+        // The road stays the answer; the parachute becomes the trap.
+        vents: [{ x: 40, y: 22, dir: -1, reach: 4 }],
         build() {
             const c = new Carve()
             c.sky(); c.floor(24)

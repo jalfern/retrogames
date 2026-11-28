@@ -586,6 +586,33 @@ const LemGame = () => {
                 }
             }
 
+            // #3879 WIND VENTS: a riveted steel grate on its mount cell and a
+            // two-row airstream of dashes drifting downwind, thinning with the
+            // reach. Animation rides the WORLD clock (gs.tick), so replays and
+            // lite-mode capture are reproducible; matches the exit glow's
+            // single-hue-plus-hot-rim language (docs/ART.md, RETRO bar).
+            for (const v of (meta.vents || [])) {
+                const d = v.dir || 1
+                const vx = v.x * TS, vy = v.y * TS
+                ctx.fillStyle = '#454f59'; ctx.fillRect(vx, vy, TS, TS)
+                ctx.fillStyle = '#8b98a2'
+                ctx.fillRect(vx, vy, TS, 2)                                       // top lip
+                ctx.fillRect(d > 0 ? vx : vx + TS - 2, vy, 2, TS)               // mount cheek
+                ctx.fillStyle = '#222b33'
+                for (let s = 0; s < 3; s++) ctx.fillRect(d > 0 ? vx + TS - 4 : vx + 2, vy + 3 + s * 5, 2, 3)   // mouth slats
+                ctx.fillStyle = '#c8d2da'
+                ctx.fillRect(d > 0 ? vx + 3 : vx + TS - 4, vy + 3, 1, 1)       // rivet glint
+                const L0 = (v.reach + 1) * TS
+                for (let j = 0; j < 6; j++) {
+                    const s = (gs.tick * 2 + j * (L0 / 6)) % L0                 // downwind travel
+                    const a = (0.5 - 0.35 * (s / L0)).toFixed(2)
+                    ctx.fillStyle = `rgba(154,220,232,${a})`
+                    const pxs = d > 0 ? Math.round(vx + s) : Math.round(vx + TS - s - 4)
+                    ctx.fillRect(pxs, vy - TS + 4 + (j % 2) * 3, 4, 1)         // upper row dashes
+                    ctx.fillRect(pxs - d * 5, vy + 9 + (j % 2) * 3, 3, 1)      // lower row, staggered
+                }
+            }
+
             // spawn cave + exit door
             ctx.fillStyle = '#241608'
             ctx.fillRect(meta.spawn.x * TS - 3, (meta.spawn.y - 1) * TS, TS + 6, TS + 2)
