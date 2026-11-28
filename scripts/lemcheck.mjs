@@ -244,6 +244,91 @@ for (let i = 0; i < LEVELS.length; i++) {
     }
 }
 
+// --------------------------------------------------------------- water rules ---
+// #3828: the original drowns anything that touches water, from any height;
+// water is not ground, does not yield to dig or blast, and THE SPIRE's pond
+// makes the stragglers' westward pacing cost lives. These pins hold all of it.
+{
+    section('WATER (#3828: the pond drowns, and never yields)')
+    const { meta, grid } = buildLevel(0)
+    ok(meta.name === 'THE SPIRE' && grid[23 * sim.W + 2] === sim.WATER && grid[24 * sim.W + 2] === sim.WATER,
+        'THE SPIRE has no pond at its west foot — the #3828 stage never shipped')
+    ok(!sim.solid({ grid }, 2, 23) && !sim.solid({ grid }, 2, 24),
+        'the pond reads as solid ground — walkers would walk on top of the water')
+    // walk-in: a walker that reaches the rim wades in and drowns at the surface
+    // (spawnCount 1 — a lone walker, so spawn-clump traffic can't turn it back)
+    {
+        const g = sim.makeGame({ ...meta, spawnCount: 1 }, grid)
+        for (let t = 0; t < 70; t++) sim.step(g)
+        const L = g.lemmings[0]
+        L.state = 'walk'; L.x = 5.5; L.y = 23; L.dir = -1
+        let drown = 0
+        for (let t = 0; t < 240; t++) { sim.step(g); drown += g.events.filter(e => e.type === 'drown').length }
+        ok(!L.live && L.state === 'dead' && drown > 0,
+            'a walker crossing into the pond survived — the drown rule is dead')
+    }
+    // any height: dropped far above the pond it drowns — water kills, it does
+    // not cushion, and it never resolves as a splat
+    {
+        const g = sim.makeGame(meta, grid)
+        for (let t = 0; t < 70; t++) sim.step(g)
+        const L = g.lemmings[0]
+        L.state = 'fall'; L.vy = 8; L.fallDist = 1; L.x = 1.5; L.y = 12
+        let drown = 0, splat = 0
+        for (let t = 0; t < 300; t++) {
+            sim.step(g)
+            drown += g.events.filter(e => e.type === 'drown').length
+            splat += g.events.filter(e => e.type === 'splat').length
+        }
+        ok(drown > 0 && splat === 0,
+            `a tall drop into water resolved as drown ${drown} / splat ${splat} — in water every fall drowns, whatever the height`)
+    }
+    // the pond bites the GAME, not just the rules: unmanaged, the spire crowd
+    // bounces off the face and pays walking west — pacing the map is no longer free
+    {
+        const g = sim.makeGame(meta, grid)
+        let drown = 0
+        while (!g.end && g.tick < meta.time * 60) { sim.step(g); drown += g.events.filter(e => e.type === 'drown').length }
+        ok(drown >= 1, 'the unmanaged SPIRE crowd pays nothing — the pond drains nobody, the tutorial has no teeth')
+    }
+    // dig refuses water: the digger stops at the surface and the water stays
+    {
+        const wg = new Uint8Array(sim.W * sim.H).fill(sim.AIR)
+        for (let x = 0; x < sim.W; x++) { wg[23 * sim.W + x] = sim.DIRT; wg[24 * sim.W + x] = sim.STEEL }
+        wg[22 * sim.W + 16] = sim.WATER
+        const g = sim.makeGame({ ...meta, spawnCount: 1, spawnEvery: 1, skills: { ...meta.skills, dig: 1 } }, wg)
+        for (let t = 0; t < 10; t++) sim.step(g)
+        const L = g.lemmings[0]
+        L.state = 'dig'; L.digger = true; L.x = 15.0; L.y = 23; L.dir = 1
+        for (let t = 0; t < 120; t++) sim.step(g)
+        ok(wg[22 * sim.W + 16] === sim.WATER, 'the digger chewed through water — only dirt yields (#3828)')
+        ok(!L.live, 'a lemming that waded chest-deep into water survived — the chest-row drown check is dead')
+    }
+    // blast leaves the pond standing: the rim flies, the water stays
+    {
+        const g = sim.makeGame(meta, grid)
+        for (let t = 0; t < 70; t++) sim.step(g)
+        const L = g.lemmings[0]
+        L.state = 'bomb'; L.fuseT = 0; L.x = 4.6; L.y = 23; L.dir = -1
+        for (let t = 0; t < 130; t++) sim.step(g)      // fuse is 1.6 s
+        ok(g.grid[23 * sim.W + 3] === sim.WATER && g.grid[24 * sim.W + 3] === sim.WATER,
+            'a blast drained the pond — water must survive explosions the way steel does (#3828)')
+    }
+    // determinism survives the new board: attract mode IS this replay
+    {
+        const r = sim.solve(sim.makeGame(meta, grid))
+        const a = sim.stateHash(sim.replay(meta, grid, r.cmds))
+        const b = sim.stateHash(sim.replay(meta, grid, r.cmds))
+        ok(a === b, 'two replays over the pond disagree — the drown rule is not deterministic')
+    }
+    // the renderer consumes the water: tile, sound, sink and splash
+    const wsrc = readFileSync(new URL('../src/games/Lemmings/index.jsx', import.meta.url), 'utf8')
+    ok(/t === WATER/.test(wsrc), 'paint never draws the WATER tile — the pond is invisible to players (#3828)')
+    ok(/e\.type === 'drown'/.test(wsrc), 'the drown event has no sound — the pond is silent (#3828)')
+    ok(/=== WATER/.test(wsrc) && /sink/i.test(wsrc), 'drowned lemmings leave a corpse on the pond — the original sinks them (#3828)')
+    ok(/splashes/.test(wsrc), 'no splash ring — nothing marks where the pond took a lemming (#3828)')
+}
+
 // ------------------------------------------------ first-run readability (#422) ---
 // Items 3-5 of the first-play pass: the skill bar must be docked off the
 // playfield, the HUD count must read as plain English, and the attract copy
