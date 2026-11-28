@@ -84,10 +84,10 @@ breakable — every pin here has survived a manual mutation.
 - Float-while-digging (the original's floating lemming chews straight down
   through dirt while descending) does not port to the horizontal-tunnel digger;
   it needs either a second dig mode or a rethink of the dig model.
-- Water NEVER flows (and never will): the 1991 original's water is static —
-  draining ponds are a Lemmings 2 mechanic. What the original DID have,
-  ponds everywhere, shipped in #3859 (see Closed); the static law itself is
-  fidelity, not a gap.
+- **DISCLAIMER** (#3859): water NEVER flows and never will — the 1991
+  original's water is static; draining ponds are a Lemmings 2 mechanic.
+  What the original DID have, ponds everywhere, shipped in #3859; flowing
+  water is out of scope by fidelity, not an open gap.
 
 ## Closed
 
