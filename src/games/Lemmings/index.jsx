@@ -3,7 +3,7 @@
 // attract demo is literally a REPLAY of the solver's own winning script from
 // `lemcheck` (deterministic replay, on screen, before you ever press a key).
 //
-// Input: arrows drive the assignment cursor, 1-4 (or the B button) pick the
+// Input: arrows drive the assignment cursor, 1-6 (or the B button) pick the
 // skill, Space/click/A apply it to the nearest lemming — the issue's
 // one-click assignment, on a phone with just the virtual pad.
 //
@@ -23,7 +23,7 @@ import { makeFitCanvas } from '../../utils/fitCanvas'
 import { LEVELS, buildLevel } from './levels.js'
 import { LAYOUT } from './layout.js'
 import { PRESS, MESSAGES, demoFloatPick } from './attract.js'
-import { makeGame, step, solve, assign, nearestLemming, stateHash, SKILLS, SKILL_NAME, SKILL_KEY, CFG, W, H, DIRT, STEEL, WATER, FIXED_DT, defaultSkill } from './sim.js'
+import { makeGame, step, solve, assign, nearestLemming, stateHash, SKILLS, SKILL_NAME, SKILL_KEY, CFG, W, H, DIRT, STEEL, WATER, PLANK, FIXED_DT, defaultSkill } from './sim.js'
 import WatchButton, { WatchToast, AttractWatchButton } from '../../components/WatchButton'
 import { isWatchKey, isTakeoverKey, playWatchStart, playWatchStop, watchSfxLog, WATCH_ATTRACT_HINT } from '../../utils/watch'
 
@@ -207,6 +207,9 @@ const LemGame = () => {
                 }
                 else if (e.type === 'boom') { deaths++; pushCry(e.x, e.y) }
                 else if (e.type === 'dig') audioController.playNoise(0.06, 0.03)
+                // #3863: wood on wood — the plank's landing knock, a short hammer
+                // strike (mid square) layered over a grit tick, never a thud.
+                else if (e.type === 'plank') { audioController.playTone(190, 0.05, 'square', 0.06); audioController.playNoise(0.03, 0.02) }
                 else if (e.type === 'land') audioController.playTone(120, 0.05, 'triangle', 0.04)
                 else if (e.type === 'landsoft') audioController.playTone(200, 0.07, 'sine', 0.035)
                 else if (e.type === 'step') audioController.playTone(220, 0.03, 'triangle', 0.025)
@@ -390,7 +393,22 @@ const LemGame = () => {
                         }
                         continue
                     }
-                    if (t === DIRT) {
+                    if (t === PLANK) {
+                        // #3863 BUILDER's wood: a horizontal plank, warmer and
+                        // paler than dirt so "placed" reads against geology at a
+                        // glance — board grain, a sunlit walking lip when open
+                        // sky sits above, iron nails at the ends.
+                        ctx.fillStyle = '#a8722f'; ctx.fillRect(px, py, TS, TS)
+                        ctx.fillStyle = '#c89050'
+                        ctx.fillRect(px, py + 1, TS, 2); ctx.fillRect(px, py + 5, TS, 2)
+                        ctx.fillStyle = '#7c4a18'
+                        ctx.fillRect(px, py + 4, TS, 1)
+                        ctx.fillStyle = '#4b2e0d'
+                        ctx.fillRect(px + 1, py + 3, 1, 1); ctx.fillRect(px + TS - 2, py + 3, 1, 1)
+                        if (y > 0 && gs.grid[(y - 1) * W + x] !== PLANK) {
+                            ctx.fillStyle = '#e6c17c'; ctx.fillRect(px, py, TS, 1)
+                        }
+                    } else if (t === DIRT) {
                         ctx.fillStyle = '#7a4a22'; ctx.fillRect(px, py, TS, TS)
                         ctx.fillStyle = speck(x, y) > 0.5 ? '#8d5a2c' : '#68391a'
                         ctx.fillRect(px + 1, py + 2, 2, 2); ctx.fillRect(px + 5, py + 5, 2, 1)
@@ -457,6 +475,17 @@ const LemGame = () => {
                 // still recognisable after it crests and goes back to walking.
                 // #470: two pixels thick — at 1 px the gold hairline vanished
                 // into the hair row and a clump looked like nobody had a skill.
+                // #3863 BUILDER: the original carries its planks overhead —
+                // a board across the shoulders, tilting with direction, so the
+                // wood-hauler in the crowd is recognisable before a single plank
+                // is laid. (The plank itself is the game's, drawn by the painter.)
+                if (L.builder && L.state !== 'bomb') {
+                    const tilt = Math.floor(gs.tick / 10 + L.id) % 2
+                    ctx.fillStyle = '#c89050'
+                    ctx.fillRect(px - 4, py - 4 + tilt, 14, 2)
+                    ctx.fillStyle = '#7c4a18'
+                    ctx.fillRect(px - 4, py - 2 + tilt, 1, 1); ctx.fillRect(px + 9, py - 2 + tilt, 1, 1)
+                }
                 if (L.climber && L.state !== 'bomb') { ctx.fillStyle = LAYOUT.badge.climber; ctx.fillRect(px, py - 2, 7, 2) }
                 // #3827 FLOATER: the original rides its parachute even while
                 // walking — you always know who carries one. Striped canopy,
@@ -735,7 +764,8 @@ const LemGame = () => {
                     spawned: gs.spawned, exited: gs.exited, dead: gs.dead, drowned: gs.drowned, need: meta.need,
                     end: gs.end, win: gs.win, score: gs.score, hash: stateHash(gs),
                     cmds: runCmds.length, gcmds: gs.cmds.length, board: board(), // #1637 gcmds = solver-line assignments too
-                    lemmings: gs.lemmings.map(L => ({ id: L.id, x: L.x, y: L.y, state: L.state, dir: L.dir, climber: L.climber, digger: L.digger, floater: L.floater, flash: L.flashT, live: L.live })),
+                    lemmings: gs.lemmings.map(L => ({ id: L.id, x: L.x, y: L.y, state: L.state, dir: L.dir, climber: L.climber, digger: L.digger, floater: L.floater, builder: L.builder, flash: L.flashT, live: L.live })),
+                    planks: (() => { let n = 0; for (let i = 0; i < gs.grid.length; i++) if (gs.grid[i] === PLANK) n++; return n })(),   // #3863 wood on the board
                 }),
                 // The next move the PROVEN solver makes at this point in the
                 // replay — as the live position of that live lemming. Read-only:
@@ -761,6 +791,14 @@ const LemGame = () => {
                     const L = gs.lemmings.find(l => l.id === id && l.live)
                     if (!L) return false
                     L.live = false; L.state = 'dead'; gs.dead++
+                    return true
+                },
+                // #3863: stamps wood on the board (renderer-proof hook, the same
+                // DEV-cheat family as teleport/kill — the mechanics themselves are
+                // pinned honestly in lemcheck's BUILDER section).
+                stamp: (x, y) => {
+                    if (x < 0 || x >= W || y < 0 || y >= H) return false
+                    gs.grid[y * W + x] = PLANK
                     return true
                 },
                 cries: () => cries.map(c => ({ x: c.x, y: c.y, t: c.t })),   // #3844 OH NO! sprites live on screen
@@ -802,10 +840,10 @@ const LemGame = () => {
                     if (!gs) return ['(no level mounted yet)']
                     const rows = [
                         `need ${gs.exited}/${meta.need}  dead ${gs.dead}  live ${gs.lemmings.filter(l => l.live).length}  spawn ${gs.spawned}/${meta.spawnCount}`,
-                        `stock blk${gs.skills.block} bmb${gs.skills.bomb} clm${gs.skills.climb} dig${gs.skills.dig} flt${gs.skills.float}  tick ${gs.tick}  end ${gs.end || '-'}`,
+                        `stock blk${gs.skills.block} bmb${gs.skills.bomb} clm${gs.skills.climb} dig${gs.skills.dig} flt${gs.skills.float} bld${gs.skills.build}  tick ${gs.tick}  end ${gs.end || '-'}`,
                     ]
                     for (const L of gs.lemmings.filter(l => l.live).slice(0, 10)) {
-                        rows.push(`#${L.id} ${L.state}${L.climber ? 'C' : ''}${L.digger ? 'D' : ''} (${L.x.toFixed(1)},${L.y.toFixed(0)})`)
+                        rows.push(`#${L.id} ${L.state}${L.climber ? 'C' : ''}${L.digger ? 'D' : ''}${L.builder ? 'B' : ''} (${L.x.toFixed(1)},${L.y.toFixed(0)})`)
                     }
                     return rows
                 },
@@ -826,6 +864,7 @@ const LemGame = () => {
                     { label: '+CLIMBER', run: () => { gs.skills.climb++ } },
                     { label: '+DIGGER', run: () => { gs.skills.dig++ } },
                     { label: '+FLOATER', run: () => { gs.skills.float++ } },
+                    { label: '+BUILDER CARGO', run: () => { gs.skills.build += 12 } },
                     { label: 'KILL A CLIMBER', run: () => {
                         const L = gs.lemmings.find(l => l.live && (l.climber || l.state === 'climb')) || gs.lemmings.find(l => l.live)
                         if (!L) return 'none live'

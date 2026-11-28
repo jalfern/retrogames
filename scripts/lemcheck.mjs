@@ -687,6 +687,8 @@ section('BUILDER (#3863: placed planks — wood is ground, dirt-only rules hold)
     {
         const grid = mk((x, y) => (x < 10 ? (y >= 10 && y <= 12 ? sim.DIRT : 0) : (y === 11 ? sim.WATER : (y === 12 ? sim.DIRT : 0))))
         const g = sim.makeGame(bmeta({ spawn: { x: 3, y: 10, dir: 1 }, skills: { build: 3 } }), grid)
+        runFor(g, 10)
+        sim.assign(g, 0, 'build')
         runFor(g, 400, () => g.dead >= 1)
         ok(g.grid[10 * sim.W + 10] === sim.AIR && g.drowned === 1 && g.skills.build === 3,
             '#3863: a plank was laid (or held) over open water — ponds drown builders too')
@@ -696,6 +698,8 @@ section('BUILDER (#3863: placed planks — wood is ground, dirt-only rules hold)
     {
         const grid = mk((x, y) => (x < 10 ? (y >= 10 && y <= 13 ? sim.DIRT : 0) : (y >= 12 && y <= 13 ? sim.DIRT : 0)))
         const g = sim.makeGame(bmeta({ spawn: { x: 3, y: 10, dir: 1 }, skills: { build: 3 } }), grid)
+        runFor(g, 10)
+        sim.assign(g, 0, 'build')
         runFor(g, 400)
         const L = g.lemmings[0]
         ok(g.grid[10 * sim.W + 10] === sim.AIR && g.skills.build === 3 && L.live && L.y === 12,
