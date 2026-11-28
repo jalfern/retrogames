@@ -170,8 +170,54 @@ const BeeGame = () => {
         ground.rotation.x = -Math.PI / 2
         scene.add(ground)
 
-        const sun = new THREE.Mesh(new THREE.SphereGeometry(6, 18, 18), new THREE.MeshBasicMaterial({ color: 0xffd873 }))
+        // #3909: the sun is a glow disc, not a 6 m Lambert ball — at r≈150 the
+        // FogExp2 used to wash a plain sphere to ~90 % sky, so the sky carried no
+        // light source at all. Fog is off so the disc survives the distance.
+        const sun = new THREE.Sprite(new THREE.SpriteMaterial({
+            map: keep(texFrom(64, 64, (x, w) => {
+                const g = x.createRadialGradient(w / 2, w / 2, 1, w / 2, w / 2, w / 2)
+                g.addColorStop(0, 'rgba(255,247,208,1)')
+                g.addColorStop(0.24, 'rgba(255,233,160,0.95)')
+                g.addColorStop(0.46, 'rgba(255,216,115,0.5)')
+                g.addColorStop(1, 'rgba(255,216,115,0)')
+                x.fillStyle = g
+                x.fillRect(0, 0, w, w)
+            })),
+            transparent: true, fog: false, depthWrite: false,
+        }))
+        sun.scale.set(36, 36, 1)
         scene.add(sun)
+
+        // #3909: gradient sky dome (zenith → horizon) with per-vertex colors, so
+        // the gradient lives in the WORLD — it keeps its banding when you pitch up
+        // or down, which a screen-space background texture cannot. Palettes lerp
+        // day → dusk → UV every frame; fog tracks the horizon color so the grass
+        // edge melts into the same tone. ART.md #3: "skies have gradients".
+        const SKY = {
+            dayZen: new THREE.Color(0x4a92d2), dayHor: new THREE.Color(0xe2f3fc),
+            duskZen: new THREE.Color(0x5f4790), duskHor: new THREE.Color(0xf28a45),
+            uvZen: new THREE.Color(0x140a2e), uvHor: new THREE.Color(0x3b1d63),
+        }
+        const skyGeo = keep(new THREE.SphereGeometry(220, 24, 16))
+        const skyHS = Float32Array.from(
+            { length: skyGeo.attributes.position.count },
+            (_, i) => Math.pow(Math.max(0, Math.min(1, (skyGeo.attributes.position.getY(i) / 220) * 0.5 + 0.5 - 0.44) / 0.56), 0.85),
+        )
+        const skyCols = new Float32Array(skyHS.length * 3)
+        skyGeo.setAttribute('color', new THREE.BufferAttribute(skyCols, 3))
+        const sky = new THREE.Mesh(skyGeo, keep(new THREE.MeshBasicMaterial({ vertexColors: true, side: THREE.BackSide, fog: false, depthWrite: false })))
+        scene.add(sky)
+        const skyZen = new THREE.Color(), skyHor = new THREE.Color()
+        const writeSky = (zen, hor) => {
+            for (let i = 0; i < skyHS.length; i++) {
+                const t = skyHS[i]
+                skyCols[i * 3] = hor.r + (zen.r - hor.r) * t
+                skyCols[i * 3 + 1] = hor.g + (zen.g - hor.g) * t
+                skyCols[i * 3 + 2] = hor.b + (zen.b - hor.b) * t
+            }
+            skyGeo.attributes.color.needsUpdate = true
+        }
+        writeSky(SKY.dayZen, SKY.dayHor)
 
         const stemGeo = keep(new THREE.CylinderGeometry(0.05, 0.075, 1, 6))
         const petalGeo = keep(new THREE.PlaneGeometry(0.5, 0.5))
@@ -326,8 +372,6 @@ const BeeGame = () => {
         let contractSeed = 0
         const sunA = new THREE.Color(0xffd873)
         const sunDusk = new THREE.Color(0xff5a2a)
-        const skyDay = new THREE.Color(0x8ec9ea)
-        const skyDusk = new THREE.Color(0xe07a3c)
 
         const handleEvents = (evts) => {
             for (const e of evts) {
@@ -436,10 +480,12 @@ const BeeGame = () => {
             sun.position.set(Math.cos(sa) * 130, Math.sin(sa) * 60, -75)
             sunLight.position.set(-Math.cos(sa) * 18, Math.max(1.5, Math.sin(sa) * 26), -12)
             const dusk = gs.uv ? 0 : Math.max(0, (dayF - 0.55) / 0.45)
-            if (!gs.uv) {
-                scene.background.lerpColors(skyDay, skyDusk, dusk * 0.8)
-                scene.fog.color.copy(scene.background)
-            }
+            skyZen.lerpColors(SKY.dayZen, SKY.duskZen, Math.max(dusk * 0.8, gs.uv ? 1 : 0))
+            skyHor.lerpColors(SKY.dayHor, SKY.duskHor, Math.max(dusk * 0.8, gs.uv ? 1 : 0))
+            if (gs.uv) { skyZen.copy(SKY.uvZen); skyHor.copy(SKY.uvHor) }
+            writeSky(skyZen, skyHor)
+            scene.background.copy(skyHor) // fallback only — the dome covers the frame
+            scene.fog.color.copy(skyHor)
             sun.material.color.lerpColors(sunA, sunDusk, Math.max(dusk, gs.uv ? 1 : 0))
             sunLight.intensity = gs.uv ? 0.12 : 1.5 - dusk * 0.9
 
