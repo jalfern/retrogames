@@ -55,7 +55,11 @@ export const CFG = {
     walkSp: 2.3,
     fallSp: 8.5,
     floatSp: 2.6,
-    maxFall: 7,
+    // #3849: the original kills past ~3 tiles of fall; 7 swallowed the spire's
+    // descents and made every drop free. Tightened to the original's rule —
+    // fallers must step down, climb, or float. THE SPIRE's east stair was
+    // re-carved to match (a >3-tile final drop is unsolvable by design).
+    maxFall: 3,
     climbSp: 2.6,
     digSp: 2.2,
     fuse: 1.6,

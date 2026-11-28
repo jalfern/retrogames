@@ -81,9 +81,6 @@ breakable — every pin here has survived a manual mutation.
 - Blockers never wake: the original turns a blocker back into a walker once
   another lemming climbs over him; here the block is permanent. Levels are
   designed for permanent blocks, so the fix must land with a re-solve.
-- Fatal fall distance is 7 tiles; the original kills past ~3. Tightening it
-  changes THE SPIRE's descent margins — re-prove with the slack loop, never
-  by eye. (Floaters already ignore it entirely, as in the original.)
 - Float-while-digging (the original's floating lemming chews straight down
   through dirt while descending) does not port to the horizontal-tunnel digger;
   it needs either a second dig mode or a rethink of the dig model.
@@ -95,6 +92,14 @@ breakable — every pin here has survived a manual mutation.
 
 ## Closed
 
+- #3849 — fatal fall distance: `CFG.maxFall` was 7, the original kills past ~3.
+  Now 3 — falls off the spire kill, floaters become precious. THE SPIRE's east
+  stair dropped its last step ~6 tiles to the floor (the old lax value hid it);
+  carved down to ground level and re-solved (win 4/4, climb still load-bearing,
+  slack holds at climb 5; MASSIF/DOOR/LEDGE proved unaffected pre-claim). The
+  fatal pin is now **absolute** — 4 tiles must die, a stepped descent lands
+  within 3 — because the old relative pin (`maxFall + 1`) stayed green at 7 and
+  could not catch drift; mutation `maxFall = 7` covers the same hole. **CLOSED by #3849**
 - #3844 — OH NO! death cry: a shared two-syllable synth wail (worried "OH",
   falling "NO!", sawtooth) answers EVERY death batch — fall, drown, bomb — under
   the per-cause stings, and a hand-drawn 5×7 bitmap `OH NO!` sprite pops on the

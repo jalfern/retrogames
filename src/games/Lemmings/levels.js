@@ -44,9 +44,13 @@ export const LEVELS = [
             c.sky(); c.floor(24)
             // the spire: sheer dirt face on the west (a climber's ladder and
             // nothing else — climb 0 supplies, and the walkers just pace),
-            // a stepped descent on the east so survivors get down alive
+            // a stepped descent on the east so survivors get down alive.
+            // #3849: with maxFall at the original's 3 the stair must not end
+            // 6 tiles above the ground floor — walked off, that last step was
+            // a splat the old forgiving value hid. Stepped all the way down:
+            // the original's descents are always stepped.
             for (let x = 18; x <= 22; x++) c.column(x, 6 + Math.abs(x - 19), 23, DIRT)
-            for (let x = 23; x <= 33; x++) c.column(x, x - 15, 23, DIRT)
+            for (let x = 23; x <= 38; x++) c.column(x, x - 15, 23, DIRT)
             // exit plinth
             c.rect(40, 23, 44, 23, DIRT)
             // #3828 the pond: the original's first level had one, and the
