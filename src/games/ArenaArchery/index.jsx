@@ -222,17 +222,80 @@ const ArenaArcheryGame = () => {
 
         const say = (m) => { toastMsg = m; toast = 110 }
 
+        // #3873 art pass — the night vault: deterministic hash (no Math.random)
+        // so captures stay reproducible. Stars, moon, distant battlements and
+        // per-cell shade variance all derive from (x, y) — the same arena
+        // always looks the same. Painted once per arena into the cached `bg`
+        // canvas; gameplay, sim and replay hashes never see it.
+        const hash2 = (x, y) => {
+            let h = (x * 374761393 + y * 668265263) ^ 0x9e3779b9
+            h = Math.imul(h ^ (h >>> 13), 1274126177) ^ (h >>> 16)
+            return (h >>> 0) / 4294967296
+        }
+
         const paintBg = (g) => {
+            // sky: deep zenith down to a warm haze at the horizon
             const grd = bgx.createLinearGradient(0, 0, 0, PXH)
-            grd.addColorStop(0, '#0b0e1d'); grd.addColorStop(1, '#1a1226')
+            grd.addColorStop(0, '#070912')
+            grd.addColorStop(0.55, '#111731')
+            grd.addColorStop(0.82, '#251e3a')
+            grd.addColorStop(1, '#1a1226')
             bgx.fillStyle = grd
             bgx.fillRect(0, 0, PXW, PXH)
+
+            // faint stars — one dark pixel each, the same sky in every vault
+            for (let i = 0; i < 26; i++) {
+                const sx = hash2(i, 11) * PXW
+                const sy = hash2(i, 23) * PXH * 0.45
+                const a = 0.22 + hash2(i, 37) * 0.5
+                bgx.fillStyle = 'rgba(226, 232, 248, ' + a.toFixed(2) + ')'
+                bgx.fillRect(sx | 0, sy | 0, 1, 1)
+            }
+
+            // moon, upper right: soft halo + crescent cut out of the disc
+            const mx = PXW * 0.8, my = PXH * 0.2
+            const halo = bgx.createRadialGradient(mx, my, 2, mx, my, 26)
+            halo.addColorStop(0, 'rgba(255, 236, 200, 0.45)')
+            halo.addColorStop(1, 'rgba(255, 236, 200, 0)')
+            bgx.fillStyle = halo
+            bgx.fillRect(mx - 26, my - 26, 52, 52)
+            bgx.fillStyle = '#f5e7c8'
+            bgx.beginPath(); bgx.arc(mx, my, 7, 0, Math.PI * 2); bgx.fill()
+            bgx.fillStyle = '#111731'
+            bgx.beginPath(); bgx.arc(mx + 3.4, my - 2, 6.2, 0, Math.PI * 2); bgx.fill()
+
+            // distant battlements along the horizon — faint, crenellated ridge
+            const horizon = PXH * 0.86
+            bgx.fillStyle = 'rgba(24, 28, 50, 0.94)'
+            let cx = 4, ti = 0
+            while (cx < PXW - 10) {
+                const tw = 12 + hash2(ti, 7) * 18
+                const th = 8 + hash2(ti, 9) * 16
+                bgx.fillRect(cx, horizon - th, tw, th)
+                for (let tx = cx + 2; tx < cx + tw - 4; tx += 6) bgx.fillRect(tx, horizon - th - 3, 3, 3)
+                cx += tw + 8 + hash2(ti, 13) * 16
+                ti++
+            }
+
             for (let y = 0; y < g.H; y++) {
                 for (let x = 0; x < g.W; x++) {
                     if (g.grid[y * g.W + x] !== 1) continue
                     const px = x * CW, py = y * CW
-                    bgx.fillStyle = '#3a4258'
+                    const r = hash2(x, y)
+                    // three stone tones — no cell looks like its neighbour
+                    bgx.fillStyle = r < 0.34 ? '#343c50' : r < 0.67 ? '#3a4258' : '#404b64'
                     bgx.fillRect(px, py, CW, CW)
+                    if (r < 0.5) {
+                        // a dark speckle, seeded — grain, never random
+                        bgx.fillStyle = 'rgba(0,0,0,0.28)'
+                        bgx.fillRect(px + 3 + ((r * 60) | 0) % (CW - 6), py + 3 + ((r * 93) | 0) % (CW - 6), 2, 1)
+                    }
+                    if (r > 0.33) {
+                        // a single warm fleck
+                        bgx.fillStyle = 'rgba(255, 214, 130, 0.10)'
+                        bgx.fillRect(px + 2 + ((r * 47) | 0) % (CW - 5), py + 2 + ((r * 71) | 0) % (CW - 5), 1, 2)
+                    }
+                    // top light strip, bottom shade, right edge (unchanged)
                     bgx.fillStyle = '#4a5573'
                     bgx.fillRect(px, py, CW, 3)
                     bgx.fillStyle = '#2a3044'
@@ -240,6 +303,20 @@ const ArenaArcheryGame = () => {
                     bgx.fillRect(px + CW - 2, py, 2, CW)
                 }
             }
+
+            // warm floor glow — light pools on the lowest air row
+            const fg = bgx.createLinearGradient(0, PXH - 80, 0, PXH - 24)
+            fg.addColorStop(0, 'rgba(255, 180, 90, 0)')
+            fg.addColorStop(1, 'rgba(255, 180, 90, 0.12)')
+            bgx.fillStyle = fg
+            bgx.fillRect(0, PXH - 80, PXW, 56)
+
+            // vignette — corners darken, the arena stays centered
+            const vg = bgx.createRadialGradient(PXW / 2, PXH * 0.45, PXH * 0.32, PXW / 2, PXH * 0.45, PXW * 0.74)
+            vg.addColorStop(0, 'rgba(0,0,0,0)')
+            vg.addColorStop(1, 'rgba(0,0,0,0.28)')
+            bgx.fillStyle = vg
+            bgx.fillRect(0, 0, PXW, PXH)
             bgDirty = false
         }
 
