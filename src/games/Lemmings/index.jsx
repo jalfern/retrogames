@@ -745,7 +745,7 @@ const LemGame = () => {
                     L.live = false; L.state = 'dead'; gs.dead++
                     return true
                 },
-                cries: () => cries.length,        // #3844 OH NO! sprites live on screen
+                cries: () => cries.map(c => ({ x: c.x, y: c.y, t: c.t })),   // #3844 OH NO! sprites live on screen
             }
             exposeGame({
                 id: 'lemmings',
