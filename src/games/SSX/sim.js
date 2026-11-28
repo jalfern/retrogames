@@ -12,6 +12,9 @@
 //   over-the-top names (Frontflip 900, the 1080).
 // - BOOST is spent speed: tricks fill the meter, Shift drains it into the
 //   hill. A crash dumps half of it.
+// - MANUALS (#3901): land a paid trick with the edge held (↓ — the scrub verb,
+//   drag and all) and the board rides nose-up; hold it, release clean, and it
+//   pays base × hold × chain. The original's ground-combo glue.
 // - RACE: three heats, standings points, the mountain decides the champion.
 //   SHOWOFF: 90 seconds, pure trick points against the house target.
 
@@ -63,6 +66,8 @@ export const CFG = {
                                // more than the grab alone)
     invertCheck: true,         // half-done inverts crash you, same law as flips
     comboCap: 4,
+    manualPts: 150,            // #3901 manuals: base pay — held seconds × the chain mult
+    manualCap: 1.2,            // seconds of hold that count for full pay (no flat-down farm)
     overDouble: true,
     flipCheck: true,           // half-done flips crash you
     wallCrash: true,
@@ -131,6 +136,7 @@ function newRider(i, isP, gridBack) {
         invert: 0, invertSign: 1,
         crouch: false, crouchT: 0, boost: false, boostEdge: false, boostHum: 0,
         tuck: false, scrub: false,
+        manual: false, manualT: 0,
         tumble: 0, stomp: 0, stompPow: 0, chain: 0, chainDisp: 0, chainDispT: 0,
         meter: 0, over: false, grind: null, grindT: 0,
         finished: false, place: 0, finishT: 0, points: 0,
@@ -256,7 +262,32 @@ function crash(g, r, what) {
     r.press = 0; r.takeSpin = 0
     r.stomp = 0; r.stompPow = 0
     r.bobble = 0
+    r.manual = false; r.manualT = 0   // #3901: a bail eats the manual — the chain goes anyway
     push(g, { type: 'crash', who: r.id, what })
+}
+
+// #3901 manuals — the original's ground-combo glue. Land a PAID trick with the
+// edge held (the same ↓ that #547 made the scrub, drag and all — manuals slow
+// you, like the original) and the board rides nose-up until you let go. Release
+// clean — or ollie off the next roller, or butter onto a rail — and it pays:
+// base × held ratio × chain mult, meter fed at the trick-economy rate (rails
+// precedent). The hold caps at CFG.manualCap counted seconds so sitting in a
+// manual can never farm Showoff. A crash pays nothing (crash() above).
+function endManual(g, r, pay) {
+    if (!r.manual) return
+    r.manual = false
+    const secs = r.manualT
+    r.manualT = 0
+    const pts = pay && secs > 0
+        ? Math.round(CFG.manualPts * Math.min(1, secs / CFG.manualCap) * Math.min(CFG.comboCap, r.chain + 1))
+        : 0
+    if (pts > 0) {
+        r.score += pts
+        r.meter = Math.min(100, r.meter + pts * CFG.boostGain * (CFG.slack ? 0.75 : 1))
+        r.lastTrick = `MANUAL ${secs.toFixed(1)}s`
+        r.lastTrickT = 150
+    }
+    push(g, { type: 'manual', who: r.id, pts, secs })
 }
 
 function riderStep(g, r, inp) {
@@ -291,6 +322,7 @@ function riderStep(g, r, inp) {
         }
     }
     if (rail) {
+        endManual(g, r, true)   // #3901: butter a manual onto a rail — the hold pays, the rail takes over
         if (!r.grind) { r.grind = rail; r.grindT = 0; r.spin = 0; r.flip = 0; r.invert = 0; push(g, { type: 'grindstart', who: r.id }) }
         r.grindT += dt
         r.tuck = false; r.scrub = false
@@ -388,6 +420,9 @@ function riderStep(g, r, inp) {
             if (res.crash) { crash(g, r, 'bail'); return }
             r.spin = 0; r.flip = 0; r.grab = 0; r.airT = 0; r.over = false; r.takeSpin = 0; r.invert = 0
             if (res.pts > 0) { /* banked */ }
+            // #3901: a paid landing with the edge still held rolls into a manual —
+            // the original's way of keeping the combo alive between kickers.
+            if (res.pts > 0 && inp.scrub) { r.manual = true; r.manualT = 0; push(g, { type: 'manualstart', who: r.id }) }
             // landing absorption: slope landings keep speed, flat landings shed a little
             const { seg } = segAt(c, r.s)
             r.v *= seg.drop > 0.08 ? 0.97 : 0.9
@@ -410,6 +445,12 @@ function riderStep(g, r, inp) {
     r.scrub = !!inp.scrub
     if (r.tuck && !r.scrub) r.v += CFG.tuckAcc * dt
     if (r.scrub) r.v -= CFG.scrubDrag * r.v * dt
+    // #3901 manual hold: the edge stays down, the hold accrues; releasing hands
+    // the manual off clean and it pays.
+    if (r.manual) {
+        if (inp.scrub) r.manualT += dt
+        else endManual(g, r, true)
+    }
     // boost spend
     const wantBoost = !!inp.boost && r.meter > 0
     if (wantBoost) {
@@ -428,6 +469,7 @@ function riderStep(g, r, inp) {
     // crouch / ollie: hold to compress, release to snap off the snow
     if (inp.jump) { r.crouch = true; r.crouchT = Math.min(0.6, r.crouchT + dt) }
     else if (r.crouch) {
+        endManual(g, r, true)   // #3901: ollie out of a manual — the butter pays on the way off the snow
         r.crouch = false
         const boostV = 3 + r.crouchT * 4
         r.vy = boostV
@@ -476,6 +518,7 @@ function riderStep(g, r, inp) {
         for (const gp of c.gaps) {
             const crestS = gp.s0 - DS
             if (sPrev < crestS && r.s >= crestS && Math.abs(r.x) < GAP_X) {
+                endManual(g, r, true)   // #3901: the crest throws you out of the manual — paid
                 r.vy = 4.5 + r.v * 0.16 + r.crouchT * 2.5
                 r.air = true; r.airT = 0; r.spin = 0; r.flip = 0; r.grab = 0; r.stomp = 0; r.invert = 0
                 r.over = r.meter >= 100
@@ -520,6 +563,7 @@ function riderStep(g, r, inp) {
     const gapLipAhead = c.gaps.some((gp) => r.s >= gp.s0 - 26 && r.s <= gp.s0)
     if (!gapLipAhead && (ahead - r.y > 0.55 || (liftHere > 0.8 && r.y - ahead > 0.3)) && r.v > 12) {
         const lip = segAt(c, r.s)
+        endManual(g, r, true)   // #3901: a lip launches you out of the manual — paid
         r.vy = Math.max(4.5, liftHere * 1.9) + r.v * 0.11 + r.crouchT * 2.5
         r.air = true; r.airT = 0; r.spin = 0; r.flip = 0; r.grab = 0; r.stomp = 0; r.invert = 0
         r.over = r.meter >= 100
@@ -621,7 +665,7 @@ export function stateHash(g) {
     const add = (str) => { for (let i = 0; i < str.length; i++) { h ^= str.charCodeAt(i); h = Math.imul(h, 0x01000193) } }
     add(`${g.tick}|${g.heat}|${g.phase}|${g.mode}|${g.end}|${g.showoffLeft.toFixed(2)}|${g.count}`)
     for (const r of g.riders) {
-        add(`|${r.id}:${r.s.toFixed(2)},${r.x.toFixed(3)},${r.y.toFixed(2)},${r.v.toFixed(2)},${r.vy.toFixed(2)},${r.spin.toFixed(1)},${r.flip.toFixed(1)},${r.meter.toFixed(1)},${r.chain},${r.score},${r.tumble},${r.finished ? 1 : 0},${r.air ? 1 : 0},${r.tuck ? 1 : 0}${r.scrub ? 1 : 0},p${r.press.toFixed(3)},ts${r.takeSpin},st${r.stomp}:${r.stompPow.toFixed(2)},bb${r.bobble},iv${r.invert.toFixed(1)}`)
+        add(`|${r.id}:${r.s.toFixed(2)},${r.x.toFixed(3)},${r.y.toFixed(2)},${r.v.toFixed(2)},${r.vy.toFixed(2)},${r.spin.toFixed(1)},${r.flip.toFixed(1)},${r.meter.toFixed(1)},${r.chain},${r.score},${r.tumble},${r.finished ? 1 : 0},${r.air ? 1 : 0},${r.tuck ? 1 : 0}${r.scrub ? 1 : 0},p${r.press.toFixed(3)},ts${r.takeSpin},st${r.stomp}:${r.stompPow.toFixed(2)},bb${r.bobble},iv${r.invert.toFixed(1)},mn${r.manual ? 1 : 0}:${r.manualT.toFixed(2)}`)
     }
     return (h >>> 0).toString(16)
 }
