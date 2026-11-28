@@ -19,10 +19,16 @@
 // geometry byte for byte. selectorHit is shape-agnostic, so both twins share
 // one hit test.
 export function selectorGeom(W, H, hs, opts = {}) {
-    const rowY = opts.rowY !== undefined ? Math.round(opts.rowY) : Math.round(H * 0.47)
+    // #3903: 0.47 -> 0.545. The title block scales with hs = min(H/176, W/256)
+    // — capped by WIDTH — so at 16:9 it stands ~200px tall and the old row cut
+    // through "DRIFT GP"'s glyph row. The selector gets its own lane below it.
+    const rowY = opts.rowY !== undefined ? Math.round(opts.rowY) : Math.round(H * 0.545)
     const off = opts.off !== undefined ? Math.round(opts.off) : Math.round(88 * hs)
     const hw = opts.hw !== undefined ? Math.max(1, Math.round(opts.hw)) : Math.max(1, Math.round(32 * hs))
-    const hh = opts.hh !== undefined ? Math.max(1, Math.round(opts.hh)) : Math.max(1, Math.round(20 * hs))
+    // #3903: hh 20 -> 16. The bordered box is drawn at its hit height, so a
+    // fat box drew rules across the tagline and hint lanes under the title.
+    // 2*hh stays >= the #534 thumb minimum (16hs -> 32px at the gate's hs=1).
+    const hh = opts.hh !== undefined ? Math.max(1, Math.round(opts.hh)) : Math.max(1, Math.round(16 * hs))
     return {
         w: W, h: H, hs, rowY, hw, hh, off,
         left: [Math.round(W / 2 - off), rowY],
