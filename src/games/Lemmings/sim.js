@@ -40,9 +40,11 @@
 // - The FLOATER carries a parachute: descent is capped at floatSp and no
 //   landing height is fatal. Like climber/digger it is a flag for life — every
 //   later fall auto-opens the canopy, which is why re-granting refuses (#422).
-//   (The original's dig-while-floating does NOT port: this engine's digger is
-//   a horizontal tunneler that carries the swarm, per sim comment above — a
-//   vertical air-dig would contradict the dig model. Honest gap in README.)
+//   (The original's dig-while-descending now ports (#3925): an airborne digger
+//   chews straight down through dirt — see `faller`'s float-while-digging branch.
+//   A FLOATER is the one carve-out: a parachute and a shaft are contradictory, so
+//   a canopied lemming drifts and lands rather than tunnelling down. The horizontal
+//   tunnel (`digger`) is untouched — this is the second dig mode the README asked for.)
 
 export const W = 48
 export const H = 27
@@ -528,6 +530,36 @@ function wakeCheck(g, L) {
 }
 
 function faller(g, L) {
+    // #3925 FLOAT-WHILE-DIGGING — the dig shaft this port carried as an honest gap
+    // since the horizontal tunnel. An airborne digger that meets dirt no longer
+    // splats onto it: it chews straight DOWN, one cell per chew (`digSp`, the rate
+    // the horizontal tunnel already uses), so the shaft follows the lemming down and
+    // the crowd behind can ride the open column. This is the "second dig mode" the
+    // README called for — `digger()`/walk keep tunnelling sideways; vertical descent
+    // is added here. No new player command, so the solver's search space is
+    // unchanged, and chewing down cannot strand a solvable level. A floater keeps its
+    // canopy (a parachute and a shaft are contradictory); water still drowns, checked
+    // upstream in `step`. The chew — not gravity — lowers the lemming, so the descent
+    // never registers as a lethal fall.
+    if (L.digger && !L.floater) {
+        const x = Math.floor(L.x)
+        const at = (r) => cell(g, x, r) === DIRT
+        const feet = groundRow(L.y), body = bodyRow(L.y)
+        if (at(feet) || at(body) || at(feet + 1)) {
+            L.vy = 0
+            L.fallDist = 0
+            L.digT += CFG.digSp * FIXED_DT
+            if (L.digT >= 1) {
+                L.digT -= 1
+                const chew = at(feet) ? feet : (at(body) ? body : feet + 1)
+                g.grid[chew * W + x] = AIR
+                g.events.push({ type: 'dig', id: L.id })
+                L.y = chew + 1              // sink onto the cell just opened
+            }
+            if (L.y > H + 2) kill(g, L, 'fall')
+            return
+        }
+    }
     const cap = L.floater ? CFG.floatSp : CFG.fallSp
     L.vy = Math.min(cap, L.vy + 20 * FIXED_DT)
     const d = L.vy * FIXED_DT

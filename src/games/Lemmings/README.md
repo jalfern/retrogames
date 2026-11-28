@@ -137,9 +137,6 @@ breakable — every pin here has survived a manual mutation.
 
 ## Honest gaps
 
-- Float-while-digging (the original's floating lemming chews straight down
-  through dirt while descending) does not port to the horizontal-tunnel digger;
-  it needs either a second dig mode or a rethink of the dig model.
 - Vent wind moves parachutes only (#3879): ground-bound walkers ignore the
   stream, and vents blow forever (no on/off puzzle state). Ground-level drag
   and switched gusts are Lemmings 2 territory and unowned until the family's
@@ -151,6 +148,25 @@ breakable — every pin here has survived a manual mutation.
 
 ## Closed
 
+- #3925 (the dig shaft ports) — **float-while-digging**: an airborne digger that
+  meets dirt no longer splats onto it; it chews straight DOWN, one cell per chew at
+  the horizontal tunnel's own `digSp` rate, so the shaft follows it to the floor and
+  the crowd behind can ride the open column (`faller`'s new branch). This is the
+  "second dig mode" the gap asked for — `digger()`/walk keep tunnelling sideways,
+  untouched. No new player command, so the solver's search space is unchanged and
+  chewing down cannot strand a solvable level; all four proof boards still solve with
+  their supplies (and with one fewer of every supply — the slack loop). The chew, not
+  gravity, lowers the lemming (`fallDist` resets each chew), so a dig descent is
+  never a lethal fall; steel is a floor (chews the dirt onto it, then stands), water
+  still drowns upstream (a shaft into a pond is a death, not a road), and a FLOATER
+  keeps its canopy — a parachute and a shaft are contradictory. The carved column is
+  the visual (the terrain draws open cells; diggers still carry their badge) and the
+  `dig` event plays its rumble on every chew. Harness: lemcheck 355 → **362** — a
+  FLOAT-WHILE-DIGGING section (a digger dropped into a steel-bottomed column carves
+  it, descends onto the steel, resumes walking, and never splats; a plain faller on
+  the same column lands on top — the control proving the branch is digger-gated, not
+  "always digs"; dirt-over-steel chews exactly one cell then stands) with a
+  vacuous-pass guard; carve disabled goes red three ways, restored green.
 - #3908 (the sim walks the stair) — descents are now the original's, at both
   ends of the plank: **step-down** mirrors the one-tile mount in `walker()`
   (floor ends, shelf one row below → feet land, walk continues, no `fall`,
