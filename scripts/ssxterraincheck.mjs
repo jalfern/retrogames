@@ -5,7 +5,7 @@
 // and the mountain is still winnable. Run: npm run ssxterraincheck
 
 import { buildCourse, terrainY, featureLift, openness, outcropAt, gapAt, GAP_DEPTH, GAP_X, chuteAt, COURSE_COUNT, DS } from '../src/games/SSX/course.js'
-import { snowColor, surfaceInfo, slopeAt, sparkleMask, buildTerrain, buildSparkles, detailTexture, sparkleTexture, GRIDS, rockStrata, cpuSprayCount, landingSound, carveVoice, rimJagPlan, SPARKLE_PULSE, GROOVE, speedStreakK } from '../src/games/SSX/art.js'
+import { snowColor, surfaceInfo, slopeAt, sparkleMask, buildTerrain, buildSparkles, detailTexture, sparkleTexture, GRIDS, rockStrata, cpuSprayCount, landingSound, carveVoice, rimJagPlan, SPARKLE_PULSE, GROOVE, speedStreakK, SASTRUGI } from '../src/games/SSX/art.js'
 import { makeGame, step } from '../src/games/SSX/sim.js'
 import { decide } from '../src/games/SSX/planner.js'
 
@@ -112,6 +112,12 @@ for (let c = 0; c < COURSE_COUNT; c++) {
     }
     along = maxD - minD
     ok(`wind cords modulate the piste shade (${along.toFixed(1)} luma)`, along > 6)
+    // #3900: amplitude scales with flatness — the centreline must actually run
+    // open (flatK ≈ 1) so the racing face rides the boosted cord amplitude.
+    const sm01 = (t) => { const u = Math.max(0, Math.min(1, t)); return u * u * (3 - 2 * u) }
+    let openFlat = 0
+    for (let s = 100; s < 600; s += 1) openFlat = Math.max(openFlat, 1 - sm01((slopeAt(co, s, 0.4) - SASTRUGI.loose) / SASTRUGI.tight))
+    ok('#3900: the centreline runs open snow under boosted cords', openFlat > 0.8 && SASTRUGI.open > SASTRUGI.base)
     let jump = 0
     const inStripe = (x) => Math.abs(Math.abs(x) - 0.99) < 0.16
     for (let s = 60; s < 700; s += DS) {
