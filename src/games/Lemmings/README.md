@@ -57,6 +57,13 @@ supplies fails the build.
   ghost; SPACE/tap assigns. All audio synthesized at runtime via
   `audioController` (deploy is a swoosh, the drown a soft splash + descending
   "oooh", never a harsh splat; drowned lemmings sink — no corpse floating).
+  #3879 SOUND: the game rides the original's dark-baroque mood — an ORIGINAL
+  homage loop (`MUSIC.lemmings`, A-minor lament bass under a chromatic-
+  descent lead) that plays low through attract, full in play, and stops on
+  pause/over; `M` or the SOUND row on the pause screen mutes the whole title
+  (persisted in `lemmings.muted`, restored unmuted on exit so the choice
+  never leaks onto another game). Every skill's grant has its own voice —
+  thunk, hiss, grunt, rumble, swoosh, knock.
 - VirtualControls dispatches Arrows/Space; the pad's "A" assigns the selected
   skill; skill buttons ride Digit1–5 / pad slots. DEV hooks:
   `window.__lemTest` (probe/hint/give/teleport/kill) and `exposeGame` per
@@ -114,6 +121,21 @@ breakable — every pin here has survived a manual mutation.
 
 ## Closed
 
+- #3879 (SOUND slice) — the game has a voice: an ORIGINAL Graveyard-era
+  homage bed (`MUSIC.lemmings`, 64 steps × 0.16 s, square lead + triangle
+  lament bass + two heartbeat kicks) with the bed following the game
+  (attract 0.45 → play 1 → out on pause/over, transitions only), `M`/SOUND
+  mute persisted per game and lifted on exit, and one grant voice per skill
+  replacing the shared ladder blip. Shared plumbing note: `PauseOverlay` now
+  takes an optional `mute={{on, toggle}}` prop — games that don't pass it
+  render byte-identical help. Harness: lemcheck +23 (tune structure — lengths,
+  register, finite notes, perc density — plus wiring pins; removing the tune or
+  a skill branch goes red in seconds), lemplay +9 (bed low in attract, full in
+  play, out on pause, back on resume, M mutes/unmutes, choice persists across
+  visits, zero page errors through the lifecycle; hand mutation: disable the
+  `syncMusic` driver → both bed pins red, restore → green).
+  Look/animation, terrain variety and board count from #3879 stay open there.
+  **CLOSED by PR (sound slice)**
 - #3876 — phantom BUILDER hygiene: the autopilot never flashes a skill it
   never uses. `solve()` now certifies its own script against the replay world
   (`stripPhantomBuilds`): every recorded BUILDER commit must attribute to at
