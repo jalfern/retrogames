@@ -1395,6 +1395,33 @@ const selectorGate = (SEL) => {
 console.log('— the attract course selector is tappable (#534) —')
 selectorGate(await loadSelector())
 
+// #3903: the attract column has clean lanes — at the widest layout the title
+// block ends above the selector ink, the tagline sits between the chevron box
+// rules, and the prompt/hint lane starts below them (nothing draws over the
+// WATCH pill's home). Mutating any lane ratio back turns this red.
+{
+    const W = 1280, H = 720
+    const hs = Math.min(H / 176, W / 256)
+    const dsz = (sz) => Math.max(1, Math.round(sz * hs / 5))
+    const g = (await loadSelector()).selectorGeom(W, H, hs)
+    const src = readFileSync(IDXJS, 'utf8')
+    const titleBottom = Math.round(H * 0.29) + Math.round(24 * hs)
+    const nameTop = g.rowY - 5 * dsz(11)
+    const tagTop = Math.round(H * 0.62) - 5 * dsz(10)
+    const tagBottom = Math.round(H * 0.62)
+    const laneTop = Math.round(H * 0.695) - 5 * dsz(10)
+    const boxTop = g.rowY - g.hh, boxBottom = g.rowY + g.hh
+    const lanesOk = titleBottom + 8 <= nameTop && tagTop > boxTop && tagBottom + 8 <= boxBottom && laneTop >= boxBottom
+    check('#3903: attract lanes clear — title < selector < chevron-box rules < message lane',
+        lanesOk, `titleBot ${titleBottom} nameTop ${nameTop} tag ${tagTop}-${tagBottom} box ${boxTop}-${boxBottom} laneTop ${laneTop}`)
+    check('#3903: the prompt/hint share one lane (one message at a time, bar #6)',
+        /sayGo \? 'PRESS ANY KEY \/ TAP' : WATCH_ATTRACT_HINT/.test(src) &&
+        /Math\.round\(H \* 0\.695\)/.test(src) && !/H \* 0\.745/.test(src),
+        'alternating lane at 0.695H, no static hint row')
+    check('#3903: the title screen rides no fake telemetry (HUD suppressed on attract)',
+        /if \(st\.screen !== 'attract'\) drawHud\(\)/.test(src))
+}
+
 // ---- #1737: the COMET CUP — a three-race points grand prix (#419 cups) ----
 // The cup rules live in cup.js (pure): the boards are the LIVE place-ordering
 // when the player finishes, the table is arcade GP spacing, and the standings

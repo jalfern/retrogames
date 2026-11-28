@@ -943,14 +943,17 @@ export default function CometDrift() {
             cols.forEach((c, i) => { ctx.fillStyle = c; ctx.fillRect(Math.round((W - w) / 2), Math.round(y + i * 2 * hs), w, Math.max(1, Math.round(2 * hs))) })
         }
         const drawAttract = () => {
+            // #3903: panel top 0.18 -> 0.14 and the title 0.33 -> 0.29: the
+            // title block (two hs-scaled rows, ~200px at 16:9) and the course
+            // selector (rowY 0.545H, selector.js) now own separate lanes.
             ctx.fillStyle = 'rgba(20,8,12,0.62)'
-            ctx.fillRect(0, Math.round(H * 0.18), W, Math.round(H * 0.6))
-            strataBar(Math.round(H * 0.18), W)
+            ctx.fillRect(0, Math.round(H * 0.14), W, Math.round(H * 0.64))
+            strataBar(Math.round(H * 0.14), W)
             strataBar(Math.round(H * 0.78) - Math.round(6 * hs), W)
             ctx.textAlign = 'center'
-            drawText(ctx, 'COMET', W / 2 + 2, Math.round(H * 0.33) + 2, '#7c2010', dsz(24), 'center')
-            drawText(ctx, 'COMET', W / 2, Math.round(H * 0.33), '#f2e6d2', dsz(24), 'center')
-            drawText(ctx, 'DRIFT GP', W / 2, Math.round(H * 0.33) + Math.round(24 * hs), '#ffd840', dsz(24), 'center')
+            drawText(ctx, 'COMET', W / 2 + 2, Math.round(H * 0.29) + 2, '#7c2010', dsz(24), 'center')
+            drawText(ctx, 'COMET', W / 2, Math.round(H * 0.29), '#f2e6d2', dsz(24), 'center')
+            drawText(ctx, 'DRIFT GP', W / 2, Math.round(H * 0.29) + Math.round(24 * hs), '#ffd840', dsz(24), 'center')
             // course selector (#534): the chevrons are tappable (a phone has no
             // stick on the title) and also cycle on the stick / arrows. The
             // name sits dead-centre as the start zone, so a tap on it — or on
@@ -980,17 +983,23 @@ export default function CometDrift() {
             ctx.closePath(); ctx.stroke()
             drawText(ctx, COURSE.name, W / 2, sel.rowY, '#f2e6d2', dsz(11), 'center')
             const msgs = [COURSE.tagline, '< > PICK COURSE  X GAS  S BRAKE', 'HOLD SPACE / B THROUGH A BEND = TURBO', 'BLUE VIOLET GOLD - THE LADDER PAYS', 'RE-DRIFT INSIDE A BOOST = LINK x3', 'C UP - THREE RACES FOR THE COMET CUP']
-            drawText(ctx, msgs[Math.floor(g.tick / 120) % msgs.length], W / 2, Math.round(H * 0.55), '#f0b878', dsz(10), 'center')
+            drawText(ctx, msgs[Math.floor(g.tick / 120) % msgs.length], W / 2, Math.round(H * 0.62), '#f0b878', dsz(10), 'center')
+            // #3903: best times ride a right-column ledger under the free
+            // top-right zone (the instrument cluster no longer draws on the
+            // title) instead of stacking over the prompt lane in the centre.
             if (st.top.length) {
                 for (let i = 0; i < st.top.length; i++) {
-                    drawText(ctx, i === 0 ? `BEST  ${fmtTime(st.top[i])}` : ` #${i + 1}  ${fmtTime(st.top[i])}`, W / 2, Math.round(H * 0.62 + i * 9 * hs), i === 0 ? '#ffd840' : '#b090a8', dsz(8), 'center')
+                    drawText(ctx, i === 0 ? `BEST  ${fmtTime(st.top[i])}` : `#${i + 1}  ${fmtTime(st.top[i])}`, W - Math.round(6 * hs), Math.round(H * 0.24 + i * 8 * hs), i === 0 ? '#ffd840' : '#b090a8', dsz(8), 'right')
                 }
             }
-            if ((g.tick >> 5) % 2) {
-                // #1737: prompt nudged 0.74 -> 0.70 to keep the badge's new
-                // mid-panel home clear of the pinned tap zone at 0.74.
-                drawText(ctx, 'PRESS ANY KEY / TAP', W / 2, Math.round(H * 0.70), '#f2e6d2', dsz(10), 'center')
-            }
+            // #3903: one message per lane — the blinking start prompt and the
+            // #1654 WATCH hint ALTERNATE on 0.695H, so no text sits under the
+            // WATCH pill (it covers ~0.70-0.76H, and the bottom edge stays the
+            // shared footer's). #1737's start-anywhere taps at 0.50/0.74H are
+            // untouched: the pill arms watch+start itself.
+            const sayGo = (g.tick >> 5) % 2 === 1
+            drawText(ctx, sayGo ? 'PRESS ANY KEY / TAP' : WATCH_ATTRACT_HINT, W / 2,
+                Math.round(H * 0.695), sayGo ? '#f2e6d2' : '#7dd39a', sayGo ? dsz(10) : dsz(8), 'center')
             // #1737: the COMET CUP arming badge below the panel — gold when the
             // grand prix is armed. The tap target is cupBadgeGeom (selector.js,
             // thumb-sized, gated in cometcheck); keyboard arms with C.
@@ -1001,10 +1010,6 @@ export default function CometDrift() {
             ctx.fillRect(cb.cx - cb.hw, cb.cy - cb.hh, cb.hw * 2, 1)
             ctx.fillRect(cb.cx - cb.hw, cb.cy + cb.hh - 1, cb.hw * 2, 1)
             drawText(ctx, cupOn ? 'COMET CUP x3 - ARMED' : 'COMET CUP x3 - C / TAP', cb.cx, cb.cy, cupOn ? '#ffd840' : '#b090a8', dsz(9), 'center')
-            // #1654: the discoverable WATCH line, before the first Y press.
-            // 0.745H: clear of the blinking prompt (0.70) and the cup badge's
-            // hit box top (~0.76H) — the line rides the sliver between.
-            drawText(ctx, WATCH_ATTRACT_HINT, W / 2, Math.round(H * 0.745), '#7dd39a', dsz(8), 'center')
             ctx.textAlign = 'left'
         }
 
@@ -1171,7 +1176,10 @@ export default function CometDrift() {
             drawFx()
             drawSprites()
             ctx.restore()
-            drawHud()
+            // #3903: the title screen is not a race — the grid idles and the
+            // lap timer would crawl fake telemetry behind the title panel, so
+            // the instrument cluster waits for the race like everything else.
+            if (st.screen !== 'attract') drawHud()
             if (st.screen === 'attract') drawAttract()
             if (st.screen === 'end') drawEnd()
             if (st.screen === 'cupbreak') drawCupBreak()
