@@ -16,6 +16,7 @@
 // and demands the audit go red on each. A gate that passes on a broken garden is
 // worse than no gate (this repo has shipped two AI agents that way).
 
+import { readFileSync } from 'node:fs'
 import { GARDENS, newGame, step, autopilot, windAt, landRadius, CFG, FIXED_DT } from '../src/games/Beezee/sim.js'
 
 // Mirror of sim.js's daylight fraction, so the mutation probe can compute the
@@ -239,6 +240,21 @@ if (MUT) {
         }
         return got >= 2
     })
+}
+
+// #3912 (art pass, render-only): the GOAL must stay textured, warm and lit.
+// beecheck is browser-free, so this pins the hive's look at the source: a comb
+// map on the tiers, warm emissive that survives dusk/UV, the mouth proud of the
+// 1.15-shell (the old z=1.02 sat INSIDE the sphere — invisible entrance), and
+// the beacon driven by the WORLD clock, never setTimeout.
+{
+    const src = readFileSync(new URL('../src/games/Beezee/index.jsx', import.meta.url), 'utf8')
+    ok(/map:\s*combTex/.test(src), 'hive tiers wear the comb texture (map: combTex)')
+    ok(/emissive:\s*0x5a3208/.test(src) && /emissive:\s*0x3a2270/.test(src), 'hive tiers carry warm day + cool UV emissive (dusk-proof goal)')
+    ok(/hiveGlow[\s\S]{0,700}AdditiveBlending/.test(src), 'the hive mouth has an additive glow beacon')
+    ok(/mouth\.position\.set\(0,\s*0\.5,\s*(1\.(1[6-9]|[2-9]\d))\)/.test(src), 'the mouth sits proud of the shell (z > 1.15 — the buried-entrance bug stays fixed)')
+    ok(/hiveGlow\.scale\.setScalar\(1\.35 \+ hivePulse/.test(src) && /hivePulse = 0\.5 \+ 0\.5 \* Math\.sin\(gs\.t \* 2\.6\)/.test(src), 'the beacon breathes on the world clock (gs.t, not setTimeout)')
+    ok(/tier\.material = uv \? tier\.mats\.uv : tier\.mats\.day/.test(src), 'paintUv swaps the hive to its UV skin')
 }
 
 console.log(`\nbeecheck: ${pass}/${pass + fails.length} checks passed${fails.length ? `  — ${fails.length} FAILED` : '  — OK'}`)
