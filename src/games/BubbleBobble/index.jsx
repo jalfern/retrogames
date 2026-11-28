@@ -497,7 +497,6 @@ const Bob = () => {
                 else if (msg === 1) text('1 SOLO   2 +CPU BOB   3 TWO PLAYERS', W / 2, 118, 8, '#e9f7ff', 0)
                 else text('DEMO PLAYS THE PROVEN RUN', W / 2, 118, 7, '#5d7094', 0)
                 if (Math.floor(gs.tick / 24) % 2 === 0) text('PRESS ANY KEY TO START', W / 2, 140, 9, '#ffd23f', 5)
-                text(WATCH_ATTRACT_HINT, W / 2, 170, 7, '#8fa3d8', 0)
                 const b = board()[0]
                 if (b) text(`HI-SCORE ${String(b.score).padStart(6, '0')}`, W / 2, 158, 8, '#5dc8ff', 3)
             }
@@ -700,11 +699,9 @@ const Bob = () => {
             {screen === 'play' && watching && (
                 <WatchToast className="absolute z-50" />
             )}
-            {/* #1656 — the forgotten-how-to-play tap: start AND watch, one button. */}
+            {/* #1656 — one tap: start+watch */}
             {screen === 'attract' && (
-                <div className="absolute inset-x-0 z-[70] flex justify-center pointer-events-none" style={{ bottom: '24%' }}>
-                    <AttractWatchButton />
-                </div>
+                <div className="absolute inset-x-0 z-[70] flex flex-col items-center gap-2 pointer-events-none" style={{ bottom: '24%' }}><span className="text-emerald-200/70 font-mono text-[11px] tracking-widest">{WATCH_ATTRACT_HINT}</span><AttractWatchButton /></div>
             )}
             {screen === 'play' && !paused && (
                 <div className="absolute z-50 pointer-events-auto" style={{ top: 'calc(3.5rem + var(--sat, 0px))', right: 'calc(0.75rem + var(--sar, 0px))' }}>
