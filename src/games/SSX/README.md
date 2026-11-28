@@ -612,10 +612,11 @@ goes red; restore → 257 green.
 
 ## Honest gaps (filed as the polish pass)
 
-- Manuals are a player verb: `planner.js` never emits ↓ (it predates #547's
-  scrub), so the rival field and the attract reel never ride a manual. The
-  original's demo shows buttered rollers — an attract hot-line that lands a
-  grab, manuals the crest and ollies out is QA-lane polish, not this stage.
+- **DISCLAIMER** (design, #3901): manuals are a player verb by choice — the
+  planner predates #547's scrub and never emits ↓, so the rival field and the
+  attract reel never ride one. The original's demo shows buttered rollers;
+  giving the hot attract line a manual is QA-lane polish when the field grows
+  ground verbs, not a weakness this title scores on.
 
 - **CLOSED by #980**: Board decals reach every rider and the boot weld is solved, not posed
   (#615/#620; #883: `weldBoots` in `art.js` pins each boot's underside to
