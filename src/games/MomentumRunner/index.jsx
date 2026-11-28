@@ -1219,16 +1219,16 @@ const MomentumGame = () => {
             <div ref={stageRef} className="absolute inset-0 flex items-center justify-center" />
 
             {/* #1637 WATCH — planRun() drives the sector from the live runner;
-                any input takes over. Pill below the VELOCITY strip's chrome row. */}
-            {play && watching && <WatchToast className="absolute z-50" />}
+                any input takes over. Pill below the chrome band (#437). */}
+            {play && watching && <WatchToast className="absolute z-50 top-[calc(10.75rem + var(--sat,0px))]" />}
             {play && !paused && (
-                <div className="absolute z-50 pointer-events-auto" style={{ top: 'calc(3.5rem + var(--sat, 0px))', right: 'calc(0.75rem + var(--sar, 0px))' }}>
+                <div className="absolute z-50 pointer-events-auto" style={{ top: 'calc(7.4rem + var(--sat, 0px))', right: 'calc(0.75rem + var(--sar, 0px))' }}>
                     <WatchButton on={watching} />
                 </div>
             )}
 
             <div className={`absolute inset-0 pointer-events-none transition-opacity duration-300 ${play ? 'opacity-100' : 'opacity-0'}`}>
-                <div className="absolute top-2 left-3 flex items-center gap-2 font-mono text-xs">
+                <div className="absolute flex items-center gap-2 font-mono text-xs" style={{ top: 'calc(4.9rem + var(--sat, 0px))', left: 'calc(0.75rem + var(--sal, 0px))' }}>
                     <div className="skew-x-[-8deg] border border-cyan-300/70 bg-black/50 px-3 py-1" style={{ boxShadow: '0 0 12px rgba(102,246,255,0.25), inset 0 0 8px rgba(102,246,255,0.12)' }}>
                         <span className="block text-[8px] tracking-[0.25em] text-cyan-300/70">SECTOR</span>
                         <span ref={setHud('zone')} className="text-cyan-100 font-bold tracking-wider" />
@@ -1237,7 +1237,7 @@ const MomentumGame = () => {
                         <span className="text-amber-300 font-bold text-sm">◎ <span ref={setHud('rings')}>00</span></span>
                     </div>
                 </div>
-                <div className="absolute top-2 right-3 flex items-center gap-3">
+                <div className="absolute flex items-center gap-3" style={{ top: 'calc(4.9rem + var(--sat, 0px))', right: 'calc(0.75rem + var(--sar, 0px))' }}>
                     <div className="flex items-center gap-2 skew-x-[-8deg] border border-cyan-300/40 bg-black/50 px-3 py-1.5" style={{ boxShadow: '0 0 12px rgba(102,246,255,0.15)' }}>
                         <span className="text-[8px] tracking-[0.25em] text-cyan-200/70 font-mono">VELOCITY</span>
                         <div className="w-28 h-2.5 bg-black/60 overflow-hidden border border-cyan-300/30"><div ref={setHud('meter')} className="h-full" style={{ width: '0%' }} /></div>

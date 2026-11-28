@@ -359,6 +359,9 @@ export const GAMES = [
     {
         path: '/momentum',
         pad: { layout: 'stick', buttons: [], aLabel: 'JUMP', analog: false },
+        // #3851: the attract copy and the shared bottom footer are two bottom-centre texts — the
+        // footer paints straight over the PRESS line (Frogger #3436 precedent: the game owns its bottom band)
+        footer: 'none',
         builtBy: 'forge',
         added: '2026-10-10',
         component: MomentumRunnerGame,
