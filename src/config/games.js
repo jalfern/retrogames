@@ -418,6 +418,8 @@ export const GAMES = [
     },
     {
         path: '/simcity-min',
+        // #3882: the tool strip owns the canvas bottom band — the shared JALFERN.COM footer painted over PARK/POWER/ZONE (Frogger #3436 precedent)
+        footer: 'none',
         pad: { layout: 'dpad', buttons: [{ label: 'TOOL', code: 'KeyT' }], analog: false, reason: 'grid city builder — place the tool on the cursor' },
         builtBy: 'forge',
         added: '2026-10-11',
