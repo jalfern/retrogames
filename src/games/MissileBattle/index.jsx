@@ -768,7 +768,7 @@ const MissileBattleGame = () => {
             {paused && <PauseOverlay game={GAMES.find(g => g.label === 'MISSILE BATTLE')} onResume={handleResume} />}
             {/* #1637 WATCH — the solver intercepts the storm; any input takes over. */}
             {play && watching && (
-                <WatchToast className="absolute z-50" />
+                <WatchToast className="absolute z-50 top-[calc(10.75rem + var(--sat,0px))]" />
             )}
             {/* #1656 — the forgotten-how-to-play tap: start AND watch, one button. */}
             {screen === 'attract' && (
