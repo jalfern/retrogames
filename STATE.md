@@ -1,64 +1,65 @@
-# STATE — forge board snapshot (slot b, 2026-11-28 — fatal-fall rule shipped; never-dry rung consumed)
+# STATE — forge board snapshot (slot a, 2026-11-28 — attract parachutes shipped `ceab206`)
 
-## This session (slot b)
-- **SHIPPED: LEMMINGS-LITE fatal falls (#3849 → PR #3850, main `047c13b`)** —
-  never-dry stage. `CFG.maxFall` 7 → 3 (the original kills past ~3 tiles): falls
-  off the spire kill, FLOATER earns its charges. THE SPIRE's east stair ended
-  ~6 tiles above the floor (the old lax value hid an unsolvable-by-new-rule
-  drop) — carved to ground, re-solved: win 4/4, climb load-bearing, slack holds
-  at climb 5; MASSIF/DOOR/LEDGE proven unaffected at 3 (pre-claim measurement).
-  Fall pins made **absolute** (4 tiles must die; short falls land ≤3 — the old
-  pin read `CFG.maxFall+1`, green even at 7, drift-proofing hole #1) + drift
-  mutation `maxFall=7` in `--mutate`. lemcheck 157/157, mutate 179/179,
-  hand-drift proof red→green, lemplay 41/41 on :5178, gates+build green.
-  Live: https://jalfern.com/retrogames/lemmings (chunk `Lemmings-CgSqWSPI.js`).
-- Ladder run honest first: halt/steer 0; `next` #1712 waiting-jon; game-queue/
-  building empty; feedback #3244/#2971 waiting-jon; QA MASTER live → no borrow;
-  flagship ladder verified spent (all six flagship READMEs gap-free via
-  idle.mjs, not memory). Warden kick named LEMMINGS-LITE — honest score was 6,
-  not the kick's 0 (the 0 is the #3825-style phantom again; the title really
-  was weakest anyway).
-- Deviation from oldest-gap (BUILDER) per #3844 precedent, recorded on #3849:
-  BUILDER needs placed-cell geometry + solver re-work; slot-a said size it
-  before claiming. It stays the oldest gap for whoever has a full slot.
+## This session (slot a) — the never-dry rung, taken and shipped
+- Normal ladder dry, verified honest: no halt/steer; `next` #1712 carries
+  waiting-jon → skipped; game-queue empty; feedback #2971/#3244 both
+  waiting-jon; QA MASTER live → no borrow; flagship rung spent.
+- Never-dry: `idle-kick` answers `KICK LEMMINGS-LITE 0 weak` — same target the
+  warden's slot note carried; three Lemmings stages in a row because each ships
+  and re-proves the title cheaper than any other shelf option.
+- Filed POLISH #3853 and shipped PR #3855 → squash `ceab206`: **attract demo
+  deploys its own parachutes** (README gap "the demo shows four skills while
+  the game offers five"). `attract.js` exports a pure `demoFloatPick`: an
+  unsripted airborne lemming gets the canopy first (THE DOOR opens one mid-air
+  at the step-off); else after a 5 s grace the first unsripted walker wears one
+  and the sim's own auto-open law deploys it on that walker's next fall. Cap 2
+  per cycle, never over the pond (floaters drown — mockery, not rescue), never
+  a script target (proven lines never re-timed), player supply untouched
+  (`startPlay` rebuilds the level).
+- Proof: lemcheck 177/177 + `--mutate` 199/199 (20 new pins); red-proof ×3 by
+  hand (target exclusion ×2 / grace / water-skip — exactly the matching pins go
+  red, restore green). Chrome drive 8/8: deploy at tick 311, canopy PAINTED
+  (16 cream + 8 red px native rect), SPIRE still clears at tick 1984 ≪ timeout,
+  both charges spent, zero page/console errors.
 
 ## BOARD facts at close
-- main tip `047c13b`. Rule-4 streak: reset (game code merged).
-- building: none. building-qa: **#3851 QA — MOMENTUM RUNNER** (QA lane is
-  inside that game — never touch). game-queue: empty. halt/steer: 0.
-- feedback open: #3851 (held by QA), #3244, #2971 (both waiting-jon).
-- QA MASTER live (pid at open: 26880).
-- #3841 (lemplay timing flake, advisory) still open, platform lane's.
+- main tip `ceab206`. building: #3854 FROGGER difficulty ramp (other lane).
+  building-qa: #3856 ICE CLIMBER CO-OP. game-queue: empty. halt/steer: 0.
+- jonq: #3791 AWAITING (deadline 11-29), #3516 AWAITING (default `done` fires
+  at its sweep ~11-28 12:35Z — leave the Arkanoid texture line; do not re-file).
+- Lemmings' 4 unowned gaps: BUILDER (oldest — sized this session, see below),
+  blocker-wake (needs a re-solve), float-while-dig, static water. Rule-4
+  streak: reset (game code merged).
 
 ## PLAYABLE on main right now
-- LEMMINGS-LITE — falls past 3 tiles KILL, five skills, ponds drown, floaters
-  parachute: https://jalfern.com/retrogames/lemmings
-- OH NO! death cry on every corpse; DK fire oil; MINESWEEPER marquee;
-  BUBBLE BOBBLE attract hint; POLARITY/MISSILE BATTLE clean chrome.
+- LEMMINGS-LITE with demo parachutes: https://jalfern.com/retrogames/lemmings
+  (attract: striped canopies catch the crowd; FLOATER is now visible on screen;
+  every corpse still wails OH NO!; ponds drown; fatal falls at 3 tiles).
+- Momentum Runner docked HUD chrome (#3852); FireCrew inset; DK fire oil;
+  MINESWEEPER marquee; THE BARD'S TALE; PINBALL; SMASH-TV; KOI demo.
 
 ## Open questions (links only — #605)
-- #3791 (dry shelf: which new flagship title? — AWAITING, deadline 11-29;
-  default = hold shelf, ship only what Jon or QA files).
-- #3516 (Arkanoid art rung — AWAITING, defaults done tonight ~12:35Z).
+- #3791 (dry shelf: which new flagship title — AWAITING, deadline 11-29),
+  #3516 (Arkanoid texture rung — AWAITING, defaults done at the sweep).
 
 ## Next claims (for whoever is free)
-1. LEMMINGS-LITE attract-parachute — cheapest unowned gap now (attract shows
-   4 skills, the game offers 5). Then size BUILDER against the solver before
-   claiming (placed-cell geometry, re-solve all levels); blocker-wake needs a
-   re-solve too (levels are designed for permanent blocks).
-2. Lemmings' 5 unowned gaps left: BUILDER, blocker-wake, float-while-dig,
-   attract-parachute, static-water. If both builder slots keep hitting
-   Lemmings, spread by taking the next-weakest title instead (#1571 ties go to
-   registry order, but never-dry already consumed two kicks on this title).
-3. #3516 default fires tonight; #3791 tomorrow. Let sweeps take them; do not
-   re-file.
+1. BUILDER sizing (done, posted on #3853): placed-cell planks mean grid-state
+   in `solve()`'s search space + re-proving all four levels' win/load-bearing/
+   slack + redesign. Est. 1–2 days — the first title that legitimately needs a
+   multi-session WIP branch (push a draft PR per playbook, keep `building`).
+   Cheaper one-stage alternates: static water #2-ponds (level work, solver
+   adapts by itself) or blocker-wake (medium, hard re-solve).
+2. #3440 closable by the platform lane (evidence posted; zero comments since).
+3. #3516/#3791: let the sweeps take their defaults; do not re-file.
 
 ## Slot state at handoff
-- :5178 stopped via `scripts/devstop.sh`; no other lane's port touched.
-- Worktree `retrogames-forge-lemmings-fall3` pruned by mergeclean (it was
-  clean); main checkout detached at `origin/main` = `047c13b`.
-- STATE commits to main (step-9 allowance — forge game merged this session);
-  parked slot-scoped via `statepark.mjs park b` right after writing.
-- Harness fact worth keeping: Lemmings is lazy-loaded — prod bundle polling
-  must grep `Lemmings-<hash>.js` (from the index's import map), NOT the index
-  chunk; `maxFall` appears nowhere in index-*.js.
+- :5173 stopped via `scripts/devstop.sh`; other lanes' ports untouched.
+- My worktree was pruned by mergeclean; STATE commits to main because the
+  forge game merged this session (step-9 allowance).
+- Harness facts worth keeping: (1) prod verification by bundle hash is
+  unreliable — CI hashes differ from local; verify game-visible behaviour
+  instead (this stage: canopy-red pixel count in the SPIRE attract window,
+  which is zero pre-fix because the demo carried no bombs there). (2) In the
+  shell, `gs.end` and `loadLevel` land in the same frame, so browser probes
+  can never observe `end`/final-exit — discriminate quota-clears by the tick
+  clock (clear fires far before the time-out) or cumulative maxes.
