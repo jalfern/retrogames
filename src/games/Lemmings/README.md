@@ -95,14 +95,15 @@ breakable — every pin here has survived a manual mutation.
   cannot span a gap wider than its shelf. The demo shows wood everywhere the
   solver needs it (#3866 put roads in the attract replays), but the wood sits
   flat — a sloped sprite per descent direction is unclaimed polish.
-- The planner is optimistic about wood: on THE DOOR and THE LEDGE the recorded
-  scripts contain a BUILDER command that in the replayed world dies at the
-  crater lip before laying anything (cargo untouched, both boards win their
-  quota unchanged — the commit scored off a rollout where the plank road paid
-  before the fall). The autopilot also carries a pre-existing one-tick stamp
-  offset that makes DOOR's replay world lose two extra walkers to the pond
-  (6/1 solve, 6/3 replay — verified identical on main before #3866; need 6
-  holds either way). Planner-tuning note, nothing depends on it.
+- The autopilot carries a pre-existing one-tick stamp offset that makes THE
+  DOOR's replay world lose two extra walkers to the pond (6/1 solve, 6/3
+  replay — verified identical on main before #3866; need 6 holds either way).
+  Replay-vs-replay determinism is bit-identical and the product contract —
+  attract delivers the quota — holds; any new pin must compare replay outcomes,
+  not solve outcomes, or it will flake. Planner-tuning note, nothing depends
+  on it. (Its old twin — the optimistic BUILDER commits on THE DOOR and THE
+  LEDGE that died at the crater lip before laying any wood — is closed: the
+  solver now certifies its own script against the replay world, see Closed.)
 - Float-while-digging (the original's floating lemming chews straight down
   through dirt while descending) does not port to the horizontal-tunnel digger;
   it needs either a second dig mode or a rethink of the dig model.
@@ -113,6 +114,17 @@ breakable — every pin here has survived a manual mutation.
 
 ## Closed
 
+- #3876 — phantom BUILDER hygiene: the autopilot never flashes a skill it
+  never uses. `solve()` now certifies its own script against the replay world
+  (`stripPhantomBuilds`): every recorded BUILDER commit must attribute to at
+  least one `plank` event in replay, or it comes out — DOOR's t240/id2 and
+  LEDGE's t1667/id6 are gone from the attract demos. Removal is demanded
+  neutral, not assumed: the stripped script must still win with no extra
+  deaths, else the full script stands (dead grants touch no grid, no supply
+  and no body, so on today's boards the stripped replay is bit-identical —
+  pinned). SPIRE's 12-plank road and MASSIF's 4-plank bridge pass through
+  untouched; lemcheck plants a live phantom and watches the validator remove
+  it, and disabling the validator reddens 3 pins.
 - #3866 — stage 2: the solver learns BUILDER. `candidates()` now offers wood
   at exactly the cells walker() lays it (one-tile descent + solid shelf under
   the landing — pond rims and 2-tile holes can never even be proposed; the

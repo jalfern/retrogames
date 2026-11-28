@@ -985,6 +985,60 @@ section('ATTRACT PARACHUTE (#3853: the demo shows all five skills)')
     ok(demoAir === 1, '#3853 no level demo opens a canopy in the air — the parachute never deploys on screen')
 }
 
+section('PHANTOM HYGIENE (#3876: the autopilot never flashes a skill it never uses)')
+{
+    // A BUILDER commit in a solver script is real only if that lemming lays
+    // wood IN THE REPLAY WORLD — the truth attract mode shows the player.
+    // THE DOOR's id2 (drowned before its descent) and THE LEDGE's id6 (exited
+    // the door past intact floor) were the two shipped phantoms; the fix is
+    // sim.stripPhantomBuilds, and this pin is that the board never regrows one.
+    for (let i = 0; i < LEVELS.length; i++) {
+        const { meta, grid } = buildLevel(i)
+        const plan = sim.solve(sim.makeGame(meta, grid)).cmds
+        const laid = new Set()
+        sim.replay(meta, grid, plan, { onTick: (g) => { for (const e of g.events) if (e.type === 'plank') laid.add(e.id) } })
+        const phantom = plan.filter(c => c.skill === 'build' && !laid.has(c.id))
+        ok(phantom.length === 0,
+            `${meta.name}: solver script carries ${phantom.length} BUILDER commit(s) that never lay wood — the autopilot is flashing a skill it does not use (#3876 regression)`)
+    }
+    // The roads stay: SPIRE's east-face bridge and MASSIF's trench crossing are
+    // real work — hygiene must pass productive scripts through untouched.
+    for (const i of [0, 1]) {
+        const { meta, grid } = buildLevel(i)
+        const plan = sim.solve(sim.makeGame(meta, grid)).cmds
+        ok(plan.some(c => c.skill === 'build'),
+            `${meta.name}: the solver stopped spending BUILDER — the plank road is gone (hygiene over-stripped?)`)
+        ok(sim.stripPhantomBuilds(meta, grid, plan).length === plan.length,
+            `${meta.name}: stripPhantomBuilds stripped a productive script — the validator over-reaches`)
+    }
+    // The validator can fail. Plant a LIVE phantom on THE LEDGE's script: ten
+    // ticks before its blocker-line command, stamp a second builder grant onto
+    // the same walker — the east rim is pond (the plank law refuses water) and
+    // the floor behind is intact, so no descent ever arrives and no wood is
+    // ever laid. The grant must come out, the board must still win its quota,
+    // and because the grant is dead weight the stripped world must be
+    // bit-identical — removal is proven neutral, never assumed.
+    {
+        const { meta, grid } = buildLevel(3)
+        const plan = sim.solve(sim.makeGame(meta, grid)).cmds
+        const blockT = plan.find(c => c.skill === 'block')?.tick ?? 400
+        const plantT = Math.max(70, blockT - 10)
+        const planted = [...plan, { tick: plantT, id: 0, skill: 'build' }]
+        let applied = false
+        const full = sim.replay(meta, grid, planted, {
+            onTick: (g) => { if (g.tick === plantT && g.lemmings[0].builder) applied = true },
+        })
+        ok(full.win === true, '#3876 mutation harness broken: the planted script does not even win')
+        ok(applied, `#3876 plant was never a live grant (id0 not carrying builder at tick ${plantT}) — the probe would pass vacuously`)
+        const out = sim.stripPhantomBuilds(meta, grid, planted)
+        ok(out.length === plan.length,
+            '#3876 plant survived — a BUILDER commit that never lays wood stayed in the script: the validator cannot fail')
+        const s = sim.replay(meta, grid, out)
+        ok(s.win && s.exited === full.exited && s.dead === full.dead && sim.stateHash(s) === sim.stateHash(full),
+            '#3876 stripping a dead grant moved the world — removal was not provably neutral')
+    }
+}
+
 console.log(`\nlemcheck: ${pass}/${pass + fails.length} checks passed${fails.length ? `  — ${fails.length} FAILED` : '  — OK'}`)
 fails.forEach(f => console.log(`  FAIL  ${f}`))
 process.exit(fails.length ? 1 : 0)
