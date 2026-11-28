@@ -816,7 +816,7 @@ const LodeRunnerLiteGame = () => {
 
             {screen === 'attract' && (
                 <>
-                    <div className="absolute inset-0 bg-black/55 pointer-events-none" />
+                    <div className="absolute inset-x-0 top-0 h-3/5 bg-gradient-to-b from-black/75 via-black/35 to-transparent pointer-events-none" />
                     <div className="absolute inset-x-0 top-16 text-center pointer-events-none">
                         <h1 className="text-4xl font-black" style={{ color: '#ffd23e', textShadow: '3px 0 0 #b06a3f, -3px 0 0 #4ad7ff, 0 10px 24px #000' }}>LODE RUNNER-LITE</h1>
                         <p className="text-white font-mono font-bold mt-6 animate-pulse">{PRESS}</p>
