@@ -828,7 +828,7 @@ const DogfightGame = () => {
             <div ref={stageRef} className="absolute inset-0" />
 
             <div className={`absolute inset-0 pointer-events-none transition-opacity duration-300 ${play ? 'opacity-100' : 'opacity-0'}`}>
-                <div className="absolute top-2 left-3 flex items-start gap-4 text-amber-50 font-mono">
+                <div className="absolute left-3 flex items-start gap-4 text-amber-50 font-mono" style={{ top: 'calc(6.5rem + var(--sat, 0px))' }}>
                     <div className="bg-black/40 border border-amber-200/30 rounded px-2 py-1 text-center">
                         <canvas data-dial="asi" ref={setHud('asiDial')} className="block" style={{ width: '96px', height: '96px' }} />
                         <div className="text-[9px] tracking-widest opacity-70 mt-0.5">AIRSPEED kt</div>
@@ -861,7 +861,7 @@ const DogfightGame = () => {
                         <div className="mt-1 bg-black/40 border border-amber-200/30 rounded px-2 py-1 text-[10px] text-amber-100">TGT <span ref={setHud('tgt')}>—</span> · <span ref={setHud('hp')} className="text-red-300">✚✚✚✚</span></div>
                     </div>
                 </div>
-                <div className="absolute top-2 right-3 bg-black/40 border border-amber-200/30 rounded px-2 py-1 text-center text-amber-50 font-mono">
+                <div className="absolute right-3 bg-black/40 border border-amber-200/30 rounded px-2 py-1 text-center text-amber-50 font-mono" style={{ top: 'calc(6.5rem + var(--sat, 0px))' }}>
                     <div className="text-[9px] tracking-widest opacity-70">FUEL s</div>
                     <div ref={setHud('clock')} className="text-2xl font-bold">170</div>
                 </div>
