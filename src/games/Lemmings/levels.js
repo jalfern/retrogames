@@ -132,6 +132,15 @@ export const LEVELS = [
         // theatrical toss before the trench resumes its claim, and the vent's
         // shoveled canopies land on spring instead of steel.
         trampolines: [{ x: 38, y: 24 }, { x: 39, y: 24 }],
+        // #3879 TELEPORTS (terrain gadget 3 of 3): maws sunk into the trench
+        // floor at either end of the mats, linked as a pair. A tenant of the
+        // trap that reaches either mouth is flung to the other and keeps
+        // walking — pace, bounce, warp, pace. The trap's law is untouched:
+        // the plinth wall still towers two tiles over the floor, so what is
+        // in the trench stays in the trench, `proves: build` rides the plank
+        // road byte-identical, and while any road-wood lies over a mouth the
+        // sky guard seals that mouth dead anyway — the proof cannot warp.
+        teleports: [{ x: 37, y: 24, pair: 1 }, { x: 40, y: 24, pair: 0 }],
         build() {
             const c = new Carve()
             c.sky(); c.floor(24)

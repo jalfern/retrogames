@@ -91,6 +91,12 @@ export const CFG = {
     // the crowd once per arrival, forever is not on the menu.
     padJump: 10,
     padHold: 140,
+    // #3879 TELEPORT (terrain gadget 3 of 3): per-body cooldown after a warp,
+    // world ticks. The trench mouths sit three cells apart (~78 ticks of walk
+    // each way), so a trapped body rides the pair at a steady pace — visible
+    // cadence, never a strobe, and facing maws can never ping a lemming
+    // through the world faster than one stride per warp.
+    tpHold: 90,
     fuse: 1.6,
     blast: 1.8,
     blockRange: 1.0,
@@ -183,6 +189,48 @@ function padLaunch(g, L) {
     g.events.push({ type: 'pad', id: L.id, x: L.x, y: L.y })
 }
 
+// #3879 TELEPORTS — gadget 3 of 3 of the terrain-variety family (after the
+// vents and the mats). A level declares `teleports: [{x, y, pair}]`: floor
+// cells linked two by two. A body STANDING on a maw — a walker's footstep
+// along the floor, or a faller's landing — leaves the level's surface at that
+// cell and steps off the partner maw walking, same direction, same speed; a
+// drop is absorbed like a mat absorbs it (fallDist wiped, no launch). Two
+// guards, both from the family's own laws: a maw needs its own two rows of
+// sky AND its mate's (a roofed or blocked maw is dead steel — and since a
+// builder's plank lays right over a trench maw's sky row, a plank road seals
+// the mouths for every crossing it carries: the solver's proofs ride wood,
+// so no proven script ever opens a gate), and every warp stamps the body
+// CFG.tpHold ticks of cooldown, so a pair can never ping a lemming faster
+// than a stride. THE MASSIF hosts the family's first pair inside the trench:
+// what falls into the trap now warps mouth to mouth alongside the mats, yet
+// the plinth wall still towers two tiles over the floor — the trap's temper
+// grows again, its verdict is the one it was carved with, and the plank road
+// stays the only crossing the proofs ride.
+export function tpAt(g, L) {
+    const mouths = g.level.teleports
+    if (!mouths) return null
+    const k = groundRow(L.y)
+    for (let i = 0; i < mouths.length; i++) {
+        const m = mouths[i]
+        if (Math.floor(L.x) !== m.x || k !== m.y) continue
+        const mate = mouths[m.pair | 0]
+        if (!mate || mate === m) continue
+        if (cell(g, m.x, m.y - 1) !== AIR || cell(g, m.x, m.y - 2) !== AIR) continue
+        if (cell(g, mate.x, mate.y - 1) !== AIR || cell(g, mate.x, mate.y - 2) !== AIR) continue
+        return mate
+    }
+    return null
+}
+
+function tpWarp(g, L, m) {
+    const fx = L.x, fy = L.y
+    L.x = m.x + 0.5
+    L.y = m.y
+    L.state = 'walk'; L.vy = 0; L.fallDist = 0
+    L.tpCd = g.tick + CFG.tpHold
+    g.events.push({ type: 'tp', id: L.id, x: fx, y: fy, tx: m.x + 0.5, ty: m.y })
+}
+
 export const hash = (s) => {
     let h = 0x811c9dc5
     for (let i = 0; i < s.length; i++) { h ^= s.charCodeAt(i); h = Math.imul(h, 0x01000193) }
@@ -234,6 +282,7 @@ export function spawnLemming(g) {
         floater: false,
         builder: false,
         padCd: -1,
+        tpCd: -1,
         flashT: 0,
         turnCd: -1,
         live: true,
@@ -323,6 +372,13 @@ export function step(g, cursorTarget = null) {
             // #3879: footsteps on a mat take the same launch a landing does —
             // the trench floor is walkable rock, and the mats sit on it.
             padLaunch(g, L)
+        }
+        if (L.live && L.state === 'walk' && L.tpCd <= g.tick) {
+            // #3879: a footstep onto a maw takes the same ride a landing does
+            // (a mat launch leaves the body airborne, state 'fall', so a cell
+            // that hosts both never fires twice in one tick).
+            const mate = tpAt(g, L)
+            if (mate) tpWarp(g, L, mate)
         }
         if (L.live && L.state !== 'climb' && L.state !== 'fall'
             && !solid(g, Math.floor(L.x), groundRow(L.y))) {
@@ -582,6 +638,14 @@ function faller(g, L) {
         // test runs ahead of the splat check on purpose.
         const p = padAt(g, L)
         if (p && L.padCd <= g.tick) { padLaunch(g, L); return }
+        // #3879: a maw catches a drop before the splat verdict — arriving on
+        // a mouth wipes the fall, so the trap's tenants survive the drops
+        // that keep everyone else down. Runs before the kill test on purpose,
+        // the same precedence the mats claimed.
+        if (L.tpCd <= g.tick) {
+            const m = tpAt(g, L)
+            if (m) { tpWarp(g, L, m); return }
+        }
         if (L.fallDist > CFG.maxFall && !L.floater) { kill(g, L, 'fall'); return }
         L.state = 'walk'
         g.events.push({ type: L.floater ? 'landsoft' : 'land', id: L.id })

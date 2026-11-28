@@ -137,8 +137,10 @@ const LemGame = () => {
         const splashes = []                       // #3828 drown splashes: {x,y,t}
         const cries = []                          // #3844 OH NO! sprites: {x,y,t}
         const chips = []                          // #3879 splinters/nail-dust: {x,y,vx,vy,t,life,dark,big}
+        const sparks = []                         // #3879 warp dust: {x,y,vx,vy,t,life,hot}
         const squash = {}                         // #3879 landing squash: lemming id → world ticks left
         const padPing = {}                        // #3879 trampoline: "x,y" → world ticks of ring left
+        const tpPing = {}                         // #3879 maws: "x,y" → world ticks of glow left
         const SQUASH_LIFE = 6
         // #3879: wood one tick old — a blast's events arrive after the grid has
         // already cleared, so splinters spawn exactly at the cells that WERE wood.
@@ -168,6 +170,14 @@ const LemGame = () => {
             for (let k = 0; k < 2; k++) {
                 const r = speck(Math.floor(ex) + k, Math.floor(ey))
                 chips.push({ x: ex + (k ? 0.3 : -0.3), y: ey + 0.35 + r * 0.3, vx: k ? 0.1 : -0.1, vy: 0.04 + r * 0.05, t: 0, life: 8, dark: k === 1, big: false })
+            }
+        }
+        // #3879 TELEPORT: dust at both mouths — motes rise and pinch inward,
+        // violet at one end cyan at the other, the pair's two-tone signature.
+        const warpDust = (wx, wy, hot) => {
+            for (let k = 0; k < 6; k++) {
+                const r = speck(Math.floor(wx) + k, Math.floor(wy) + (hot ? 7 : 0))
+                sparks.push({ x: wx + (k - 2.5) * 0.14, y: wy - 0.35 + r * 0.45, vx: (2.5 - k) * 0.028, vy: -0.06 - r * 0.14, t: 0, life: 9 + Math.floor(r * 6), hot })
             }
         }
         const cursor = { x: 8, y: 18 }
@@ -207,6 +217,8 @@ const LemGame = () => {
             chips.length = 0                          // #3879 nor ghost splinters
             for (const k of Object.keys(squash)) delete squash[k]   // #3879 nor stale squashes
             for (const k of Object.keys(padPing)) delete padPing[k]   // #3879 nor ringing mats
+            sparks.length = 0                                          // #3879 nor warp dust
+            for (const k of Object.keys(tpPing)) delete tpPing[k]     // #3879 nor glowing maws
             watchingRef.current = false; setWatching(false)
             abortGesture()                        // no press from the previous run survives into this one
         }
@@ -299,6 +311,16 @@ const LemGame = () => {
                     audioController.playTone(920, 0.05, 'sine', 0.04)
                     padPing[Math.floor(e.x) + ',' + Math.floor(e.y)] = 10
                 }
+                // #3879 TELEPORT: a two-octave up-chirp into a down-chirp —
+                // the voice leaves one mouth and arrives at the other — plus
+                // both plates flare and puff dust on the world clock.
+                else if (e.type === 'tp') {
+                    audioController.playSweep(260, 1040, 0.10, 'square', 0.05)
+                    audioController.playSweep(1040, 320, 0.12, 'square', 0.045)
+                    tpPing[Math.floor(e.x) + ',' + Math.floor(e.y)] = 12
+                    tpPing[Math.floor(e.tx) + ',' + Math.floor(e.ty)] = 12
+                    warpDust(e.x, e.y, false); warpDust(e.tx, e.ty, true)
+                }
                 else if (e.type === 'step') audioController.playTone(220, 0.03, 'triangle', 0.025)
                 else if (e.type === 'stepdown') audioController.playTone(155, 0.035, 'triangle', 0.022)   // #3908: the stair is walked — a heel-plant below the mount chirp
                 else if (e.type === 'crest') audioController.playTone(880, 0.07, 'sine', 0.05)
@@ -365,6 +387,8 @@ const LemGame = () => {
             for (let i = chips.length - 1; i >= 0; i--) { const c = chips[i]; c.t++; c.x += c.vx; c.y += c.vy; c.vy += 0.035; if (c.t > c.life) chips.splice(i, 1) }
             for (const k of Object.keys(squash)) { if (--squash[k] <= 0) delete squash[k] }
             for (const k of Object.keys(padPing)) { if (--padPing[k] <= 0) delete padPing[k] }   // #3879 mats ring on the WORLD clock
+            for (let i = sparks.length - 1; i >= 0; i--) { const p = sparks[i]; p.t++; p.x += p.vx; p.y += p.vy; p.vy += 0.012; if (p.t > p.life) sparks.splice(i, 1) }   // #3879 warp dust rides the WORLD clock too
+            for (const k of Object.keys(tpPing)) { if (--tpPing[k] <= 0) delete tpPing[k] }   // #3879 maws glow on the WORLD clock
             const wm = woodMask()               // #3879 wood as it stands BEFORE this tick's step
             if (screenRef.current === 'attract') {
                 // attract = the solver's proven script, replayed on screen.
@@ -647,6 +671,32 @@ const LemGame = () => {
                 ctx.fillRect(ppx + 2, ppy + 1 + dip, TS - 4, 1)               // hot centre line
             }
 
+            // #3879 TELEPORT MAWS: recessed floor plates with a diamond core,
+            // the trench's cool counter-voice to the mats' red — violet at one
+            // mouth, cyan at its partner. The core pulses an eight-phase blink
+            // on the WORLD clock (replays animate it identically), the mouths
+            // alternating so the pair reads linked at a glance, and a mouth
+            // that just fired flares its whole plate (tpPing). Drawn with the
+            // scenery pass, before bodies: a warped body steps OFF the plate.
+            for (const t of (meta.teleports || [])) {
+                const tpx = t.x * TS, tpy = t.y * TS
+                const ph = Math.floor(gs.tick / 4 + (t.x + t.y)) % 8          // alternating pulse
+                const hot = ph % 4 < 2
+                const flare = (tpPing[t.x + ',' + t.y] || 0) > 0
+                ctx.fillStyle = '#10151f'                                       // socket recess
+                ctx.fillRect(tpx + 1, tpy + 2, TS - 2, TS - 2)
+                ctx.fillStyle = hot ? '#31406e' : '#232e4e'                    // plate body
+                ctx.fillRect(tpx + 2, tpy + 3, TS - 4, TS - 4)
+                const mc = tpx + Math.floor(TS / 2) - 1, my = tpy + Math.floor(TS / 2) - 1
+                ctx.fillStyle = hot ? '#7a3fd0' : '#3a8fb0'                    // diamond, mid tone
+                ctx.fillRect(mc - 1, my - 2, 3, 1); ctx.fillRect(mc - 2, my - 1, 5, 3); ctx.fillRect(mc - 1, my + 2, 3, 1)
+                ctx.fillStyle = flare ? '#ffffff' : (hot ? '#b48cff' : '#5ad8e6')   // core pip / flare
+                ctx.fillRect(mc, my, 1, 1)
+                ctx.fillStyle = '#8b98a2'                                       // corner studs, hardware language
+                ctx.fillRect(tpx + 2, tpy + 3, 1, 1); ctx.fillRect(tpx + TS - 3, tpy + 3, 1, 1)
+                ctx.fillRect(tpx + 2, tpy + TS - 2, 1, 1); ctx.fillRect(tpx + TS - 3, tpy + TS - 2, 1, 1)
+            }
+
             // spawn cave + exit door
             ctx.fillStyle = '#241608'
             ctx.fillRect(meta.spawn.x * TS - 3, (meta.spawn.y - 1) * TS, TS + 6, TS + 2)
@@ -826,6 +876,16 @@ const LemGame = () => {
                 ctx.globalAlpha = Math.max(0, Math.min(1, a))
                 ctx.fillStyle = c.dark ? '#7c4a18' : '#c89050'
                 ctx.fillRect(Math.round(c.x * TS), Math.round(c.y * TS), c.big ? 2 : 1, c.big ? 2 : 1)
+            }
+            ctx.globalAlpha = 1
+
+            // #3879 warp dust: violet at the taken mouth, cyan at the arrival —
+            // the pair's hue carried into the burst, fading on the world clock.
+            for (const p of sparks) {
+                const a = 1 - p.t / p.life
+                ctx.globalAlpha = Math.max(0, Math.min(1, a))
+                ctx.fillStyle = p.hot ? '#b48cff' : '#5ad8e6'
+                ctx.fillRect(Math.round(p.x * TS), Math.round(p.y * TS), 1, 1)
             }
             ctx.globalAlpha = 1
 
