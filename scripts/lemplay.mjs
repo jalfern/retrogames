@@ -32,7 +32,7 @@ const px = () => page.evaluate(() => {
 })
 const wait = ms => page.waitForTimeout(ms)
 const key = k => page.keyboard.press(k)
-const SKILL_KEY = { block: 'Digit1', bomb: 'Digit2', climb: 'Digit3', dig: 'Digit4' }
+const SKILL_KEY = { block: 'Digit1', bomb: 'Digit2', climb: 'Digit3', dig: 'Digit4', float: 'Digit5', build: 'Digit6' }
 
 await page.goto(URL, { waitUntil: 'load' })
 try {
@@ -98,6 +98,7 @@ r.check('a real key leaves attract and starts the run', (await probe()).screen =
 r.info('playing level 1 with the solver only as an aim-bot — keys do everything')
 let assigned = 0
 const done = new Set()
+let sawBuild = false, roadShot = null
 const canvas = await page.evaluate(() => {
     // aim at the DISPLAYED surface (the fit display canvas, or the source
     // canvas pre-fit) — the one a thumb touches; the source fills the
@@ -149,10 +150,10 @@ const at = (x, y) => ({ x: canvas.left + x / 48 * canvas.w, y: canvas.top + (y -
 for (let i = 0; i < 400; i++) {
     const s = await probe()
     if (s.screen !== 'play') break
-    if (assigned >= 4) break
+    if (assigned >= 8) break     // #3866: SPIRE's script ends with a BUILDER now — ride it to the last command
     const h = await hint()
-    if (!h || done.has(h.id)) { await wait(150); continue }
-    done.add(h.id)
+    if (!h || done.has(`${h.id}:${h.skill}`)) { await wait(150); continue }
+    done.add(`${h.id}:${h.skill}`)
     const pt = at(h.x, h.y)
     for (let k = 0; k < 6; k++) {
         await page.mouse.move(pt.x, pt.y)
@@ -165,7 +166,25 @@ for (let i = 0; i < 400; i++) {
     await key('Space')
     const after = await probe()
     const L = after.lemmings.find(l => l.id === h.id)
-    const got = h.skill === 'climb' ? (L && L.climber) : h.skill === 'dig' ? (L && L.digger) : h.skill === 'block' ? (L && L.state === 'block') : true
+    const got = h.skill === 'climb' ? (L && L.climber) : h.skill === 'dig' ? (L && L.digger)
+        : h.skill === 'float' ? (L && L.floater)
+        : h.skill === 'build' ? (L && L.builder)
+        : h.skill === 'block' ? (L && L.state === 'block') : true
+    if (h.skill === 'build') sawBuild = !!got
+    if (after.skills.build < 12) {
+        // planks are landing in the browser sim — sample the wood while the
+        // board shows it (the win scene restarts the attract a beat later)
+        // and keep the fullest frame. Palette: base #a8722f, grain #c89050,
+        // nails #7c4a18, sunlit lip #e6c17c; dirt tops stay dark (#7a4a22).
+        const n = await page.evaluate(() => {
+            const c = document.querySelector('canvas[data-lem-stage]')
+            const d = c.getContext('2d').getImageData(18 * 8, 6 * 8, 22 * 8, 18 * 8).data
+            let n = 0
+            for (let i = 0; i < d.length; i += 4) if (d[i] > 150 && d[i] < 235 && d[i + 1] > 100 && d[i + 1] < 200 && d[i + 2] > 40 && d[i + 2] < 130) n++
+            return n
+        })
+        if (roadShot === null || n > roadShot) roadShot = n
+    }
     if (got || after.skills[h.skill] < s.skills[h.skill]) {
         assigned++
         r.info(`assigned ${h.skill}`, `lem ${h.id} @ ${h.x.toFixed(1)},${h.y.toFixed(1)}`)
@@ -173,7 +192,21 @@ for (let i = 0; i < 400; i++) {
         r.info(`assign missed ${h.skill}`, `lem ${h.id} skills ${JSON.stringify(after.skills)}`)
     }
 }
-r.check('real cursor aiming + real keys assigned solver skills to lemmings', assigned >= 3, `assigned=${assigned}`)
+r.check('real cursor aiming + real keys assigned solver skills to lemmings', assigned >= 4, `assigned=${assigned}`)
+
+// #3866 — the solver spends BUILDER on the descent; the aim-bot just pressed
+// its command through real keys. Two things must be true on the page now:
+// the cargo dropped through the browser sim (wood is being LAID, not just
+// granted), and the laid road paints tan along the spire's east face. The
+// tan count was sampled at the cargo-drop moment inside the drive loop —
+// after the win scene the attract mode restarts the board and the wood is gone.
+{
+    await wait(600)
+    const p = await probe()
+    r.check('#3866: the autopilot BUILDER command rode the player input path (Digit6/Space saw, lemming carries)', sawBuild, `sawBuild=${sawBuild}`)
+    r.check('#3866: the solver-line build spends cargo in the browser sim', p.skills.build < 12, `cargo=${p.skills.build}`)
+    r.check('#3866: the plank road paints on the descent (tan grain on the spire face)', roadShot !== null && roadShot >= 80, `tan px=${roadShot}`)
+}
 
 // riders exit around t=30s of world time; poll generously
 let fin = null

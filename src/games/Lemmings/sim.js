@@ -519,6 +519,13 @@ function blast(g, L) {
 
 function scoreState(g) {
     let s = g.exited * 900 - g.dead * 140
+    // #3866 a plank road IS progress: wood standing in the world means the
+    // crowd's next crossing costs no risk and no skill, so a laid road scores
+    // before the first walker reaches the far side. Sized small — one plank
+    // ≈ one walker's distance gain — so it tips ties toward bridging without
+    // buying cargo burn: unspent supply pays +25 per unit at the level end,
+    // so wood spent for scenery still loses the ledger in the end.
+    for (let i = 0; i < g.grid.length; i++) if (g.grid[i] === PLANK) s += 2
     const e = g.level.exit
     for (const L of g.lemmings) {
         if (!L.live) continue
@@ -527,9 +534,11 @@ function scoreState(g) {
     return s
 }
 
-function candidates(g) {
+export function candidates(g) {
     // Act only where the world refuses to move: a walker stopped by a wall, or
     // one about to shuffle off an edge. Everything else is already progressing.
+    // (Exported so lemcheck can pin the OFFER boundary — what the solver may
+    // even consider — not only what it happens to commit.)
     const out = []
     const seen = new Set()
     const push = (id, skill) => {
