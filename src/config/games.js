@@ -314,14 +314,14 @@ export const GAMES = [
     },
     {
         path: '/lemmings',
-        pad: { method: 'pointer', reads: ['pointer', 'a', 'b'], aLabel: 'ACT', buttons: [{ label: 'BLOCK', code: 'Digit1' }, { label: 'BOMB', code: 'Digit2', pad: 2 }, { label: 'CLIMB', code: 'Digit3', pad: 3 }, { label: 'DIG', code: 'Digit4', pad: 5 }], supports: ['pointer', 'full'], reason: 'pointer default — the pick is a tap on the canvas; full (#3132 chrome audit: skill panel moved to the top edge, clear of the pad zone) = d-pad moves the cursor · ✕ ACT assigns · ○ BLOCK · □ BOMB · △ CLIMB · R DIG', },
+        pad: { method: 'pointer', reads: ['pointer', 'a', 'b'], aLabel: 'ACT', buttons: [{ label: 'BLOCK', code: 'Digit1' }, { label: 'BOMB', code: 'Digit2', pad: 2 }, { label: 'CLIMB', code: 'Digit3', pad: 3 }, { label: 'DIG', code: 'Digit4', pad: 5 }, { label: 'FLOAT', code: 'Digit5', pad: 4 }], supports: ['pointer', 'full'], reason: 'pointer default — the pick is a tap on the canvas; full (#3132 chrome audit: skill panel moved to the top edge, clear of the pad zone) = d-pad moves the cursor · ✕ ACT assigns · ○ BLOCK · □ BOMB · △ CLIMB · R DIG · L FLOAT', },
         builtBy: 'forge',
         added: '2026-10-10',
         component: LemmingsGame,
         label: 'LEMMINGS-LITE',
         theme: 'dark',
-        description: 'They walk, they fall, you decide otherwise. A stream of mindless lemmings shuffles out of a cave toward cliffs, voids and plugged steel doors — one key press assigns a skill to the nearest one: blocker, bomber, climber or digger. Four hand-carved levels, each proven solvable (and each skill proven load-bearing) by a solver that ships in the repo; the attract demo is that solution, replayed move for move. Fatal falls are the killer, and a tunnelling digger is the only safe way down.',
-        controls: ['Press and hold a lemming: a ring previews the pick, release assigns the selected skill (release on nothing does nothing)', 'Tap a skill on the bottom panel (or 1 2 3 4) to pick BLOCKER / BOMBER / CLIMBER / DIGGER', 'Arrows move the assignment cursor, Space assigns (keyboard)', 'PAUSE pauses; hold FF to fast-forward', 'Get at least the OUT quota of lemmings into the door before the clock runs out', WATCH_HELP + ' — the solver that audits every level assigns the skills', '?: Pause and read the controls']
+        description: 'They walk, they fall, you decide otherwise. A stream of mindless lemmings shuffles out of a cave toward cliffs, voids and plugged steel doors — one key press assigns a skill to the nearest one: blocker, bomber, climber, digger or floater. Four hand-carved levels, each proven solvable (and each skill proven load-bearing) by a solver that ships in the repo; the attract demo is that solution, replayed move for move. Fatal falls are the killer, and a tunnelling digger or an open parachute is the way down alive.',
+        controls: ['Press and hold a lemming: a ring previews the pick, release assigns the selected skill (release on nothing does nothing)', 'Tap a skill on the bottom panel (or 1 2 3 4 5) to pick BLOCKER / BOMBER / CLIMBER / DIGGER / FLOATER', 'Arrows move the assignment cursor, Space assigns (keyboard)', 'PAUSE pauses; hold FF to fast-forward', 'Get at least the OUT quota of lemmings into the door before the clock runs out', WATCH_HELP + ' — the solver that audits every level assigns the skills', '?: Pause and read the controls']
     },
     {
         path: '/boulder-dash',
