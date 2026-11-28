@@ -170,7 +170,14 @@ const SimCityMinGame = () => {
                 ctx.fillRect(px + 3 + (tileRand(x, y, 1) % 9), py + 5 + (tileRand(x, y, 2) % 6), 6, 2)
                 ctx.fillStyle = '#3f7fae'
                 ctx.fillRect(px + 9 + (tileRand(x, y, 3) % 7), py + 15 + (tileRand(x, y, 4) % 7), 9, 2)
-                if ((x + y + Math.floor(tk / 30)) % 7 === 0) { ctx.fillStyle = '#5497c4'; ctx.fillRect(px + 6, py + 12, 10, 2) }
+                // a slow 2-frame shimmer: the glint drifts between two
+                // columns/rows every 24 ticks (~0.4 s) and changes tone, so
+                // the river visibly breathes on top of the static ripples.
+                const ph = Math.floor(tk / 24) % 2
+                if ((x + y + Math.floor(tk / 12)) % 4 === 0) {
+                    ctx.fillStyle = ph === 0 ? '#5497c4' : '#4e8bb8'
+                    ctx.fillRect(px + (ph === 0 ? 4 : 8), py + (ph === 0 ? 9 : 15), 11, 2)
+                }
                 return
             }
             if (c.t === T.ROCK) {

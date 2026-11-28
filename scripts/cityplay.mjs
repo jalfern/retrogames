@@ -160,6 +160,35 @@ if (greens.length) {
     const g1 = await tileSig(gx, gy)
     r.check('the grain is deterministic — the same grass tile paints the same pixels (no gambling)', !!g0 && !!g1 && g0.sig === g1.sig)
 }
+// 3c — the river SHIMMERS: the glint drifts/offsets every 24 ticks (~0.4 s),
+// so the water region must read differently two sim-frames apart. Visual
+// layer only — the sim is untouched; this pins the symptom, not the code.
+const waterBounds = await page.evaluate(() => {
+    const out = []
+    for (let y = 0; y < 16; y++) for (let x = 0; x < 24; x++) {
+        const c = window.__scTest.probe().cellAt(x, y)
+        if (c && c.t === 1) out.push({ x, y })
+    }
+    if (!out.length) return null
+    const xs = out.map(c => c.x), ys = out.map(c => c.y)
+    return { x: Math.min(...xs) * 28, y: Math.min(...ys) * 28, w: (Math.max(...xs) - Math.min(...xs) + 1) * 28, h: (Math.max(...ys) - Math.min(...ys) + 1) * 28 }
+})
+const hashWater = () => page.evaluate((r) => {
+    const c = document.querySelector('canvas[data-sc-stage]')
+    const ctx = c.getContext('2d')
+    const d = ctx.getImageData(r.x, r.y, r.w, r.h).data
+    let h = 0
+    for (let i = 0; i < d.length; i += 4) h = (h * 33 + d[i] + d[i + 2] * 7) >>> 0
+    return h
+}, waterBounds)
+let w1 = null, w2 = null
+if (waterBounds) {
+    w1 = await hashWater()
+    const tick0 = (await probe()).tick
+    for (let i = 0; i < 60 && (await probe()).tick - tick0 < 25; i++) await wait(120)
+    w2 = await hashWater()
+}
+r.check('the river shimmers (water region differs across 25+ sim ticks)', !!waterBounds && w1 !== w2, `h ${w1} -> ${w2}`)
 
 // 4 — power is wired: the plant lights the road graph it touches. Sweep for
 // grass the keys can actually build on — the map is allowed to say no, and
