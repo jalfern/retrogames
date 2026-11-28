@@ -781,6 +781,26 @@ section('D. statepark — race-proof STATE.md handoff (#1430)')
         && flagshipStage({ gapsByGame: RG, qaIssues: [], buildingQa: heldGames([{ title: 'POLISH — R-TYPE: Options pods' }]) }) === null
         && flagshipStage({ gapsByGame: RG, qaIssues: [], buildingQa: [] }).index === 0,
         'F6 fixture: a live building issue naming R-TYPE holds the title and the stage dies with it; unheld, the same gaps still kick')
+    // F7/F8 — #3836: the guard itself must RUN. gh's own --jq is gojq (RE2):
+    // it rejects the (?! releases clause, the parse error died in /dev/null,
+    // and the #2797 skip failed OPEN for its whole life — 2026-11-28 02:05Z a
+    // phantom kick landed slot a on held #3827 while b pushed 13 min earlier.
+    // F1-F3 pinned the regex STRING; presence is not executability. F7 pins
+    // the ENGINE (system jq pipe; the lookaround lives inside it; the kick-site
+    // URL is off --jq). F8 pins fail-CLOSED: pipefail + empty-verdict skip —
+    // dead eyes must not read as "free". Fixture-proven both directions:
+    // origin/main's query answers HOLDER=- to a live-held fixture; the fixed
+    // one answers the holder, and skips when gh dies.
+    const hqBlock = (warden.match(/HQ=\$\(set -o pipefail;[\s\S]*?\|\| HQ=""/) || [''])[0]
+    ok(/per_page=100" \| jq -rs/.test(hqBlock)
+        && !/--jq/.test(hqBlock)
+        && (hqBlock.match(/\(\?!/g) || []).length === 1,
+        'F7 the liveness program runs under system jq — gh --jq is gojq/RE2 and dies on lookahead, silently failing the skip open (#3836)')
+    ok(/HQ=\$\(set -o pipefail;/.test(warden) && /\|\| HQ=""/.test(warden)
+        && /if \[\[ -z "\$HQ" \]\]/.test(warden)
+        && warden.indexOf('holder-query-failed') > -1
+        && warden.indexOf('holder-query-failed') < warden.indexOf('kicked a session'),
+        'F8 kick_slot fails CLOSED: gh-or-jq death yields no verdict and skips the kick, never defaulting to "no holder" (#3836)')
 }
 
 // ---- G. SLOT LIVENESS BEYOND PGREP/PORT (#3419) --------------------------

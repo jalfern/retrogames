@@ -490,15 +490,37 @@ main() {
         # A dead holder (>90 min silent) still kicks — that is the step-1b
         # corpse path, deliberately untouched; #3072 only stops the kick when
         # the "dead" holder is provably alive.
-        local KICKS HOLDER HAGE
-        read -r KICKS HOLDER HAGE <<<"$(gh api "repos/$GH/issues/$n/comments?per_page=100" --jq '
-            [.[] | .body] as $b
+        # #3836: the liveness program must run under SYSTEM jq, not gh's own
+        # --jq. gh ships gojq (RE2), which rejects the lookahead releases clause
+        # outright — the parse error died in 2>/dev/null, HOLDER defaulted to
+        # "-", and the #2797 skip failed OPEN: 2026-11-28 02:05Z the warden
+        # kicked slot a at #3827 while slot b was live inside it (checkpoint
+        # 31 min old, branch pushed 13 min earlier) — the exact mirror the
+        # #2917/#2919 postmortem describes, surviving its own fix because
+        # claimcheck/lanecheck pinned the regex STRING, never its engine.
+        # forge-claim.sh holder() had it right all along: pipe to jq. The
+        # program always prints a line now, so EMPTY output or a NON-ZERO pipe
+        # means the query itself failed (gh network death included — jq alone
+        # would happily print "no claim" on dead stdin, re-opening the hole):
+        # a failed query must fail CLOSED, a skipped kick retries next tick, a
+        # phantom kick burns a lane.
+        local KICKS HOLDER HAGE HQ
+        HQ=$(set -o pipefail; gh api --paginate "repos/$GH/issues/$n/comments?per_page=100" | jq -rs '
+            (add // [])
+            | [.[] | .body] as $b
             | ($b | (map(startswith("WARDEN") | not) | rindex(true)) as $last
                | $b[(($last // -1) + 1):] | map(select(startswith("WARDEN: builder '"$s"' idle"))) | length) as $kicks
             | ([.[] | select(.body | test("^(QA|FORGE) \\([a-z0-9-]+\\): (?!yielding|claim dead|waiting on Jon)"))] | last) as $q
             | ([.[] | select(.body | test("^(QA|FORGE) \\([a-z0-9-]+\\): claimed"))] | last) as $c
             | if $c == null or $q == null then "\($kicks) - 999"
-              else "\($kicks) \($c.body | capture("^(QA|FORGE) \\((?<name>[a-z0-9-]+)\\)").name) \(((now - ($q.created_at | fromdateiso8601)) / 60) | floor)" end' 2>/dev/null)"
+              else "\($kicks) \($c.body | capture("^(QA|FORGE) \\((?<name>[a-z0-9-]+)\\)").name) \(((now - ($q.created_at | fromdateiso8601)) / 60) | floor)" end') || HQ=""
+        if [[ -z "$HQ" ]]; then
+            log "#$n: slot $s skip-kick — holder query failed (gh/jq silent), failing closed (#3836)"
+            ACTIONS+=("holder-query-failed:$s")
+            if [[ "$s" == a ]]; then A_TARGET=""; else B_TARGET=""; fi
+            return 0
+        fi
+        read -r KICKS HOLDER HAGE <<<"$HQ"
         KICKS=${KICKS:-0}; HOLDER=${HOLDER:--}; HAGE=${HAGE:-999}
         if [[ "$HOLDER" != "-" && "$HOLDER" != "$s" && "$HAGE" -lt 90 ]]; then
             log "#$n: slot $s skip-kick — target held by $HOLDER (${HAGE}m < 90m), live on the other slot (#2797)"
