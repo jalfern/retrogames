@@ -447,17 +447,17 @@ const PolarityGame = () => {
             <div ref={stageRef} className="absolute inset-0 flex items-center justify-center" />
 
             <div className={`absolute inset-0 pointer-events-none transition-opacity duration-300 ${play ? 'opacity-100' : 'opacity-0'}`}>
-                <div className="absolute top-2 left-3 right-3 flex items-center gap-3 text-white font-mono text-xs">
+                <div className="absolute flex items-center gap-3 text-white font-mono text-xs" style={{ top: 'calc(4.9rem + var(--sat, 0px))', left: 'calc(0.75rem + var(--sal, 0px))', right: 'calc(0.75rem + var(--sar, 0px))' }}>
                     <span ref={setHud('wave')} className="border border-sky-300/60 text-sky-200 px-2 py-0.5 rounded bg-black/40">1</span>
                     <span className="text-red-300 text-sm font-bold">★ <span ref={setHud('lives')}>★★</span></span>
                     <span ref={setHud('pol')} className="font-bold">LIGHT</span>
                     <span className="ml-auto text-xl font-bold" style={{ textShadow: '0 2px 5px #000' }}><span ref={setHud('score')}>000000</span></span>
                     <span className="text-yellow-200/70"><span ref={setHud('hiscore')}>000000</span></span>
                 </div>
-                <div className="absolute top-9 left-3 w-28 h-1.5 bg-white/15 rounded overflow-hidden">
+                <div className="absolute w-28 h-1.5 bg-white/15 rounded overflow-hidden" style={{ top: 'calc(6.6rem + var(--sat, 0px))', left: 'calc(0.75rem + var(--sal, 0px))' }}>
                     <div ref={setHud('charge')} className="h-full bg-cyan-300 transition-all duration-150" style={{ width: '0%' }} />
                 </div>
-                <div ref={setHud('nova')} className="absolute top-20 left-3 text-cyan-200 font-mono text-[10px] font-bold animate-pulse transition-opacity" style={{ opacity: 0 }}>NOVA READY — FLIP</div>
+                <div ref={setHud('nova')} className="absolute text-cyan-200 font-mono text-[10px] font-bold animate-pulse transition-opacity" style={{ top: 'calc(7.4rem + var(--sat, 0px))', left: 'calc(0.75rem + var(--sal, 0px))', opacity: 0 }}>NOVA READY — FLIP</div>
                 <div ref={setHud('toast')} className="absolute inset-x-0 top-1/3 text-center text-cyan-100 font-mono font-bold text-xl transition-opacity duration-500" style={{ opacity: 0, textShadow: '0 0 12px #0af' }} />
             </div>
 
@@ -496,7 +496,7 @@ const PolarityGame = () => {
                 </div>
             )}
             {play && !paused && (
-                <div className="absolute z-50 pointer-events-auto" style={{ top: 'calc(3.5rem + var(--sat, 0px))', right: 'calc(0.75rem + var(--sar, 0px))' }}>
+                <div className="absolute z-50 pointer-events-auto" style={{ top: 'calc(7.4rem + var(--sat, 0px))', right: 'calc(0.75rem + var(--sar, 0px))' }}>
                     <WatchButton on={watching} />
                 </div>
             )}
