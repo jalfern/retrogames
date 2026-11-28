@@ -155,19 +155,22 @@ for (let i = 0; i < LEVELS.length; i++) {
         ok(snap && snap.s1 === sim.STEEL && snap.s2 === sim.STEEL,
             'a bomb chewed steel — the door puzzles depend on steel surviving')
     }
-    // fatal vs safe falls
+    // fatal vs safe falls — ABSOLUTE pins (#3849): the original kills past ~3
+    // tiles. The old fatal pin read `CFG.maxFall + 1`, so it stayed green even
+    // at the old value of 7 — a relative pin cannot catch the value drifting.
+    // 4 tiles MUST die, a stepped-down fall MUST land within 3.
     {
         const g = mk()
         for (let t = 0; t < 60; t++) sim.step(g)
         const L = g.lemmings[0]
-        L.state = 'fall'; L.fallDist = sim.CFG.maxFall + 1; L.vy = 8
+        L.state = 'fall'; L.fallDist = 4; L.vy = 8
         L.x = 4.5; L.y = 22.5
         for (let t = 0; t < 60; t++) sim.step(g)
-        ok(L.state === 'dead', 'a fall past the safe distance did not kill — maxFall is decoration')
+        ok(L.state === 'dead', '#3849: a 4-tile fall survived — the original kills past 3, maxFall drifted')
         const g2 = mk()
         for (let t = 0; t < 60; t++) sim.step(g2)
         const S = g2.lemmings[0]
-        S.state = 'fall'; S.fallDist = 3; S.vy = 8; S.x = 4.5; S.y = 22.5
+        S.state = 'fall'; S.fallDist = 1; S.vy = 8; S.x = 4.5; S.y = 22.5
         for (let t = 0; t < 30; t++) sim.step(g2)
         ok(S.live && S.state !== 'dead', 'a short fall killed — walkers cannot survive their own terrain')
     }
@@ -510,6 +513,15 @@ if (MUT) {
     }
     tryMut('climbSp = 0 (no handhold)', c => { c.climbSp = 0 }, () => runSolver(0).win)
     tryMut('maxFall = 0 (every hop splats)', c => { c.maxFall = 0 }, () => runSolver(0).win)
+    tryMut('maxFall = 7 (drift back to the pre-#3849 laxity)', c => { c.maxFall = 7 }, () => {
+        const { meta, grid } = buildLevel(0)
+        const g = sim.makeGame(meta, grid)
+        for (let t = 0; t < 60; t++) sim.step(g)
+        const X = g.lemmings[0]
+        X.state = 'fall'; X.fallDist = 4; X.vy = 8; X.x = 4.5; X.y = 22.5
+        for (let t = 0; t < 60; t++) sim.step(g)
+        return X.state === 'dead'   // 4 tiles must kill; at 7 it splats-free → probe false → caught
+    })
     tryMut('blast = 0.6 (door never opens)', c => { c.blast = 0.6 }, () => runSolver(2).win)
     tryMut('digSp = 0 (massif stays shut)', c => { c.digSp = 0 }, () => runSolver(1).win)
     tryMut('floatSp = fallSp (parachute is paper)', c => { c.floatSp = c.fallSp }, () => {
