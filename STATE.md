@@ -1,56 +1,55 @@
-# STATE — forge board snapshot (slot b, 2026-11-28 — FLOATER shipped; red main #3837 cleared; shelf dry again)
+# STATE — forge board snapshot (slot a, 2026-11-28 — OH-NO! cry shipped `e140435`)
 
-## This session (slot b)
-- **SHIPPED: LEMMINGS-LITE FLOATER** (#3827 → PR #3833, main `f5f3a5f`) — never-dry
-  stage from the warden kick (`KICK LEMMINGS-LITE -1 weak`). Parachute: descent capped
-  2.6 vs 8.5, no fatal landings, flag-for-life + #422 re-grant guard, striped canopy
-  drawn while walking (original), Digit5/L1/panel, deploy swoosh + soft-landing blip,
-  2 floaters/level as player-side slack (solver never offered float → all proofs/slack
-  ride the four original mechanics). lemcheck 151/151 + mutation 171/171 (new
-  floatSp pin, caught; immunity clause hand-killed → red → restored). lemplay green
-  runs + canopy pixel proof. Live: https://jalfern.com/retrogames/lemmings
-- **Red main cleared (#5a):** `static` was failing at main — #3826/#3830 parked
-  Polarity + MissileBattle WATCH pills at 7.4rem below the 6.75rem toast default →
-  #1653 pill/toast law violated ×8. Filed #3837, fixed (toasts → 10.75rem riding
-  --sat, Emberwood precedent), watchpillcheck 229/229, **merged #3838** before mine.
-- **Never-dry kick traced as phantom** and evidence posted on #3440: the kick's score
-  came from #3825's body saying "per the Lemmings/LodeRunner convention" — a whole-word
-  *style reference* in another game's issue (#3788 family, title-only naming proposed).
-- **Lemmings README written** (was missing), merged with slot a's water notes; honest
-  gaps now: BUILDER, waking blockers, tight maxFall, float-dig vs tunnel-digger,
-  attract never parachutes, static ponds, oh-no cry.
-- **lemplay water-aware hardening** (one timing PR, per AGENTS #3): pond check
-  tolerates FF outrunning the probe (caught-over iff dead===drowned && cmds===0);
-  pickPair bounds to eastbound open-plain walkers; press/slide freshness-poll.
-  **Residual live-target nearest-flip filed as #3841** (lane:platform) with repro.
+## This session (slot a) — the never-dry rung, taken and shipped
+- Normal ladder dry, verified honest: no halt/steer; `next` #1712 carries
+  waiting-jon → skipped; game-queue empty; feedback #2971/#3244 both waiting-jon;
+  QA MASTER live → no borrow; flagship rung spent (all six flagship READMEs gap-free).
+- Never-dry: `weakestStage` = LEMMINGS-LITE score 7 (7 unowned README gaps) — the
+  slot note's "0 weak" was stale: FLOATER (`f5f3a5f`) had just unlocked the title.
+- Filed POLISH #3844 claiming the CHEAPEST unowned gap, not the oldest: BUILDER and
+  blocker-wake each need solver re-size, and the handoff said size them before
+  claiming. Claimed #3844, shipped PR #3847 → squash `e140435`.
+- The game: a shared two-syllable OH-NO! sawtooth wail answers every death BATCH
+  (fall/drown/bomb — bomb deaths never even had a sting before), and a hand-drawn
+  5×7 bitmap OH NO! sprite pops on the corpse, rising + fading on the world clock,
+  cap 4 oldest-recycled. `kill()` stamps `x,y` on death events (the shape `blast`
+  already carried); `stateHash` untouched, replay determinism unchanged.
+- Proof: lemcheck 157/157 and `--mutate` 177/177; red-proof by stripping the coords
+  stamp (exactly the 3 new coord pins go red, restore green); browser drive on :5173
+  — sprite PAINTED (54 white bitmap px in its native rect), batch of 3 concurrent,
+  zero page/console errors; prod bundle `index-e9dY8tIW.js` carries the glyphs.
 
 ## BOARD facts at close
-- main tip `f5f3a5f` (FLOATER). Merges this slot: #3833 (game), #3838 (chrome fix) —
-  rule-4 streak still 0 (game code shipped).
-- building/building-qa: NONE. game-queue: empty. halt/steer: 0. idle-kick: NONE.
-- feedback open: #3244 (TIDAL RUSH), #2971 (CONTRA) — both waiting-jon.
-- Fresh bugs filed by me: #3837 (closed via #3838), #3841 (open, advisory flake).
+- main tip `e140435`. building: none. building-qa: #3843 BLOB BATTLE.
+  game-queue: empty. halt/steer: 0. Advisory `ci.yml` verify was kicked at the
+  branch (run 46102248589) — advisory only, never awaited.
+- jonq: #3791 AWAITING (deadline 11-29), #3516 AWAITING (deadline 11-28 12:35Z →
+  sweep takes default "done" — leave the Arkanoid texture line).
+- Lemmings' 6 unowned gaps now: BUILDER (oldest), blocker-wake, fatal-fall 7 tiles,
+  float-while-dig, attract-parachute (cheapest — demo shows 4 of 5 skills), static
+  water. Rule-4 streak: reset (game code merged).
 
 ## PLAYABLE on main right now
-- LEMMINGS-LITE — five skills, ponds drown, floaters don't: https://jalfern.com/retrogames/lemmings
-- BUBBLE BOBBLE attract hint; DONKEY KONG fire oil; MINESWEEPER marquee;
-  POLARITY + MISSILE BATTLE with clean toast/pill chrome.
+- LEMMINGS-LITE with the death cry: https://jalfern.com/retrogames/lemmings
+  (every corpse wails and screams OH NO!; FLOATER parachutes; the pond drowns).
+- FireCrew canvas inset below chrome; DK fire oil; MINESWEEPER attract marquee;
+  BUBBLE BOBBLE attract hint; THE BARD'S TALE; PINBALL; SMASH-TV; KOI demo.
 
 ## Open questions (links only — #605)
-- #3791 (dry shelf: which new flagship title? — AWAITING, deadline 11-29;
-  default = hold shelf, shipping only what Jon or QA files).
-- #3516 (Arkanoid art rung, AWAITING, deadline 11-28 ~12:35Z; default = done).
+- #3791 (dry shelf: which new flagship title — AWAITING, deadline 11-29),
+  #3516 (Arkanoid texture rung — AWAITING, defaults done at the sweep).
 
 ## Next claims (for whoever is free)
-1. Re-run the ladder fresh; idle-kick both views + `pgrep -f "QA MASTER"` at open.
-   If NONE: STOP is legal — the shelf is honestly dry (my stage consumed the last
-   kick, and that kick itself was phantom). Do NOT re-file #3791 (open, weekly cap).
-2. #3516 default fires tomorrow ~12:35Z; #3791 11-29. Expect dry-but-legal closes
-   until Jon names a flagship.
-3. #3841 is advisory (static never touched it); platform lane's timing work.
+1. LEMMINGS-LITE attract-parachute — cheapest unowned gap; then size BUILDER
+   against the solver before claiming it (placed-cell geometry, re-solve all levels).
+2. #3440 closable by the platform lane (evidence posted; zero comments since).
+3. #3516/#3791: let the sweeps take their defaults; do not re-file.
 
 ## Slot state at handoff
-- Dev server :5178 stopped via `scripts/devstop.sh`; no other lane's port touched.
-- Lane worktree pruned by mergeclean; main checkout detached at `origin/main`.
-- STATE commit to main: this session merged a game → STATE published via its own PR
-  (per #3834 precedent), parked slot-scoped via `statepark.mjs park b` right after writing.
+- :5173 stopped via `scripts/devstop.sh`; other lanes' ports untouched.
+- Worktree `retrogames-forge-lemmings-ohno` hosts this STATE branch — remove after
+  the STATE PR merges (its node_modules is a symlink, dies with it).
+- STATE commits to main because the forge game merged this session (step-9 allowance).
+- Harness fact worth keeping: `jalfern.com/retrogames/` answers 308 — prod bundle
+  polling needs `curl -L`; grepping the redirect body for markers looks like "not
+  deployed" when it's only the canonical-URL redirect.
