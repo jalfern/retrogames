@@ -60,6 +60,12 @@ export const LEVELS = [
             // stragglers walk into the water instead of pacing for free.
             // The spawn→spire route (cols 4+ ground) never touches it.
             for (let x = 0; x <= 3; x++) c.rect(x, 23, x, 24, WATER)
+            // #3859 the bay: the original's boards had ponds EVERYWHERE, and
+            // a level with one pond still lets half the crowd pace dry land.
+            // East of the exit plinth the ground is walk-over-then-drown dead
+            // space — overshoot the door at col 42 without exiting (a bump,
+            // a mis-click, a floater carried past) and the bay takes you.
+            for (let x = 45; x <= 47; x++) c.rect(x, 23, x, 24, WATER)
             return c.g
         },
     },
@@ -67,7 +73,11 @@ export const LEVELS = [
         name: 'THE MASSIF', time: 170,
         spawn: { x: 3.5, y: 23 }, exit: { x: 43, y: 22 },
         spawnCount: 10, spawnEvery: 55, need: 5,
-        skills: { block: 1, bomb: 1, climb: 0, dig: 3, float: 2 },
+        // #3859: the west-foot pond taxes the bounce lane, and holding the
+        // crowd short of the rim is now real work — the solver spends a
+        // blocker there in its winning script, so the level ships two
+        // blockers (one to burn): slack rule, not decoration.
+        skills: { block: 2, bomb: 1, climb: 0, dig: 3, float: 2 },
         proves: ['dig'],
         build() {
             const c = new Carve()
@@ -76,6 +86,14 @@ export const LEVELS = [
             // dirt that takes 21 tiles — the route is a chest-high tunnel and
             // the swarm walks it single file behind one digger
             c.rect(14, 2, 32, 23, DIRT)
+            // #3859 the west foot: the pace-ground west of the massif was
+            // free — bounced walkers shuffle 13 tiles and back forever and
+            // pay nothing. The original's ponds sit on the flat precisely to
+            // tax that dawdle: water at the western wall puts a cost on the
+            // bounce lane (the solver keeps the crowd earning the tunnel
+            // instead of pacing — lemcheck proves its script still delivers
+            // need with slack).
+            for (let x = 0; x <= 2; x++) c.rect(x, 23, x, 24, WATER)
             c.rect(41, 23, 45, 23, DIRT)
             return c.g
         },
@@ -95,6 +113,13 @@ export const LEVELS = [
             // EAST toward the void at col 31 — a blocker at the rim is the
             // only thing standing between the crowd and a very tall drop.
             c.rect(31, 0, W - 1, H - 1, AIR)
+            // #3859 the shore: the void's floor was silent dark — a bounced
+            // lemming walked off the rim and splatted unseen below the map.
+            // The original's pits answer with the drown: fill the void from
+            // the walking row down with open water, so every eastward bounce
+            // pays with the drown's splash, sink and tone at the lip. The
+            // blocker line at col 30 stands on dry steel, unchanged.
+            c.rect(31, 23, W - 1, 26, WATER)
             c.column(20, 0, 21, STEEL)
             c.set(20, 22, DIRT)
             return c.g
@@ -116,6 +141,14 @@ export const LEVELS = [
             // the edge. Take the blocker away and the ledge just drains
             // lemmings into the dark one shuffle at a time.
             c.rect(27, 0, W - 1, H - 1, AIR)
+            // #3859 the shore (same law as THE DOOR): the
+            // shuffle off col 27 used to end in a splat below the map, felt
+            // as a dull thud in the dark. Open water from the walking row
+            // down turns every unblocked shuffle into the original's
+            // signature drown — splash, sink, tone — and the blockers' job
+            // at the rim becomes saving lemmings from the pond, exactly as
+            // the original's ledge-with-water levels read.
+            c.rect(27, 23, W - 1, 26, WATER)
             c.column(8, 0, 21, STEEL)
             c.set(8, 22, DIRT)
             return c.g
