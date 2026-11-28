@@ -490,6 +490,9 @@ const ExcitebikeGame = () => {
         }
         const laneDy = (lane) => (lane || 0) * 16          // #2457: a far line sits higher
         const laneSc = (lane) => 1 - (lane || 0) * 0.10    // and slightly smaller — the NES depth trick
+        // #3883 stagger overlapping name labels: a tight pack stacks its riders'
+        // name tags up in a small column instead of garbling them together.
+        let labelStack = []
         const drawBike = (cx, cy, pitch, p, riderName, lane) => {
             const dy = laneDy(lane); const s = laneSc(lane)
             ctx.save(); ctx.translate(cx, cy - dy); ctx.scale(s, s); ctx.rotate(-pitch)
@@ -507,7 +510,12 @@ const ExcitebikeGame = () => {
             ctx.fillStyle = '#e8c090'; ctx.fillRect(3, -14, 3, 2)       // arm to bars
             ctx.fillRect(5, -13, 2, 5)
             ctx.restore()
-            if (riderName) { ctx.fillStyle = '#f8f8f8'; ctx.font = '7px monospace'; ctx.textAlign = 'center'; ctx.fillText(riderName, cx, cy - dy - 26 * s); ctx.textAlign = 'left' }
+            if (riderName) {
+                let labelY = cy - dy - 26 * s
+                for (const l of labelStack) { if (Math.abs(l.cx - cx) < 34) labelY = Math.min(labelY, l.y - 9) }
+                labelStack.push({ cx, y: labelY })
+                ctx.fillStyle = '#f8f8f8'; ctx.font = '7px monospace'; ctx.textAlign = 'center'; ctx.fillText(riderName, cx, labelY); ctx.textAlign = 'left'
+            }
         }
         const drawRider = (cx, cy, rot, p, lane) => {
             // a rider separated from the bike (#2387 tumble/remount theatre)
@@ -694,6 +702,7 @@ const ExcitebikeGame = () => {
         const drawScene = () => {
             const scr = screenRef.current
             if (scr === 'edit') { vclock++; drawEditor(); return } // #2576 the sim stays parked; the bay breathes on vclock
+            labelStack = [] // #3883 fresh stagger column per frame
             const tr = track(gs.track)
             const camX = Math.max(0, gs.x - 84)
             const sx = shake > 0 ? Math.sin(gs.tick * 3.1) * shake * 0.6 : 0
@@ -1324,7 +1333,7 @@ const ExcitebikeGame = () => {
 
             {/* HUD: NES gauge pod */}
             <div className={`absolute inset-0 pointer-events-none transition-opacity duration-300 ${play ? 'opacity-100' : 'opacity-0'}`}>
-                <div className="absolute top-1 left-1 font-mono text-[10px] leading-tight">
+                <div className="absolute font-mono text-[10px] leading-tight" style={{ top: 'calc(4.75rem + var(--sat, 0px))', left: 'calc(0.75rem + var(--sal, 0px))' }}>
                     <div className="flex gap-1 items-center">
                         <span className="bg-red-700 text-white px-1 rounded-sm border border-white/40"><span ref={setHud('pos')}>1st</span></span>
                         <span className="bg-black/50 text-yellow-200 px-1 rounded-sm">LAP <span ref={setHud('lap')}>1/2</span></span>
@@ -1336,7 +1345,7 @@ const ExcitebikeGame = () => {
                     <div className="text-white/80 mt-0.5" style={{ textShadow: '1px 1px #000' }}>SCORE <span ref={setHud('score')}>000000</span></div>
                 </div>
                 {/* speed dial + heat pod (right) */}
-                <div className="absolute top-1 right-1 flex flex-col items-center gap-1">
+                <div className="absolute flex flex-col items-center gap-1" style={{ top: 'calc(4.75rem + var(--sat, 0px))', right: 'calc(0.75rem + var(--sar, 0px))' }}>
                     <svg width="60" height="46" viewBox="0 0 60 60" className="drop-shadow">
                         <circle cx="30" cy="30" r="26" fill="#0a0a12" stroke="#f8f8f8" strokeWidth="2" />
                         <text x="30" y="12" fill="#f8f8f8" fontSize="7" textAnchor="middle" fontFamily="monospace">MPH</text>
@@ -1363,7 +1372,7 @@ const ExcitebikeGame = () => {
                 window clean of the attract block's bottom anchor; z keeps look) */}
             {screen === 'play' && watching && <WatchToast className="absolute z-50" />}
             {screen === 'play' && !paused && (
-                <div className="absolute z-50 pointer-events-auto" style={{ top: 'calc(3.5rem + var(--sat, 0px))', right: 'calc(0.75rem + var(--sar, 0px))' }}>
+                <div className="absolute z-50 pointer-events-auto" style={{ top: 'calc(13rem + var(--sat, 0px))', right: 'calc(0.75rem + var(--sar, 0px))' }}>
                     <WatchButton on={watching} />
                 </div>
             )}
@@ -1410,7 +1419,7 @@ const ExcitebikeGame = () => {
                             return (
                             <div key={i} className={`flex items-center gap-2 text-sm sm:text-base ${i === sel ? 'text-yellow-300' : 'text-white/85'}`}>
                                 <span className="w-5 text-right"><BikeCursor on={i === sel} /></span>
-                                <span className="w-16 text-right">{i < TRACK_COUNT ? `TRACK ${i + 1}` : `CUSTOM ${i - TRACK_COUNT + 1}`}</span>
+                                <span className="w-20 sm:w-24 text-right whitespace-nowrap">{i < TRACK_COUNT ? `TRACK ${i + 1}` : `CUSTOM ${i - TRACK_COUNT + 1}`}</span>
                                 <span className={`w-32 text-left font-bold ${i === sel ? '' : 'font-normal'}`}>{i < TRACK_COUNT ? trackName(i) : (trackName(i) !== 'CUSTOM' ? trackName(i) : '·  ·  ·  ·  ·')}</span>
                                 {i < TRACK_COUNT ? (
                                     <span className="text-[11px] leading-none tracking-tight" style={{ textShadow: '1px 1px #000' }} aria-label={`grade ${trackBite(i)}`}>
@@ -1435,7 +1444,7 @@ const ExcitebikeGame = () => {
                         {/* #2576 EDIT TRACK — the original's second menu entry: last row, digit 0, or walk the cursor onto it */}
                         <div className={`flex items-center gap-2 text-sm sm:text-base ${sel >= TRACK_COUNT + customs ? 'text-yellow-300' : 'text-white/85'}`}>
                             <span className="w-5 text-right"><BikeCursor on={sel >= TRACK_COUNT + customs} /></span>
-                            <span className="w-16 text-right">EDIT</span>
+                            <span className="w-20 sm:w-24 text-right whitespace-nowrap">EDIT</span>
                             <span className="w-32 text-left font-bold">DESIGN TRACK</span>
                             <span className="text-[11px] leading-none text-cyan-300" aria-label="design your own course">✎ 0</span>
                         </div>
