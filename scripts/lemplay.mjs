@@ -596,6 +596,19 @@ await wait(600)
     await key('KeyM'); await wait(150)
     m = await mute()
     r.check('sound: M unmutes', m.game === false && m.global === false, JSON.stringify(m))
+    // the phone path: the SOUND row on the pause screen does what M does
+    await key('Shift+Slash'); await wait(300)
+    const mb = await page.$('[data-mute]')
+    r.check('sound: the pause screen shows the SOUND row', !!mb)
+    if (mb) {
+        await mb.click(); await wait(200)
+        m = await mute()
+        r.check('sound: SOUND row mutes', m.game === true && m.global === true, JSON.stringify(m))
+        await mb.click(); await wait(200)
+        m = await mute()
+        r.check('sound: SOUND row unmutes', m.game === false && m.global === false, JSON.stringify(m))
+    }
+    await key('Shift+Slash'); await wait(200) // back to the hill
     // the choice outlives the visit: mute, leave the title (SPA route), come
     // back — the mount honours the persisted choice without any key press.
     await key('KeyM'); await wait(150)
