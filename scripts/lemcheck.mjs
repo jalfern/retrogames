@@ -1494,6 +1494,132 @@ section('LOOK (#3879: sloped planks, animated sprites, splintering wood)')
         '#3879: the mat ring froze or never rings — pad launches would be silent scenery')
 }
 
+section('TELEPORTS (#3879: paired mouths, absorbed arrival, trap keeps its law)')
+{
+    const tp1 = buildLevel(1).meta.teleports
+    ok(Array.isArray(tp1) && tp1.length === 2 && tp1.every(p => p.y === 24)
+        && tp1[0].pair === 1 && tp1[1].pair === 0 && tp1[0].x !== tp1[1].x,
+        '#3879: THE MASSIF lost its trench maw pair — the trap is silent steel again')
+    ok(!buildLevel(0).meta.teleports && !buildLevel(2).meta.teleports && !buildLevel(3).meta.teleports,
+        '#3879: maws multiplied off the trench — keep the gadget off SPIRE/DOOR/LEDGE')
+    ok(sim.tpAt(sim.makeGame(buildLevel(2).meta, buildLevel(2).grid), { x: 24.5, y: 23 }) === null,
+        '#3879: tpAt answers on a mouthless level — the gadget leaks into THE DOOR')
+
+    // sandbox: flat floor, a linked pair, walls that keep a body pacing them
+    const lab = (extra) => {
+        const grid = new Uint8Array(sim.W * sim.H).fill(sim.AIR)
+        for (let x = 0; x < sim.W; x++) grid[10 * sim.W + x] = sim.STEEL
+        for (const y of [8, 9]) { grid[y * sim.W + 4] = sim.STEEL; grid[y * sim.W + 13] = sim.STEEL }
+        const meta = {
+            name: 'TP LAB', time: 60, spawn: { x: 2.5, y: 9 }, exit: { x: 40, y: 9 },
+            spawnCount: 0, spawnEvery: 999, need: 1,
+            skills: { block: 0, bomb: 0, climb: 0, dig: 0, float: 0, build: 0 },
+            teleports: [{ x: 8, y: 10, pair: 1 }, { x: 10, y: 10, pair: 0 }], ...extra,
+        }
+        const g = sim.makeGame(meta, grid)
+        sim.spawnLemming(g)
+        const L = g.lemmings[0]
+        return { g, L }
+    }
+    const runs = (g, L, ticks) => {
+        const warps = []
+        for (let t = 0; t < ticks && L.live && !g.end; t++) {
+            sim.step(g)
+            for (const e of g.events) if (e.type === 'tp') warps.push({ t, x: e.x, tx: e.tx })
+        }
+        return warps
+    }
+
+    // a footstep onto a mouth rides it: ONE warp, out the mate, direction and
+    // stride kept (the maw moves the body, the player keeps the tiller).
+    {
+        const { g, L } = lab()
+        L.state = 'walk'; L.x = 6.5; L.y = 10; L.dir = 1
+        const w = runs(g, L, 60)
+        ok(w.length === 1 && w[0].x >= 8 && w[0].x < 9 && Math.abs(w[0].tx - 10.5) < 1e-9,
+            `#3879: crossed the west maw with ${w.length} warps (first ${JSON.stringify(w[0])}) — footstep hook dead or mis-paired`)
+        ok(L.state === 'walk' && L.dir === 1, '#3879: a warped body lost its walk or its direction — strides must survive the ride')
+    }
+
+    // a landing rides it too, and the arrival absorbs a lethal drop — maws
+    // catch what falls in, like the mats do (fallDist wiped, no splat).
+    {
+        const { g, L } = lab()
+        L.state = 'fall'; L.vy = 12; L.fallDist = 8; L.x = 8.5; L.y = 2
+        const w = runs(g, L, 60)
+        ok(L.live && w.length === 1 && Math.abs(L.x - 10.5) < 0.2,
+            `#3879: an 8-cell drop onto a maw gave ${w.length} warps, alive=${L.live} — the arrival must absorb the fall`)
+    }
+
+    // the cooldown: the pace between the two walls re-crosses the near mouth
+    // inside tpHold — that crossing must NOT warp; only after the gate opens
+    // does the pair ride again, so facing maws can never strobe a body.
+    {
+        const { g, L } = lab()
+        L.state = 'walk'; L.x = 6.5; L.y = 10; L.dir = 1
+        const w = runs(g, L, 400)
+        ok(w.length >= 2, `#3879: a pacing body warped ${w.length} times in 400 ticks — the pair went dead or the walls moved`)
+        const gaps = w.slice(1).map((e, i) => e.t - w[i].t)
+        ok(gaps.every(x => x >= sim.CFG.tpHold),
+            `#3879: warp gaps ${JSON.stringify(gaps)} — a re-crossing inside tpHold warped (ping-pong law gone)`)
+    }
+
+    // sky guards: a roofed mouth is dead steel (its own sky AND its mate's —
+    // never spit a body into rock), and so is a mouth under a laid plank —
+    // the structural law that keeps the solver's plank road proof sealed.
+    for (const [name, seal] of [
+        ['own sky', (grid) => { grid[9 * sim.W + 8] = sim.STEEL; grid[8 * sim.W + 8] = sim.STEEL }],
+        ['mate sky', (grid) => { grid[9 * sim.W + 10] = sim.STEEL; grid[8 * sim.W + 10] = sim.STEEL }],
+        ['plank cover', (grid) => { grid[9 * sim.W + 8] = sim.PLANK }],
+    ]) {
+        const { g, L } = lab()
+        seal(g.grid)
+        L.state = 'walk'; L.x = 6.5; L.y = 10; L.dir = 1
+        const w = runs(g, L, 120)
+        ok(w.length === 0 && L.live, `#3879: a maw with ${name} sealed warped ${w.length} times — the guard is gone`)
+    }
+
+    // a broken declaration (self-pair, dangling index) is inert, never a launcher
+    {
+        const { g, L } = lab({ teleports: [{ x: 8, y: 10, pair: 0 }] })
+        L.state = 'walk'; L.x = 6.5; L.y = 10; L.dir = 1
+        ok(runs(g, L, 120).length === 0, '#3879: a self-paired maw warped — pair validation is gone')
+    }
+
+    // THE MASSIF: the proven line never opens a gate (road-wood seals the
+    // mouths AND no script body falls in), and a trap tenant rides the pair —
+    // temper grows, verdict holds: exited stays zero.
+    {
+        const { meta, grid } = buildLevel(1)
+        const r = sim.solve(sim.makeGame(meta, grid))
+        let tpHits = 0
+        sim.replay(meta, grid, r.cmds, { onTick: (g) => { tpHits += g.events.filter(e => e.type === 'tp').length } })
+        ok(tpHits === 0, `#3879: the proven line warped ${tpHits} times — the solver crossed a maw, proofs no longer ride the road`)
+        const runs0 = () => {
+            const trap = sim.makeGame({ ...meta, spawnCount: 0 }, grid)
+            sim.spawnLemming(trap)
+            const L = trap.lemmings[0]
+            L.state = 'fall'; L.vy = 0; L.fallDist = 0; L.x = 38.5; L.y = 22
+            let warps = 0
+            for (let t = 0; t < meta.time * 60 && L.live && !trap.end; t++) { sim.step(trap); warps += trap.events.filter(e => e.type === 'tp').length }
+            return { warps, exited: trap.exited, hash: sim.stateHash(trap) }
+        }
+        const run1 = runs0(), run2 = runs0()
+        ok(run1.warps >= 2, `#3879: a trench tenant warped ${run1.warps} times — the pair is dead inside the trap`)
+        ok(run1.exited === 0 && run2.exited === 0, '#3879: a trench drop exited the level — the maws handed out an escape route')
+        ok(run1.hash === run2.hash && run1.warps === run2.warps, '#3879: the maw pair is nondeterministic — warps must ride the fixed clock')
+    }
+
+    // the gadget is on screen: plates drawn, pulse + flare on the WORLD clock,
+    // dust at both mouths, a voice for the ride.
+    const wsrcT = readFileSync(new URL('../src/games/Lemmings/index.jsx', import.meta.url), 'utf8')
+    ok(/meta\.teleports \|\| \[\]/.test(wsrcT), '#3879: the painter stopped drawing maws — the trench floors blind again')
+    ok(/#7a3fd0/.test(wsrcT) && /#5ad8e6/.test(wsrcT), '#3879: the pair lost its violet/cyan — mouths read as plain steel')
+    ok(/tpPing\[t\.x \+ ',' \+ t\.y\]/.test(wsrcT) && /--tpPing\[k\]/.test(wsrcT),
+        '#3879: the maw flare froze or never fires — warps would be silent scenery')
+    ok(/e\.type === 'tp'/.test(wsrcT) && /warpDust\(e\.tx/.test(wsrcT), '#3879: the tp event lost its sound or its arrival dust')
+}
+
 section('FLOAT-WHILE-DIGGING (#3925: an airborne digger chews straight down)')
 {
     // A dirt column with steel under it; an airborne digger dropped into it must

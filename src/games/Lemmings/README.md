@@ -137,6 +137,12 @@ breakable — every pin here has survived a manual mutation.
 
 ## Honest gaps
 
+- Teleport PAIRS live inside the trench (#3879): mouth-to-mouth shuttles that
+  fling a trap tenant from one wall to the other while the plinth wall keeps
+  its verdict. The original's map-wide teleports — a pair whose two mouths sit
+  on opposite ends of the board, opening shortcuts that re-shape the route —
+  are unowned: they need a board designed around them, where the crossing the
+  solver proves is genuinely decided by the warp rather than sealed under it.
 - Vent wind moves parachutes only (#3879): ground-bound walkers ignore the
   stream, and vents blow forever (no on/off puzzle state). Ground-level drag
   and switched gusts are Lemmings 2 territory and unowned until the family's
@@ -148,6 +154,24 @@ breakable — every pin here has survived a manual mutation.
 
 ## Closed
 
+- #3879 (terrain gadget 3 of 3) — **teleports**: linked maws sunk into the
+  trench floor (`teleports: [{x, y, pair}]`). A body STANDING on a mouth —
+  a walker's footstep, a faller's landing — leaves the surface there and steps
+  off the partner mouth walking, same direction, same stride; the arrival
+  absorbs the fall like a mat does (the maw test runs ahead of the splat
+  verdict, the precedence the mats claimed). Family laws: a maw needs its own
+  sky AND its mate's (a roofed mouth, a mouth under laid plank-wood, or a
+  mouth spilling into rock is dead steel — which is how the plank road the
+  proofs ride seals the pair shut for every crossing), and every warp stamps
+  `CFG.tpHold` ticks of cooldown so facing mouths can never strobe a body.
+  THE MASSIF hosts the first pair inside the trap: what falls in now bounces
+  AND warps, yet the plinth wall still towers two tiles over the floor — the
+  tenant rides the pair, the verdict is the one the trench was carved with,
+  and `proves: dig, build` ride the road byte-identical (lemcheck: the proven
+  script opens zero gates). lemcheck +20 pins (397: pairing law, footstep and
+  landing rides, absorbed lethal drop, cooldown cadence ≥ tpHold, own/mate/
+  plank sky guards, broken pair inert, trap law + determinism, painter);
+  mutant proof: dead `tpAt` reddens 5.
 - #3925 (the dig shaft ports) — **float-while-digging**: an airborne digger that
   meets dirt no longer splats onto it; it chews straight DOWN, one cell per chew at
   the horizontal tunnel's own `digSp` rate, so the shaft follows it to the floor and
