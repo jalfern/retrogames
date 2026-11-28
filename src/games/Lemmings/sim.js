@@ -72,6 +72,15 @@ export const CFG = {
 }
 
 export const SKILLS = ['block', 'bomb', 'climb', 'dig', 'float']
+// The skill a level opens SELECTED (the tutorial reach of the board). Levels
+// may declare it explicitly (#3864: THE SPIRE ships one BLOCKER, but its
+// tutorial arm is still CLIMB); otherwise it is the first skill in SKILLS
+// order with supply. The mount path AND `recmethods` read this single source —
+// a derivation duplicated in the harness silently drifts when a supply dict
+// changes (the SPIRE block:1 collapsed the pointer replay to one tap).
+export const defaultSkill = (level) => (level.defaultSkill && (level.skills[level.defaultSkill] | 0) > 0)
+    ? level.defaultSkill
+    : (SKILLS.find((s) => (level.skills[s] | 0) > 0) || 'climb')
 export const SKILL_KEY = { Digit1: 'block', Digit2: 'bomb', Digit3: 'climb', Digit4: 'dig', Digit5: 'float' }
 export const SKILL_NAME = { block: 'BLOCKER', bomb: 'BOMBER', climb: 'CLIMBER', dig: 'DIGGER', float: 'FLOATER' }
 
@@ -117,7 +126,7 @@ export function makeGame(level, grid) {
         dead: 0,
         drowned: 0,                       // #3828 deaths by water, for HUD/harness honesty
         cursor: { x: 6.5, y: 18 },
-        selected: 'climb',
+        selected: defaultSkill(level),
         skills: { ...level.skills },
         lemmings: [],
         cmds: [],                         // command log: {tick,id,skill} — replay fuel

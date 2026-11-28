@@ -42,6 +42,9 @@ export const LEVELS = [
         // the bounce short of the drown is a tool the player now has. The
         // block is one-shot like the original — climb over your own blocker
         // and the line opens (see sim wakeCheck). Unused supply still scores.
+        // defaultSkill: the tutorial arm stays CLIMB even though BLOCKER now
+        // outscores it in SKILLS order (see sim defaultSkill).
+        defaultSkill: 'climb',
         skills: { block: 1, bomb: 0, climb: 6, dig: 0, float: 2 },
         proves: ['climb'],
         build() {
