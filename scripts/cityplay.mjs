@@ -153,6 +153,49 @@ for (const [gx, gy] of blues) {
 }
 r.check(`the river wears wave texture (${rippleOK}/${blues.length} tiles show ≥3 tones)`, blues.length >= 4 && rippleOK === blues.length)
 r.check(`no two water tiles are twins (${blueSigs.size}/${blues.length} distinct signatures)`, blueSigs.size >= Math.max(2, blues.length - 2))
+// stroke language (#3889): one 1px darker seam on every tile — one voice for
+// the whole frame, the same 1px register the cursor strokes in. The canvas is
+// the only witness; the check fails on a missing seam. One evaluate per cell —
+// the sim is live, so the state and the pixels are sampled atomically and a
+// cell that changed under us is skipped, never mis-graded. The bands below are
+// clean on every cell but the one the cursor strokes plus the two cells its
+// toolname text can reach (skipped just below — never mis-graded). The seam is
+// darker than the interior by (1 - alpha), so a missing seam reads as a ratio
+// of 1.0, a present one as ~0.70.
+const seamPx = (gx, gy) => page.evaluate(([x, y]) => {
+    const c = window.__scTest && window.__scTest.probe().cellAt(x, y)
+    const cv = document.querySelector('canvas[data-sc-stage]')
+    if (!c || !cv) return { torn: true }
+    const ctx = cv.getContext('2d')
+    const seam = ctx.getImageData(x * 28, y * 28 + 2, 1, 24).data
+    let seamSum = 0
+    for (let i = 0; i < seam.length; i += 4) seamSum += seam[i] + seam[i + 1] + seam[i + 2]
+    const interior = ctx.getImageData(x * 28 + 2, y * 28 + 2, 24, 24).data
+    let innerSum = 0
+    for (let i = 0; i < interior.length; i += 4) innerSum += interior[i] + interior[i + 1] + interior[i + 2]
+    return { t: c.t, torn: false, top: seamSum / 24, inner: innerSum / (24 * 24) }
+}, [gx, gy])
+// cursor-proof: the cursor strokes its own cell and its toolname text can
+// reach the cell above and one column over — those three cells are skipped,
+// never mis-graded (the rest of the grid carries no cursor).
+const cur = (await probe()).cursor
+const seamSkip = new Set([`${cur.x},${cur.y}`])
+if (cur.y > 0) {
+    seamSkip.add(`${cur.x},${cur.y - 1}`)
+    seamSkip.add(`${cur.x + 1},${cur.y - 1}`)
+}
+let seamOK = 0
+let seamChecked = 0
+const seamFail = []
+for (const [gx, gy] of [...greens, ...blues]) {
+    if (seamSkip.has(`${gx},${gy}`)) continue
+    const sp = await seamPx(gx, gy)
+    if (!sp || sp.torn || sp.t === undefined) continue
+    seamChecked++
+    if (sp.top <= sp.inner * 0.85) seamOK++
+    else seamFail.push(`(${gx},${gy}) ${sp.top.toFixed(1)}/${sp.inner.toFixed(1)}`)
+}
+r.check(`one stroke language — every tile carries a 1px darker seam (${seamOK}/${seamChecked})`, seamChecked >= 4 && seamOK === seamChecked, seamFail.length ? `missing at ${seamFail.join(', ')}` : '')
 if (greens.length) {
     const [gx, gy] = greens[0]
     const g0 = await tileSig(gx, gy)
