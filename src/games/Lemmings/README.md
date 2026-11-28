@@ -64,6 +64,18 @@ supplies fails the build.
   (persisted in `lemmings.muted`, restored unmuted on exit so the choice
   never leaks onto another game). Every skill's grant has its own voice —
   thunk, hiss, grunt, rumble, swoosh, knock.
+  #3879 LOOK: the painter leans boards into descents — a plank keeps a flat
+  tread (feet land on whole cells; the grid never moves) and drops a nose
+  toward its nearest downhill neighbour, overhanging columns tucked under
+  whatever the row-first scan paints there next. Sprites are the original's
+  little brown figures: hair cap with a flick that flutters mid-stride, a
+  4-frame walk (stride reaches a column past the body, recovery pulls in,
+  body bobs), per-skill poses (digger crouches with a pumping shovel,
+  bomber a fuse spark, faller dangled legs, climber alternating arms), and
+  landings squash for a beat (`squash`, keyed by id, decayed on the WORLD
+  clock like splashes). Wood breaks loudly: a blast that clears PLANK cells
+  throws two-tone chips (mask-before-step compare, gravity, fade) and every
+  laying shakes loose nail-dust.
 - VirtualControls dispatches Arrows/Space; the pad's "A" assigns the selected
   skill; skill buttons ride Digit1–5 / pad slots. DEV hooks:
   `window.__lemTest` (probe/hint/give/teleport/kill) and `exposeGame` per
@@ -96,12 +108,10 @@ breakable — every pin here has survived a manual mutation.
 
 ## Honest gaps
 
-- Sloped-plank look only half-styled: the original's planks lean into a descent
-  at an angle; this engine's grid speaks in whole cells, so a plank adds one
-  level at a time and the road tracks a staircase plank-per-step. A plank
-  cannot span a gap wider than its shelf. The demo shows wood everywhere the
-  solver needs it (#3866 put roads in the attract replays), but the wood sits
-  flat — a sloped sprite per descent direction is unclaimed polish.
+- Planks speak one cell per step: the original's boards span their stair at an
+  angle — the LOOK (#3879) renders that lean (tread + nose toward the downhill
+  neighbour), but the grid stays whole cells, so the road tracks a staircase
+  plank-per-step and a plank cannot span a gap wider than its shelf.
 - Float-while-digging (the original's floating lemming chews straight down
   through dirt while descending) does not port to the horizontal-tunnel digger;
   it needs either a second dig mode or a rethink of the dig model.
@@ -112,6 +122,27 @@ breakable — every pin here has survived a manual mutation.
 
 ## Closed
 
+- #3879 (LOOK slice) — the game moves like the original now: boards LEAN into
+  descents (render-only: flat tread where feet land, nose toward the nearest
+  downhill board at reach 2, overhang tucked under the row-first scan — the
+  grid and every hash ride untouched); sprites are little brown figures (hair
+  cap with a stride-fluttering flick, 4-frame walk with body bob, per-skill
+  poses — pumping digger shovel, fuse-spark bomber, dangled-leg faller,
+  two-arm climber), landings squash on the WORLD clock, the canopy rocks on a
+  three-step drift, and wood splinters: blasts that clear PLANK cells throw
+  arcing two-tone chips (wood mask taken before the step, so dirt blasts stay
+  clean), plank layings shake nail-dust. Honest scope: this engine's digger
+  never chews wood (#3863 rule), so splintering rides the blast — the way
+  wood breaks here; per-plank age would need sim state and is not faked.
+  Harness: lemcheck 314 → **333** (LOOK source-audit: lean reads both
+  directions at reach 2, nose profile, flat branch intact, sprite pose clocks,
+  squash wired on both land events, splinter mask-compare, chips on the world
+  clock), lemplay 66 → **71** (attract SPIRE nose-strip pixels — 32 tan px on
+  the laid chain, deterministic where the replay guarantees the road; stride/
+  recovery foot poses on isolated walkers; live chips and squash counters).
+  Hand mutations: diagonal neighbours blind → audit pin AND attract pixel pin
+  red (nose px=0), restored green; splinter call neutered → splinter pin red,
+  restored green. `--mutate` 355/355.
 - #3892 — the replay phase, honest at last: `replay()` fetched
   `byTick.get(g.tick + 1)`, so every scripted command fired **one tick before**
   the phase `solve()` had verified it in (stamp T applies between the steps;
