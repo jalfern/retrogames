@@ -507,7 +507,7 @@ const IceGame = () => {
             <div ref={stageRef} className="absolute inset-0 flex items-center justify-center" />
 
             <div className={`absolute inset-0 pointer-events-none transition-opacity duration-300 ${play ? 'opacity-100' : 'opacity-0'}`}>
-                <div className="absolute top-2 left-3 right-3 flex items-center gap-3 text-white font-mono text-xs">
+                <div className="absolute flex items-center gap-3 text-white font-mono text-xs" style={{ top: 'calc(4.9rem + var(--sat, 0px))', left: 'calc(0.75rem + var(--sal, 0px))', right: 'calc(0.75rem + var(--sar, 0px))' }}>
                     <span ref={setHud('level')} className="border border-sky-300/60 text-sky-200 px-2 py-0.5 rounded bg-black/40" />
                     <span className="text-red-300 text-sm font-bold">♥ <span ref={setHud('lives')}>3</span></span>
                     <span className="ml-auto text-xl font-bold" style={{ textShadow: '0 2px 5px #000' }}><span ref={setHud('score')}>00000</span></span>
@@ -541,7 +541,7 @@ const IceGame = () => {
             {paused && <PauseOverlay game={GAMES.find(g => g.label === 'ICE CLIMBER CO-OP')} onResume={handleResume} />}
             {/* #1637 WATCH — the solver replays its proven three-mountain route. */}
             {play && watching && (
-                <WatchToast className="absolute z-50" />
+                <WatchToast className="absolute z-50 top-[calc(10.75rem + var(--sat, 0px))]" />
             )}
             {play && planning && (
                 <div className="absolute z-50 top-3 left-1/2 -translate-x-1/2 bg-emerald-500/60 border border-emerald-200 text-emerald-950 font-mono text-[11px] font-bold tracking-widest px-3 py-1 rounded-full shadow-lg pointer-events-none whitespace-nowrap animate-pulse">
@@ -555,7 +555,7 @@ const IceGame = () => {
                 </div>
             )}
             {play && !paused && (
-                <div className="absolute z-50 pointer-events-auto" style={{ top: 'calc(3.5rem + var(--sat, 0px))', right: 'calc(0.75rem + var(--sar, 0px))' }}>
+                <div className="absolute z-50 pointer-events-auto" style={{ top: 'calc(7.4rem + var(--sat, 0px))', right: 'calc(0.75rem + var(--sar, 0px))' }}>
                     <WatchButton on={watching} />
                 </div>
             )}
