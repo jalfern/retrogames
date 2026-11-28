@@ -389,21 +389,46 @@ const FourHallsGame = () => {
 
             drawPanel()
 
-            // narrator strip
+            // narrator strip — Gauntlet law: 1UP left, HI right, the level
+            // name centered in the free zone between them (shrunk to fit), no
+            // shared zone in row 2, and the toast rides the bottom of the maze
+            // view as a pill — never over the HUD band.
             ctx.fillStyle = '#07070f'
             ctx.fillRect(0, VH, CW, HT)
             ctx.strokeStyle = '#2b3348'
             ctx.strokeRect(0.5, VH + 0.5, CW - 1, HT - 1)
-            text(LEVELS[gs.level].name, CW / 2, VH + 12, 7, '#8fa3d8')
-            text(`1UP ${String(gs.score).padStart(6, '0')}`, 12, VH + 12, 8, '#ff5d5d', 3, 'left')
-            text(`HI ${String(Math.max(gs.score, board()[0]?.score || 0)).padStart(6, '0')}`, VW - 12, VH + 12, 8, '#ffd23f', 3, 'right')
+            const oneUp = `1UP ${String(gs.score).padStart(6, '0')}`
+            const hi = `HI ${String(Math.max(gs.score, board()[0]?.score || 0)).padStart(6, '0')}`
+            ctx.font = 'bold 8px monospace'
+            const leftEdge = 12 + ctx.measureText(oneUp).width + 8
+            ctx.font = 'bold 7px monospace'
+            const rightEdge = VW - 12 - ctx.measureText(hi).width - 8
+            let lvlSize = 7
+            ctx.font = `bold ${lvlSize}px monospace`
+            while (lvlSize > 4 && ctx.measureText(LEVELS[gs.level].name).width > rightEdge - leftEdge) {
+                lvlSize--
+                ctx.font = `bold ${lvlSize}px monospace`
+            }
+            text(oneUp, 12, VH + 12, 8, '#ff5d5d', 3, 'left')
+            text(hi, VW - 12, VH + 11, 7, '#ffd23f', 3, 'right')
+            text(LEVELS[gs.level].name, (leftEdge + rightEdge) / 2, VH + 12, lvlSize, '#8fa3d8')
             for (let i = 0; i < gs.lives; i++) {
                 ctx.fillStyle = '#ff5d5d'
-                ctx.beginPath(); ctx.arc(12 + i * 11, VH + 28, 4, 0, Math.PI * 2); ctx.fill()
+                ctx.beginPath(); ctx.arc(12 + i * 11, VH + 27, 3.5, 0, Math.PI * 2); ctx.fill()
             }
-            text(`KEYS ${gs.keys}`, VW - 118, VH + 28, 8, '#ffd23f', 2, 'left')
-            text(`LVL ${gs.level + 1}/4`, VW - 12, VH + 28, 8, '#8fb0ff', 2, 'right')
-            if (toast > 0) { text(toastMsg, CW / 2, VH + 34, 10, '#e9f7ff', 6); toast-- }
+            text(`LVL ${gs.level + 1}/4`, VW - 12, VH + 27, 7, '#8fb0ff', 2, 'right')
+            if (toast > 0) {
+                toast--
+                ctx.font = 'bold 9px monospace'
+                const bw = ctx.measureText(toastMsg).width + 18
+                const bh = 13
+                const bx = (VW - bw) / 2, by = VH - 16
+                ctx.fillStyle = 'rgba(5,5,14,0.92)'
+                ctx.fillRect(bx, by, bw, bh)
+                ctx.strokeStyle = '#2b3348'
+                ctx.strokeRect(bx + 0.5, by + 0.5, bw - 1, bh - 1)
+                text(toastMsg, VW / 2, by + 9, 9, '#e9f7ff', 6)
+            }
 
             const sc = screenRef.current
             if (sc === 'attract' || sc === 'select') {
@@ -445,7 +470,7 @@ const FourHallsGame = () => {
                 ctx.fillRect(0, 0, CW, CH)
                 text(gs.end === 'win' ? 'ALL FOUR HALLS ARE DONE!' : 'THE HALLS CLAIM YOU', CW / 2, 96, 18, gs.end === 'win' ? '#5dff8f' : '#ff5d5d', 10)
                 text(`SCORE ${String(gs.score).padStart(6, '0')}  GOLD ${gs.gold}`, CW / 2, 122, 10, '#ffd23f', 4)
-                text(gs.end === 'win' ? `${HEROES[gs.heroKey].WHO} SURVIVES ALL FOUR MAZES` : `${HEROES[gs.heroKey].WHO} IS DEAD`, CW / 2, 140, 8, '#8fa3d8')
+                text(gs.end === 'win' ? `${HEROES[gs.heroKey].who} SURVIVES ALL FOUR MAZES` : `${HEROES[gs.heroKey].who} IS DEAD`, CW / 2, 140, 8, '#8fa3d8')
                 if (Math.floor(gs.tick / 24) % 2 === 0) text('PRESS ANY KEY', CW / 2, 168, 9, '#e9f7ff', 4)
             }
             ctx.fillStyle = 'rgba(0,0,0,0.12)'
@@ -483,7 +508,7 @@ const FourHallsGame = () => {
             gs.partnerOn = pOn
             watchingRef.current = false; setWatching(false) // #1637 a new delve starts in your hands
             setMode('play')
-            say(`${HEROES[hk].WHO} ENTERS THE ${LEVELS[0].name.replace(/^LEVEL 1 · /, '')}`)
+            say(`${HEROES[hk].who} ENTERS THE ${LEVELS[0].name.replace(/^LEVEL 1 · THE /, '')}`)
             audioController.playSweep(330, 660, 0.25, 'square', 0.07)
         }
         const onKeyDown = (ev) => {
