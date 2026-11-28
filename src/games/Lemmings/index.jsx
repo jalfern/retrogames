@@ -138,6 +138,7 @@ const LemGame = () => {
         const cries = []                          // #3844 OH NO! sprites: {x,y,t}
         const chips = []                          // #3879 splinters/nail-dust: {x,y,vx,vy,t,life,dark,big}
         const squash = {}                         // #3879 landing squash: lemming id → world ticks left
+        const padPing = {}                        // #3879 trampoline: "x,y" → world ticks of ring left
         const SQUASH_LIFE = 6
         // #3879: wood one tick old — a blast's events arrive after the grid has
         // already cleared, so splinters spawn exactly at the cells that WERE wood.
@@ -205,6 +206,7 @@ const LemGame = () => {
             cries.length = 0                          // #3844 nor ghost wails
             chips.length = 0                          // #3879 nor ghost splinters
             for (const k of Object.keys(squash)) delete squash[k]   // #3879 nor stale squashes
+            for (const k of Object.keys(padPing)) delete padPing[k]   // #3879 nor ringing mats
             watchingRef.current = false; setWatching(false)
             abortGesture()                        // no press from the previous run survives into this one
         }
@@ -289,6 +291,14 @@ const LemGame = () => {
                 else if (e.type === 'plank') { audioController.playTone(190, 0.05, 'square', 0.06); audioController.playNoise(0.03, 0.02); splinterLay(e.x, e.y) }
                 else if (e.type === 'land') { audioController.playTone(120, 0.05, 'triangle', 0.04); squash[e.id] = SQUASH_LIFE }   // #3879 knees bend on touchdown
                 else if (e.type === 'landsoft') { audioController.playTone(200, 0.07, 'sine', 0.035); squash[e.id] = SQUASH_LIFE }
+                // #3879 TRAMPOLINE: the spring's rising twang over a cloth pluck —
+                // a BOING that walks up the scale, the toy's whole personality in
+                // two layers, plus the mat's ring on the world clock.
+                else if (e.type === 'pad') {
+                    audioController.playSweep(240, 720, 0.16, 'triangle', 0.08)
+                    audioController.playTone(920, 0.05, 'sine', 0.04)
+                    padPing[Math.floor(e.x) + ',' + Math.floor(e.y)] = 10
+                }
                 else if (e.type === 'step') audioController.playTone(220, 0.03, 'triangle', 0.025)
                 else if (e.type === 'stepdown') audioController.playTone(155, 0.035, 'triangle', 0.022)   // #3908: the stair is walked — a heel-plant below the mount chirp
                 else if (e.type === 'crest') audioController.playTone(880, 0.07, 'sine', 0.05)
@@ -354,6 +364,7 @@ const LemGame = () => {
             // squashed landings hold a beat and relax.
             for (let i = chips.length - 1; i >= 0; i--) { const c = chips[i]; c.t++; c.x += c.vx; c.y += c.vy; c.vy += 0.035; if (c.t > c.life) chips.splice(i, 1) }
             for (const k of Object.keys(squash)) { if (--squash[k] <= 0) delete squash[k] }
+            for (const k of Object.keys(padPing)) { if (--padPing[k] <= 0) delete padPing[k] }   // #3879 mats ring on the WORLD clock
             const wm = woodMask()               // #3879 wood as it stands BEFORE this tick's step
             if (screenRef.current === 'attract') {
                 // attract = the solver's proven script, replayed on screen.
@@ -611,6 +622,29 @@ const LemGame = () => {
                     ctx.fillRect(pxs, vy - TS + 4 + (j % 2) * 3, 4, 1)         // upper row dashes
                     ctx.fillRect(pxs - d * 5, vy + 9 + (j % 2) * 3, 3, 1)      // lower row, staggered
                 }
+            }
+
+            // #3879 TRAMPOLINES: trench-floor mats in the vent's hardware
+            // language — steel frame legs, twin zigzag springs, and one
+            // saturated red deck whose centre sags under its own span. A mat
+            // still ringing from a launch dips a pixel deeper (padPing rides
+            // the WORLD clock, so FF and replay animate it with the sim).
+            // Drawn with the scenery pass, before bodies: a lemming thrown
+            // from a mat passes in FRONT of its springs.
+            for (const p of (meta.trampolines || [])) {
+                const ppx = p.x * TS, ppy = p.y * TS
+                const dip = (padPing[p.x + ',' + p.y] || 0) > 0 ? 1 : 0
+                ctx.fillStyle = '#3a444d'                                       // frame legs
+                ctx.fillRect(ppx + 1, ppy + 2, 2, TS - 2); ctx.fillRect(ppx + TS - 3, ppy + 2, 2, TS - 2)
+                ctx.fillStyle = '#8b98a2'                                       // twin springs
+                ctx.fillRect(ppx + 4, ppy + 5, 3, 1); ctx.fillRect(ppx + 6, ppy + 7, 3, 1)
+                ctx.fillRect(ppx + TS - 7, ppy + 5, 3, 1); ctx.fillRect(ppx + TS - 4, ppy + 7, 3, 1)
+                ctx.fillStyle = '#8f1f28'                                       // deck under-lip
+                ctx.fillRect(ppx, ppy + 3 + dip, TS, 2)
+                ctx.fillStyle = '#c8323c'                                       // the red deck
+                ctx.fillRect(ppx, ppy + 1 + dip, TS, 2)
+                ctx.fillStyle = '#e85a64'
+                ctx.fillRect(ppx + 2, ppy + 1 + dip, TS - 4, 1)               // hot centre line
             }
 
             // spawn cave + exit door

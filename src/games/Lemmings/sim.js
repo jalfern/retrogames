@@ -77,6 +77,18 @@ export const CFG = {
     // a caught canopy visibly outruns the crowd, but a drift is survivable
     // with timing (floatSp 2.6 sets how fast it sinks through the band).
     windSp: 3.4,
+    // #3879 TRAMPOLINE (terrain gadget 2 of 3): the mat's launch speed, cells/s.
+    // The apex is v²/2g = 2.5 cells under this engine's g=20 — high enough to
+    // read on screen and to clear the trench rim's row, low enough that the
+    // drop back lands under maxFall (3): a bounce is never a splat. The launch
+    // is FIXED — arriving fast or slow, the mat throws the same height — and
+    // it absorbs the fall (fallDist resets), which is what makes the pad a
+    // rescue as much as a toy. padHold (world ticks) is the body's cooldown:
+    // ~60 ticks of flight + ~52 ticks to walk off a two-cell mat + margin,
+    // so a body NEVER re-bounces a mat it is still standing on — mats ping
+    // the crowd once per arrival, forever is not on the menu.
+    padJump: 10,
+    padHold: 140,
     fuse: 1.6,
     blast: 1.8,
     blockRange: 1.0,
@@ -138,6 +150,37 @@ export function windAt(g, L) {
     return 0
 }
 
+// #3879 TRAMPOLINES — gadget 2 of 3 of the terrain-variety family (after the
+// vents). A level declares `trampolines: [{x, y}]`: a mat on the face of cell
+// (x,y), sprung at that cell's top boundary. ANY body that arrives on a mat —
+// a faller's landing, or a walker's footstep along the floor — is launched at
+// the fixed CFG.padJump with its fall wiped (the mat absorbs the drop). The
+// launch is vertical: the original's pads toss you UP, momentum stays yours.
+// Two guards keep the toy honest: a body that left a mat less than padHold
+// ticks ago stands on it instead of bouncing (no endless ping-pong), and a mat
+// whose two rows of sky are not clear is dead steel (a walled mat must not
+// shove a head through rock). Like the vents, the mats never touch the
+// solver's proven line: the level that hosts them keeps its plank road as the
+// only crossing its proofs ride.
+export function padAt(g, L) {
+    const pads = g.level.trampolines
+    if (!pads) return null
+    const k = groundRow(L.y)
+    for (const p of pads) {
+        if (Math.floor(L.x) === p.x && k === p.y
+            && cell(g, p.x, p.y - 1) === AIR && cell(g, p.x, p.y - 2) === AIR) return p
+    }
+    return null
+}
+
+function padLaunch(g, L) {
+    L.state = 'fall'
+    L.vy = -CFG.padJump
+    L.fallDist = 0
+    L.padCd = g.tick + CFG.padHold
+    g.events.push({ type: 'pad', id: L.id, x: L.x, y: L.y })
+}
+
 export const hash = (s) => {
     let h = 0x811c9dc5
     for (let i = 0; i < s.length; i++) { h ^= s.charCodeAt(i); h = Math.imul(h, 0x01000193) }
@@ -188,6 +231,7 @@ export function spawnLemming(g) {
         digger: false,
         floater: false,
         builder: false,
+        padCd: -1,
         flashT: 0,
         turnCd: -1,
         live: true,
@@ -272,6 +316,11 @@ export function step(g, cursorTarget = null) {
             case 'fall': faller(g, L); break
             case 'climb': climber(g, L); break
             case 'dig': digger(g, L); break
+        }
+        if (L.live && L.state === 'walk' && L.padCd <= g.tick && padAt(g, L)) {
+            // #3879: footsteps on a mat take the same launch a landing does —
+            // the trench floor is walkable rock, and the mats sit on it.
+            padLaunch(g, L)
         }
         if (L.live && L.state !== 'climb' && L.state !== 'fall'
             && !solid(g, Math.floor(L.x), groundRow(L.y))) {
@@ -496,6 +545,11 @@ function faller(g, L) {
     }
     if (solid(g, Math.floor(L.x), groundRow(L.y))) {
         L.y = Math.floor(L.y + 1e-6)
+        // #3879: the mat answers before the fall is judged — it catches the
+        // drop the solver's scripts never take AND the lethal ones, so the
+        // test runs ahead of the splat check on purpose.
+        const p = padAt(g, L)
+        if (p && L.padCd <= g.tick) { padLaunch(g, L); return }
         if (L.fallDist > CFG.maxFall && !L.floater) { kill(g, L, 'fall'); return }
         L.state = 'walk'
         g.events.push({ type: L.floater ? 'landsoft' : 'land', id: L.id })
