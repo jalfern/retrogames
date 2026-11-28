@@ -113,6 +113,13 @@ const RIM = (() => {
     return {
         stars: Array.from({ length: 42 }, () => ({ x: Math.floor(rnd() * W), y: Math.floor(rnd() * 92), tw: rnd() })),
         flecks: Array.from({ length: 90 }, () => ({ x: Math.floor(rnd() * W), y: 124 + Math.floor(rnd() * 74), w: 1 + Math.floor(rnd() * 3) })),
+        // #3893 art pass: stone grain on the four facades — seeded ONCE after
+        // the flecks (stars/flecks keep their exact values) and stored as
+        // per-facade offsets, so the street reads as laid stone, not flat
+        // panels. Presentation only: zero rng mid-frame, zero sim state.
+        grain: Array.from({ length: 4 }, () => Array.from({ length: 22 }, () => ({
+            dx: 2 + Math.floor(rnd() * 36), dy: 2 + Math.floor(rnd() * 40), dk: rnd() < 0.55,
+        }))),
         keep: [[0, 118], [18, 118], [26, 92], [34, 92], [34, 74], [44, 74], [44, 96], [70, 96], [78, 66], [86, 66], [86, 48], [97, 60], [108, 48], [108, 88], [140, 88], [148, 70], [156, 70], [156, 96], [196, 96], [204, 82], [212, 82], [212, 104], [256, 104], [256, 130], [0, 130]],
     }
 })()
@@ -127,7 +134,7 @@ const FOLK_TINTS = ['#3a2c52', '#523626', '#26423a']
 // the file falls in rather than marching across the map.
 const walkHist = []
 
-const drawFacade = (ctx, b, x, sel, bob) => {
+const drawFacade = (ctx, b, x, sel, bob, idx) => {
     const y = sel ? 66 : 70
     const w = 40, wall = 44
     const wobble = sel ? Math.sin(bob / 9) * 1.2 : 0
@@ -135,9 +142,20 @@ const drawFacade = (ctx, b, x, sel, bob) => {
     ctx.fillStyle = '#241d33'; ctx.fillRect(x, y + wobble, w, wall)
     ctx.fillStyle = '#2e2440'
     for (let r = 0; r < 5; r++) ctx.fillRect(x, y + r * 9 + wobble, w, 1)
+    // #3893 art pass: seeded grain — dark pits and lit specks over the two-tone
+    // stone, sparse enough to read as mortar-worn rock under the same palette.
+    for (const g of RIM.grain[idx]) {
+        ctx.fillStyle = g.dk ? '#1e1730' : '#2a2138'
+        ctx.fillRect(x + g.dx, y + g.dy + wobble, 1, 1)
+    }
     ctx.fillStyle = '#0d0a16'; ctx.fillRect(x + 15, y + 26 + wobble, 10, 18)
+    const mullion = (wx, wy, ww, wh) => {   // dark cross — the glass panes, not a flat decal
+        ctx.fillRect(wx + (ww >> 1), wy, 1, wh)
+        ctx.fillRect(wx, wy + (wh >> 1), ww, 1)
+    }
     if (b.key === 'T') {
         ctx.fillStyle = '#ffb84d'; ctx.fillRect(x + 4, y + 8 + wobble, 8, 7); ctx.fillRect(x + 28, y + 8 + wobble, 8, 7)
+        ctx.fillStyle = '#1d1630'; mullion(x + 4, y + 8 + wobble, 8, 7); mullion(x + 28, y + 8 + wobble, 8, 7)
         ctx.fillStyle = '#b3402e'; ctx.fillRect(x + 14, y - 6 + wobble, 12, 8)
         ctx.fillStyle = '#ffd54f'; ctx.fillRect(x + 17, y - 3 + wobble, 6, 2)
     } else if (b.key === 'V') {
@@ -155,6 +173,7 @@ const drawFacade = (ctx, b, x, sel, bob) => {
     } else {
         ctx.fillStyle = '#7d4fd8'; ctx.fillRect(x + 5, y + 7 + wobble, 9, 8)
         ctx.fillStyle = '#b98cff'; ctx.fillRect(x + 27, y + 7 + wobble, 9, 8)
+        ctx.fillStyle = '#1d1630'; mullion(x + 5, y + 7 + wobble, 9, 8); mullion(x + 27, y + 7 + wobble, 9, 8)
         ctx.fillStyle = '#57e389'; ctx.fillRect(x + 18, y + 22 + wobble + ((Math.sin(bob / 6) * 1.5) | 0), 4, 5)
     }
     if (sel) {
@@ -206,7 +225,7 @@ const paintRim = (ctx, gs, bob, doorIdx, dim = 0) => {
     ctx.fillStyle = gr; ctx.fillRect(0, 124, W, H - 124)
     ctx.fillStyle = '#2e2440'
     RIM.flecks.forEach((f) => ctx.fillRect(f.x, f.y, f.w, 1))
-    BUILDINGS.forEach((b, i) => drawFacade(ctx, b, FACADE_X[i], i === doorIdx && !gs.town.b, bob))
+    BUILDINGS.forEach((b, i) => drawFacade(ctx, b, FACADE_X[i], i === doorIdx && !gs.town.b, bob, i))
     // #1751/#1756: lamp pools on the cobbles — two lit patches the walker
     // passes through, and each lamp's flame breathes on its own beat (rimFlame,
     // town.js). Before this the two lamps pulsed off one shared sine in
