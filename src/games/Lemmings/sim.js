@@ -73,6 +73,10 @@ export const CFG = {
     maxFall: 3,
     climbSp: 2.6,
     digSp: 2.2,
+    // #3879 WIND: a vent's gust speed, cells/s — faster than a walk (2.3) so
+    // a caught canopy visibly outruns the crowd, but a drift is survivable
+    // with timing (floatSp 2.6 sets how fast it sinks through the band).
+    windSp: 3.4,
     fuse: 1.6,
     blast: 1.8,
     blockRange: 1.0,
@@ -108,6 +112,31 @@ export const cell = (g, cx, cy) => {
 export const solid = (g, cx, cy) => { const c = cell(g, cx, cy); return c === DIRT || c === STEEL || c === PLANK }
 const groundRow = (y) => Math.floor(y + 1e-6)
 const bodyRow = (y) => Math.floor(y - 0.5)
+
+// #3879 WIND VENTS — the original's mid-game difficulty engine, first gadget
+// of the terrain-variety family. A level declares `vents: [{x, y, dir, reach}]`:
+// the mouth cell (x,y) blows horizontally `dir` for `reach` cells, an airstream
+// two rows tall (rows y−1 and y). Wind moves CANOPIES ONLY: a FLOATER in the
+// stream is pushed at CFG.windSp while airborne. Walkers, diggers, climbers,
+// blockers and bombers hold their line — the original's wind is the parachute's
+// problem, and this keeps every solver proof riding unchanged: candidates()
+// never offers FLOATER (#3827 law), so no recorded script, hash pin or level
+// proof ever crosses a gust. For the player it cuts both ways: THE SPIRE's
+// vent tails floaters onto the exit plinth (and into the bay if you overshoot),
+// THE MASSIF's shoves them back off the plinth into the trench's mouth.
+// The stream never pushes through matter: a body whose chest or feet column
+// ahead is solid stays put — gusts carry you to a wall, never into one.
+export function windAt(g, L) {
+    const vents = g.level.vents
+    if (!vents) return 0
+    const br = bodyRow(L.y), gr = groundRow(L.y)
+    for (const v of vents) {
+        const d = v.dir || 1
+        const k = (L.x - v.x) * d
+        if (k >= 0 && k <= v.reach && (br === v.y || br === v.y - 1 || gr === v.y || gr === v.y - 1)) return d
+    }
+    return 0
+}
 
 export const hash = (s) => {
     let h = 0x811c9dc5
@@ -454,6 +483,17 @@ function faller(g, L) {
     L.vy = Math.min(cap, L.vy + 20 * FIXED_DT)
     const d = L.vy * FIXED_DT
     L.y += d; L.fallDist += d
+    // #3879: the gust acts before the landing test — the drift decides WHERE
+    // the canopy lands, not just where it wobbles. Never squeeze through a
+    // wall: both body columns ahead must stay open.
+    if (L.floater) {
+        const w = windAt(g, L)
+        if (w) {
+            const nx = L.x + w * CFG.windSp * FIXED_DT
+            const br = bodyRow(L.y), gr = groundRow(L.y)
+            if (!solid(g, Math.floor(nx + w * 0.5), br) && !solid(g, Math.floor(nx + w * 0.5), gr)) L.x = nx
+        }
+    }
     if (solid(g, Math.floor(L.x), groundRow(L.y))) {
         L.y = Math.floor(L.y + 1e-6)
         if (L.fallDist > CFG.maxFall && !L.floater) { kill(g, L, 'fall'); return }

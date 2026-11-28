@@ -37,6 +37,17 @@ supplies fails the build.
     *walked*, not fallen — the mirror of the one-tile mount. Feet land on the
     shelf at walking pace and no fallDist accumulates; falls begin where the
     shelves run out, and > `CFG.maxFall` still kills.
+    **Wind vents** (#3879, terrain-variety family item 1): levels declare
+    `vents: [{x, y, dir, reach}]` — a mouth cell blowing a two-row airstream
+    downwind. Wind moves CANOPIES ONLY: a FLOATER falling through a stream is
+    pushed at `CFG.windSp` (3.4 c/s, faster than a walk), clamped at walls
+    (never squeezed through). Walkers, diggers, climbers, blockers and bombers
+    hold their line, and `candidates()` never offers FLOATER (#3827 law) — so
+    every solve, replay, hash pin and proof rides vents byte-identical. THE
+    SPIRE's grate tails floaters onto the exit plinth (overshoot feeds the
+    bay); THE MASSIF's shoves them off the plinth doorstep back toward the
+    trench. The drift lands on the pre-landing test, so wind decides WHERE a
+    canopy lands, not just where it wobbles.
   - Skills: BLOCKER, BOMBER, CLIMBER, DIGGER, **FLOATER** (#3827),
     **BUILDER** (#3863). Climber, digger and floater are flags for life —
     re-granting any of them refuses rather than burning supply (#422). The
@@ -116,6 +127,10 @@ breakable — every pin here has survived a manual mutation.
 - Float-while-digging (the original's floating lemming chews straight down
   through dirt while descending) does not port to the horizontal-tunnel digger;
   it needs either a second dig mode or a rethink of the dig model.
+- Vent wind moves parachutes only (#3879): ground-bound walkers ignore the
+  stream, and vents blow forever (no on/off puzzle state). Ground-level drag
+  and switched gusts are Lemmings 2 territory and unowned until the family's
+  next PR; the wind you can feel today is the canopy's.
 - **DISCLAIMER** (#3859): water NEVER flows and never will — the 1991
   original's water is static; draining ponds are a Lemmings 2 mechanic.
   What the original DID have, ponds everywhere, shipped in #3859; flowing
