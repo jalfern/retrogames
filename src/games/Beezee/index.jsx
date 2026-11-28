@@ -233,15 +233,72 @@ const BeeGame = () => {
             }
         }
 
+        // #3912: the goal must pull the eye. Flat Lambert spheres sank to dark
+        // olive under #3909's dusk ramp (sunLight → 0.6, UV → 0.12), so the
+        // destination was the least inviting object in the frame. Now: a woven
+        // comb skin (original, procedural), a honey value ramp lit from above,
+        // warm emissive that RISES as the sun falls, and a breathing amber
+        // beacon over the mouth. The mouth sat z=1.02 — inside the 1.15 sphere
+        // (at y=0.5 the surface is z≈1.13), so the entrance was invisible;
+        // it now sits proud of the shell, and the glow rides with it.
+        const combTex = keep(texFrom(128, 128, (x, w) => {
+            x.fillStyle = '#a8721c'
+            x.fillRect(0, 0, w, w)
+            const R = 9.5, dx = R * 1.732, dy = R * 1.5
+            for (let row = -1; row * dy < w + R; row++) {
+                for (let col = -1; col * dx < w + dx; col++) {
+                    const cx = col * dx + (row % 2 ? dx / 2 : 0), cy = row * dy
+                    x.beginPath()
+                    for (let k = 0; k < 6; k++) {
+                        const a = Math.PI / 6 + k * Math.PI / 3
+                        const px = cx + Math.cos(a) * R, py = cy + Math.sin(a) * R
+                        if (k === 0) x.moveTo(px, py); else x.lineTo(px, py)
+                    }
+                    x.closePath()
+                    const v = Math.random()
+                    x.fillStyle = v < 0.24 ? '#7c5312' : v < 0.5 ? '#c28c27' : v < 0.78 ? '#d7a236' : '#e8bc52'
+                    x.fill()
+                    x.strokeStyle = 'rgba(92,58,10,0.55)'
+                    x.lineWidth = 1.4
+                    x.stroke()
+                }
+            }
+            const g = x.createLinearGradient(0, 0, 0, w)
+            g.addColorStop(0, 'rgba(255,226,150,0.28)')
+            g.addColorStop(0.5, 'rgba(255,226,150,0)')
+            g.addColorStop(1, 'rgba(48,28,4,0.30)')
+            x.fillStyle = g
+            x.fillRect(0, 0, w, w)
+        }))
+        const HONEY = [0xb07a1c, 0xc08c28, 0xd2a038, 0xe2b448]
+        const hiveMats = []
         const hive = new THREE.Group()
         for (let i = 0; i < 4; i++) {
-            const s = new THREE.Mesh(new THREE.SphereGeometry(1.15 - i * 0.22, 12, 10), new THREE.MeshLambertMaterial({ color: 0xc99a2e }))
+            const mats = {
+                day: keep(new THREE.MeshLambertMaterial({ color: HONEY[i], map: combTex, emissive: 0x5a3208 })),
+                uv: keep(new THREE.MeshLambertMaterial({ color: 0x7c5a20, map: combTex, emissive: 0x3a2270 })),
+            }
+            const s = new THREE.Mesh(new THREE.SphereGeometry(1.15 - i * 0.22, 12, 10), mats.day)
+            s.mats = mats
             s.position.y = 0.3 + i * 0.72
             hive.add(s)
+            hiveMats.push(mats)
         }
-        const mouth = new THREE.Mesh(new THREE.CircleGeometry(0.34, 14), new THREE.MeshBasicMaterial({ color: 0x3a2405 }))
-        mouth.position.set(0, 0.5, 1.02)
-        hive.add(mouth)
+        const mouth = new THREE.Mesh(new THREE.CircleGeometry(0.34, 14), new THREE.MeshBasicMaterial({ color: 0x2e1c04 }))
+        mouth.position.set(0, 0.5, 1.17)
+        const hiveGlow = new THREE.Sprite(new THREE.SpriteMaterial({
+            map: keep(texFrom(64, 64, (x, w) => {
+                const g = x.createRadialGradient(w / 2, w / 2, 1, w / 2, w / 2, w / 2)
+                g.addColorStop(0, 'rgba(255,255,255,0.95)')
+                g.addColorStop(0.35, 'rgba(255,255,255,0.5)')
+                g.addColorStop(1, 'rgba(255,255,255,0)')
+                x.fillStyle = g
+                x.fillRect(0, 0, w, w)
+            })),
+            color: 0xffb45e, transparent: true, depthWrite: false, blending: THREE.AdditiveBlending,
+        }))
+        hiveGlow.position.set(0, 0.5, 1.2)
+        hive.add(mouth, hiveGlow)
         scene.add(hive)
 
         const rock = new THREE.Mesh(new THREE.DodecahedronGeometry(0.7), new THREE.MeshLambertMaterial({ color: 0x8d8577 }))
@@ -350,6 +407,8 @@ const BeeGame = () => {
             scene.background = new THREE.Color(uv ? 0x2a1150 : 0x8ec9ea)
             scene.fog = new THREE.FogExp2(uv ? 0x3b1d63 : 0x9ecbe0, uv ? 0.015 : 0.0105)
             sunLight.intensity = uv ? 0.12 : 1.5
+            for (const tier of hive.children) if (tier.mats) tier.material = uv ? tier.mats.uv : tier.mats.day
+            hiveGlow.material.color.set(uv ? 0x8f6bff : 0xffb45e)
             for (const n of flowerNodes) {
                 n.center.material = uv ? n.mats.uvCenter : n.mats.center
                 for (const p of n.petals) p.material = uv ? n.mats.uvPetal : n.mats.petal
@@ -488,6 +547,14 @@ const BeeGame = () => {
             scene.fog.color.copy(skyHor)
             sun.material.color.lerpColors(sunA, sunDusk, Math.max(dusk, gs.uv ? 1 : 0))
             sunLight.intensity = gs.uv ? 0.12 : 1.5 - dusk * 0.9
+            // #3912: the beacon breathes (WORLD clock — never setTimeout), and the
+            // hive's own emissive rises as the sun falls, so the goal stays the
+            // warmest, most inviting thing in the frame at dusk and under UV.
+            const hivePulse = 0.5 + 0.5 * Math.sin(gs.t * 2.6)
+            hiveGlow.scale.setScalar(1.35 + hivePulse * 0.3)
+            hiveGlow.material.opacity = (gs.uv ? 0.55 : 0.85) * (0.72 + hivePulse * 0.28)
+            const hiveEmis = gs.uv ? 0.7 : 0.45 + dusk * 1.1
+            for (const m of hiveMats) { m.day.emissiveIntensity = hiveEmis; m.uv.emissiveIntensity = hiveEmis }
 
             const [wx, wz] = windAt(gs.world, gs.t)
             for (const n of flowerNodes) {
