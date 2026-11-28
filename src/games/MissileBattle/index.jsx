@@ -709,18 +709,18 @@ const MissileBattleGame = () => {
             <div ref={stageRef} className="absolute inset-0 flex items-center justify-center" />
 
             <div className={`absolute inset-0 pointer-events-none transition-opacity duration-300 ${play ? 'opacity-100' : 'opacity-0'}`}>
-                <div className="absolute top-2 left-3 right-3 flex items-center gap-3 text-white font-mono text-xs">
+                <div className="absolute flex items-center gap-3 text-white font-mono text-xs" style={{ top: 'calc(4.9rem + var(--sat, 0px))', left: 'calc(0.75rem + var(--sal, 0px))', right: 'calc(0.75rem + var(--sar, 0px))' }}>
                     <span ref={setHud('wave')} className="border border-red-300/60 text-red-200 px-2 py-0.5 rounded bg-black/40">1/3</span>
                     <span className="text-cyan-200">CITIES <b ref={setHud('cities')}>6</b></span>
                     <span ref={setHud('ammo')} className="text-violet-200/90 whitespace-nowrap">10 10 10</span>
                     <span className="ml-auto text-xl font-bold whitespace-nowrap" style={{ textShadow: '0 2px 5px #000' }}><span ref={setHud('score')}>000000</span></span>
                     <span className="text-yellow-200/70"><span ref={setHud('hiscore')}>000000</span></span>
                 </div>
-                <div ref={setHud('toast')} className="absolute inset-x-0 top-1/4 text-center text-amber-100 font-mono font-bold text-xl transition-opacity duration-500" style={{ opacity: 0, textShadow: '0 0 12px #f60' }} />
+                <div ref={setHud('toast')} className="absolute inset-x-0 top-1/3 text-center text-amber-100 font-mono font-bold text-xl transition-opacity duration-500" style={{ opacity: 0, textShadow: '0 0 12px #f60' }} />
                 {/* #2510 item 3: the machine signs its shift — a small tag by
                     the score column while the autopilot holds the sky. Absolute
                     so it never pushes the narrow-phone HUD into wrapping. */}
-                <span ref={setHud('auto')} className="absolute top-2 left-1/2 -translate-x-1/2 text-[10px] font-bold tracking-widest border border-current rounded px-1 py-0.5 bg-black/40 transition-opacity duration-200" style={{ opacity: 0 }} />
+                <span ref={setHud('auto')} className="absolute text-[10px] font-bold tracking-widest border border-current rounded px-1 py-0.5 bg-black/40 transition-opacity duration-200" style={{ top: 'calc(6.6rem + var(--sat, 0px))', left: '50%', transform: 'translateX(-50%)', opacity: 0 }} />
                 {/* #2510 item 1: the arcade flipped a named PLAYER card between
                     turns — the seat card ceremonies the hand-off on the banner:
                     the seat's colour, its word, its cities still lit. */}
@@ -777,7 +777,7 @@ const MissileBattleGame = () => {
                 </div>
             )}
             {play && !paused && (
-                <div className="absolute z-50 pointer-events-auto" style={{ top: 'calc(3.5rem + var(--sat, 0px))', right: 'calc(0.75rem + var(--sar, 0px))' }}>
+                <div className="absolute z-50 pointer-events-auto" style={{ top: 'calc(7.4rem + var(--sat, 0px))', right: 'calc(0.75rem + var(--sar, 0px))' }}>
                     <WatchButton on={watching} />
                 </div>
             )}
