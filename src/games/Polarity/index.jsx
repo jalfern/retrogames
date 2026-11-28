@@ -487,7 +487,7 @@ const PolarityGame = () => {
             {paused && <PauseOverlay game={GAMES.find(g => g.label === 'POLARITY')} onResume={handleResume} />}
             {/* #1637 WATCH — the proven pilot works the waves; any input takes over. */}
             {play && watching && (
-                <WatchToast className="absolute z-50" />
+                <WatchToast className="absolute z-50 top-[calc(10.75rem + var(--sat,0px))]" />
             )}
             {/* #1656 — the forgotten-how-to-play tap: start AND watch, one button. */}
             {screen === 'attract' && (
