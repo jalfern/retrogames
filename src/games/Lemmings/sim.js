@@ -519,6 +519,13 @@ function blast(g, L) {
 
 function scoreState(g) {
     let s = g.exited * 900 - g.dead * 140
+    // #3866 a plank road IS progress: wood standing in the world means the
+    // crowd's next crossing costs no risk and no skill, so a laid road scores
+    // before the first walker reaches the far side. Sized small — one plank
+    // ≈ one walker's distance gain — so it tips ties toward bridging without
+    // buying cargo burn: unspent supply pays +25 per unit at the level end,
+    // so wood spent for scenery still loses the ledger in the end.
+    for (let i = 0; i < g.grid.length; i++) if (g.grid[i] === PLANK) s += 2
     const e = g.level.exit
     for (const L of g.lemmings) {
         if (!L.live) continue
@@ -527,9 +534,11 @@ function scoreState(g) {
     return s
 }
 
-function candidates(g) {
+export function candidates(g) {
     // Act only where the world refuses to move: a walker stopped by a wall, or
     // one about to shuffle off an edge. Everything else is already progressing.
+    // (Exported so lemcheck can pin the OFFER boundary — what the solver may
+    // even consider — not only what it happens to commit.)
     const out = []
     const seen = new Set()
     const push = (id, skill) => {
@@ -561,6 +570,15 @@ function candidates(g) {
             if (solid(g, Math.floor(L.x), k)) push(L.id, 'block')
             if (a0 === AIR && !L.climber) push(L.id, 'climb')
         }
+        // #3866 BUILDER enters the search space: at a one-tile descent with a
+        // shelf below — the exact cells walker() lays wood into (stage 1's
+        // placement rule mirrored, so the solver can never ask the world for
+        // a plank it would refuse — pond rims and deep holes stay out) — a
+        // free walker is offered the bridge. Like every move it is judged on
+        // the roll: where stepping down survives and still delivers, the
+        // cargo stays in the pack; where the drop is a trap, wood is the
+        // only crossing and the rollout says so.
+        if (a1 === AIR && a0 === AIR && !L.builder && solid(g, cx, k + 1)) push(L.id, 'build')
         // A bomb is a TIMER: assigned at the wall it has already bounced and
         // explodes a tile short. Offer it while the walker still has runway
         // to touch the obstacle when the fuse runs out (~3.7 tiles / 1.6 s).

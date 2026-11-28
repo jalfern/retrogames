@@ -79,14 +79,26 @@ export const LEVELS = [
     },
     {
         name: 'THE MASSIF', time: 170,
-        spawn: { x: 3.5, y: 23 }, exit: { x: 43, y: 22 },
+        spawn: { x: 3.5, y: 23 }, exit: { x: 43, y: 21 },
         spawnCount: 10, spawnEvery: 55, need: 5,
         // #3859: the west-foot pond taxes the bounce lane, and holding the
         // crowd short of the rim is now real work — the solver spends a
         // blocker there in its winning script, so the level ships two
         // blockers (one to burn): slack rule, not decoration.
-        skills: { block: 2, bomb: 1, climb: 0, dig: 3, float: 2, build: 12 },
-        proves: ['dig'],
+        // #3866 BUILDER becomes load-bearing: between the tunnel mouth and
+        // the plinth runs a trench — one tile deep (steel floor, the fall is
+        // survivable), but the plinth wall is two tiles of dirt above the
+        // trench floor, so what drops in cannot climb out, and the original's
+        // only answer is the plank road: a builder bridges the trench at foot
+        // level and the swarm walks the wood over the trap. Walkers step down
+        // into a one-way hole, diggers burrow the bank and reach the plinth
+        // one row too low, blocks hold the rim but never cross, and the bomb
+        // supply is zero — leaving one would let a bomber blast the plinth
+        // wall into a staircase the crowd could climb, the alternate road the
+        // trench was carved to close. Take the cargo to zero and the level
+        // loses: `proves: build`.
+        skills: { block: 2, bomb: 0, climb: 0, dig: 3, float: 2, build: 12 },
+        proves: ['dig', 'build'],
         build() {
             const c = new Carve()
             c.sky(); c.floor(24)
@@ -102,7 +114,29 @@ export const LEVELS = [
             // instead of pacing — lemcheck proves its script still delivers
             // need with slack).
             for (let x = 0; x <= 2; x++) c.rect(x, 23, x, 24, WATER)
-            c.rect(41, 23, 45, 23, DIRT)
+            // #3866 the trench: four tiles where the walk-way drops — the
+            // steel floor one step below is survivable, but the plinth rises
+            // two full tiles over it, so the drop is a one-way door. Four
+            // tiles is the original's road: one plank per step, four wood,
+            // then the swarm crosses at foot level and the plinth is a step
+            // up from the far plank. The steel lip at the west rim is part of
+            // the trap, not scenery: a digger that drops in faces plain dirt
+            // at chest height, and the tunneler would chew the walk-away row
+            // west until the road collapses into its own trench (a digger in
+            // the pit may burrow the plinth bank, but under the walkway's own
+            // floor-row it is one row too low to ever reach the door row).
+            c.rect(33, 23, 36, 23, STEEL)
+            for (let x = 37; x <= 40; x++) c.set(x, 23, AIR)
+            // the plinth, raised one tile by the trench (see #3866): a
+            // two-tile wall from the trench floor, a one-tile step from the
+            // plank road — the road turns a trap into a doorstep. It is
+            // STEEL, not dirt, and the reason is the swarm's own digger: a
+            // tunneler meets the plinth face at chest height on the bridge
+            // (diggage outranks mounts), and a dirt plinth lets it burrow
+            // into the mound one row below the door row and lose the exit
+            // inside its own tunnel. Steel refuses the chew and still takes
+            // the step — the road ends at a doorstep, not a cave mouth.
+            c.rect(41, 22, 45, 23, STEEL)
             return c.g
         },
     },

@@ -637,9 +637,9 @@ const pressFits = () => PRESS.length <= 24 && /ANY KEY/i.test(PRESS)
 // wood is laid at a one-tile descent (never over a pond, never into a hole the
 // plank cannot reach), the cargo drains one plank per LAYING (not per assign),
 // wood is ground for walkers but refuses the digger and the climber, blasts
-// splinter it — and the solver still never offers or spends it, so every
-// proven script above rides unchanged. Synthetic boards keep each rule pinned
-// in isolation.
+// splinter it. Stage 1 (#3863) kept the solver out of the search space; stage 2
+// (#3866) opened it at exactly the laying cells — the solver-side pins live at
+// the end of this section. Synthetic boards keep each rule pinned in isolation.
 section('BUILDER (#3863: placed planks — wood is ground, dirt-only rules hold)')
 {
     const mk = (f) => {
@@ -803,13 +803,72 @@ section('BUILDER (#3863: placed planks — wood is ground, dirt-only rules hold)
         ok(sim.stateHash(c) !== sim.stateHash(a), '#3863: stateHash ignores laid planks — the audit could not see a plank desync')
     }
 
-    // H: the solver is untouched — no level offers or spends planks, so every
-    // script, load-bearing proof and slack margin above replays unchanged;
-    // and the whole shelf ships the original's 12-plank cargo.
+    // H: #3866 stage 2 — the solver DOES build. Stage 1 kept planks out of
+    // the search space so every proof rode unchanged; stage 2 opened it at the
+    // exact cells walker() lays wood. Pins, sharper than the proves loop: the
+    // autopilot spends cargo on THE MASSIF's trench AND the road exists in the
+    // replayed world (the attract demo shows the swarm's own bridge, plank by
+    // plank); determinism rides the build scripts (two replays identical, one
+    // late build command visible); and the pond law holds INSIDE the search
+    // space — water at foot level is not a laying site (no shelf), so the
+    // solver can never spend wood over open water; the whole shelf still
+    // ships the original's 12-plank cargo.
+    {
+        const r = runSolver(1)
+        ok(r.cmds.some(c => c.skill === 'build'),
+            '#3866: THE MASSIF script spends no planks — the solver-side gap is open again (the trench is the proves board, the road is the proof)')
+        const a = sim.replay(r.meta, r.grid, r.cmds)
+        const b = sim.replay(r.meta, r.grid, r.cmds)
+        ok(sim.stateHash(a) === sim.stateHash(b), '#3866: the build script replays to two different worlds — planks in the solver broke determinism')
+        ok(a.win && a.exited >= r.meta.need, `#3866: replaying the build script delivers ${a.exited}/${r.meta.need} — the recorded road does not carry the quota`)
+        let road = 0
+        for (let x = 37; x <= 40; x++) if (a.grid[23 * sim.W + x] === sim.PLANK) road++
+        ok(road === 4, `#3866: the solver's trench road is ${road}/4 planks — attract would show a half bridge or none`)
+        // A late BUILD is self-correcting (laying is position-triggered, the
+        // wood lands in the same cells), so the tamper probe must ride the
+        // position-sensitive command — same reasoning as the L3 pin above:
+        // a BLOCK's stop point is a continuous coordinate.
+        const tampered = r.cmds.map((c, i) => (c.skill === 'block' && i === r.cmds.findIndex(cc => cc.skill === 'block') ? { ...c, tick: c.tick + 1 } : c))
+        const c2 = sim.replay(r.meta, r.grid, tampered)
+        ok(sim.stateHash(c2) !== sim.stateHash(a), '#3866: stateHash ignored a one-tick-late block over the trench board — a desync would pass the audit')
+        // the pond law survives inside the search space — pinned at the offer,
+        // not just the commit (a proposal the sim would refuse can still be
+        // caught here even when rollout timing would never commit it): a
+        // walker standing at an open shore gets the blocker idea, never the
+        // wood idea; at a 2-tile hole (no shelf within the plank's reach) it
+        // gets neither. Positive controls keep both probes able to fail.
+        const offerAt = (gm, x0, x1) => {
+            for (let t = 0; t < 600; t++) {
+                const L = gm.lemmings[0]
+                if (L && L.live && L.state === 'walk' && L.x >= x0 && L.x <= x1) return sim.candidates(gm)
+                if (L && !L.live) return 'drowned'
+                sim.step(gm)
+            }
+            return 'timeout'
+        }
+        const wg = new Uint8Array(sim.W * sim.H).fill(sim.AIR)
+        for (let x = 0; x < sim.W; x++) { wg[23 * sim.W + x] = sim.DIRT; wg[24 * sim.W + x] = sim.STEEL }
+        for (let x = 8; x <= 10; x++) { wg[23 * sim.W + x] = sim.WATER; wg[24 * sim.W + x] = sim.WATER }
+        const gp = sim.makeGame(bmeta({ time: 14, spawnCount: 1, spawnEvery: 1,
+            spawn: { x: 4.5, y: 23, dir: 1 }, exit: { x: 46, y: 22 }, skills: { block: 1, build: 12 } }), wg)
+        const rp = sim.solve(gp)
+        ok(rp.cmds.every(c => c.skill !== 'build'), '#3866: the solver laid wood over open water — plank reach must demand a shelf, ponds drown builders too')
+        const gp2 = sim.makeGame(bmeta({ time: 14, spawnCount: 1, spawnEvery: 1,
+            spawn: { x: 4.5, y: 23, dir: 1 }, exit: { x: 46, y: 22 }, skills: { block: 1, build: 12 } }), wg)
+        sim.step(gp2); const pondC = offerAt(gp2, 7.36, 7.52)
+        ok(Array.isArray(pondC) && pondC.some(c => c.skill === 'block') && pondC.every(c => c.skill !== 'build'),
+            `#3866: the pond-rim offer is broken — got ${JSON.stringify(pondC)} (want block offered, never build over water)`)
+        const hg = new Uint8Array(sim.W * sim.H).fill(sim.AIR)
+        for (let x = 0; x < sim.W; x++) { hg[23 * sim.W + x] = sim.DIRT; hg[25 * sim.W + x] = sim.STEEL }
+        for (let x = 8; x <= 10; x++) hg[23 * sim.W + x] = sim.AIR
+        const gh = sim.makeGame(bmeta({ time: 14, spawnCount: 1, spawnEvery: 1,
+            spawn: { x: 4.5, y: 23, dir: 1 }, exit: { x: 46, y: 22 }, skills: { block: 1, build: 12 } }), hg)
+        sim.step(gh); const holeC = offerAt(gh, 7.36, 7.52)
+        ok(Array.isArray(holeC) && holeC.some(c => c.skill === 'block') && holeC.every(c => c.skill !== 'build'),
+            `#3866: the deep-hole offer is broken — got ${JSON.stringify(holeC)} (a 2-tile hole has no shelf; wood must not be even considered there)`)
+    }
     {
         for (let i = 0; i < LEVELS.length; i++) {
-            const r = runSolver(i)
-            ok(r.cmds.every(c => c.skill !== 'build'), `#3863: level ${i} (${r.meta.name}): the solver spent planks — the solver-side gap (#3863 stage 2) is not closed, do not let scripts depend on them`)
             ok((LEVELS[i].skills.build | 0) >= 12, `#3863: level ${i} (${LEVELS[i].name}) ships less than the original's 12-plank cargo`)
         }
     }

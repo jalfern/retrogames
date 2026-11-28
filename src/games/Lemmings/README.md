@@ -40,9 +40,11 @@ supplies fails the build.
     height fatal. The solver's `candidates()` never offers FLOATER, so every
     level's proven solution, load-bearing proofs and slack margin ride the
     four original mechanics; the two floaters per level are pure player-side
-    slack. BUILDER shares the law (#3863): `candidates()` never offers it and
-    never spends planks, so proven scripts replay unchanged — its 12-plank
-    cargo is the sixth skill's player-side slack (see Builder below).
+    slack. BUILDER joined the search space in stage 2 (#3866): `candidates()`
+    offers it at exactly the cells walker() lays wood (one-tile descent + solid
+    shelf — so the solver can never ask for a plank the world would refuse),
+    `scoreState` counts standing planks as progress, and THE MASSIF's trench
+    makes wood load-bearing there (see Builder below).
 - `levels.js` — levels CARVED from solid rock in code (IronKeep lesson), each
   with a `proves:` list lemcheck re-solves at zero supply (a skill you can take
   away is decoration) and a slack pass (one fewer of every supply the winning
@@ -66,14 +68,18 @@ supplies fails the build.
 npm run lemcheck            # ~2 s, no browser: solve all levels, rule pins
                            # (water rules, float immunity / slow descent /
                            # supply discipline, #3853 attract parachute,
-                           # #3863 BUILDER placement/cargo/wood-rules), slack,
-                           # determinism, readability, #470
+                           # #3863 BUILDER placement/cargo/wood-rules,
+                           # #3866 solver-side wood: MASSIF trench road replay,
+                           # offer-level pond/deep-hole refusal, block-tamper
+                           # determinism), slack, determinism, readability, #470
 npm run lemcheck -- --mutate  # planted load-bearing CFG bugs, each must go red
 npm run lemcheck -- --map 2 # ASCII view of a level
 npm run dev -- --port 5178 --strictPort   # then:
 npm run lemplay            # real Chrome: keys/taps only, start→play→die→
                           # restart, pond pixels + live drown, Digit5 → FLOATER,
-                          # #3863: Digit6 → BUILDER, plank pixel, panel tap
+                          # #3863: Digit6 → BUILDER, plank pixel, panel tap,
+                          # #3866: solver's BUILDER rides the aim-bot through
+                          # real keys + tan road pixels sampled mid-lay
 ```
 
 The `--mutate` suite mutates CFG values only; the drown guard and the float
@@ -83,19 +89,20 @@ breakable — every pin here has survived a manual mutation.
 
 ## Honest gaps
 
-- Solver never builds: `candidates()` does not offer BUILDER and no proven
-  script spends planks — the cargo is player-side slack (the FLOATER law,
-  #3827). That keeps every load-bearing proof and slack margin honest today;
-  giving the autopilot staircase command is stage 2: search space plus a
-  re-solve of all four boards (#3863).
-- Planks are flat shelf-cells, not slopes: the original's planks lean into a
-  descent at an angle; this engine's grid speaks in whole cells, so a plank
-  adds one level at a time and the road tracks a staircase plank-per-step.
-  A plank cannot span a gap wider than its shelf, and the demo never shows
-  wood — none of the four boards ends its spawn row at a dry shelf (the road
-  appears when a player stacks CLIMBER + BUILDER and walks SPIRE's east face
-  down). A BUILDER attract moment needs a board whose walking row ends in a
-  shelf, or a scripted demo build like #3853's picker.
+- Sloped-plank look only half-styled: the original's planks lean into a descent
+  at an angle; this engine's grid speaks in whole cells, so a plank adds one
+  level at a time and the road tracks a staircase plank-per-step. A plank
+  cannot span a gap wider than its shelf. The demo shows wood everywhere the
+  solver needs it (#3866 put roads in the attract replays), but the wood sits
+  flat — a sloped sprite per descent direction is unclaimed polish.
+- The planner is optimistic about wood: on THE DOOR and THE LEDGE the recorded
+  scripts contain a BUILDER command that in the replayed world dies at the
+  crater lip before laying anything (cargo untouched, both boards win their
+  quota unchanged — the commit scored off a rollout where the plank road paid
+  before the fall). The autopilot also carries a pre-existing one-tick stamp
+  offset that makes DOOR's replay world lose two extra walkers to the pond
+  (6/1 solve, 6/3 replay — verified identical on main before #3866; need 6
+  holds either way). Planner-tuning note, nothing depends on it.
 - Float-while-digging (the original's floating lemming chews straight down
   through dirt while descending) does not port to the horizontal-tunnel digger;
   it needs either a second dig mode or a rethink of the dig model.
@@ -105,6 +112,39 @@ breakable — every pin here has survived a manual mutation.
   water is out of scope by fidelity, not an open gap.
 
 ## Closed
+
+- #3866 — stage 2: the solver learns BUILDER. `candidates()` now offers wood
+  at exactly the cells walker() lays it (one-tile descent + solid shelf under
+  the landing — pond rims and 2-tile holes can never even be proposed; the
+  offer is pinned at proposal level, not just commit, because a commit-level
+  pin went vacuously green while the offer was still stage-1 empty).
+  `scoreState` counts standing planks (+2/wood, with the unspent-supply +25
+  end-bonus still dominating — scenery burn loses the ledger). THE MASSIF was
+  retrofitted into the proves board: a four-tile trench (row-23 gap over the
+  steel floor) at cols 37–40 with a steel west lip, the exit plinth raised to
+  (43,21), bomb supply 1→0 (a bomber could otherwise blast the plinth into a
+  staircase and wood would be optional); its digger route still delivers and
+  now a BUILDER road of 4 planks walks the crowd across — `proves: ['dig',
+  'build']` with the build proof verified by taking the offer away (removing
+  the build clause reddens the board, 9 pins, restored green). Re-solve of all
+  four boards: SPIRE goes 4/3 → **4/0** — the autopilot climbs its tutorial
+  climber onto the spire and lays the full 12-plank cargo down the east face,
+  a road the whole crowd rides, retiring every death the board used to take
+  while `proves: climb` and the one-shot block still hold; MASSIF 5/1 →
+  **5/0**; DOOR and LEDGE win unchanged (6/1, 5/3) with optimistic build
+  commits they never cash (see gaps). Slack (+1) green everywhere,
+  determinism green with wood (two replays bit-identical; the tamper probe
+  shifts a BLOCK, since a late BUILD self-corrects — laying is
+  position-triggered, not time-triggered). lemcheck 232 → **249** (+17: trench
+  road replay pins the four planks at their exact cells, offer-level pond /
+  deep-hole refusals with positive controls, build-script determinism,
+  solver-spends-cargo); lemplay 47 → **55** (+8: skills 6/12 on the panel,
+  the solver's BUILDER command ridden through real keys by the aim-bot, cargo
+  spent in the browser sim, tan road pixels sampled during the laying window
+  matched to the wood palette — post-win captures race the attract restart and
+  flaked until the sampling moved into the drive loop); `--mutate` 270/270;
+  recmethods PASS 37 (pointer rec regenerated — SPIRE's script changed).
+  **CLOSED by #3866**
 
 - #3864 — blocker-wake: the block is one-shot like the original. A CLIMBER
   treats a blocker ahead as a handhold — mounts his head, lands on the far
