@@ -1480,7 +1480,10 @@ export function drawSeatCpu(ctx, t, sx, sy) {
     }
 }
 
-// attract headline cycle — one message at a time (ART.md law)
+// attract headline cycle — one message at a time (ART.md rule 6): a cycling
+// headline plus the blinking coin-op invite, and never a third wall of text
+// over the cast. The key strip rides the cycle itself (one slot at a time)
+// rather than standing over the street permanently.
 export function drawAttract(ctx, phase, tick) {
     const msgs = [
         ['DOUBLE DRAGON', '#c8302f', 2],
@@ -1491,14 +1494,13 @@ export function drawAttract(ctx, phase, tick) {
         ['KNIFE  WHIP  BARRELS', '#e8c87a', 1],
         ['RESCUE MARIAN', '#ff9ec0', 1],
         ['PUNCH  KICK  JUMP', '#8fd0ff', 1],
+        [TIP, '#8fd0ff', 1],
     ]
     const [s, col, sc] = msgs[phase % msgs.length]
     const w = textWidth(s, sc)
     const y = phase === 0 ? 54 : 78
     if (tick % 40 < 30) label(ctx, s, Math.round((W - w) / 2), y, col, sc)
-    // shell branding sits low-center; the coin-op invite stays above it
-    label(ctx, 'PRESS ANY KEY', Math.round((W - textWidth('PRESS ANY KEY', 1)) / 2), 118, Math.floor(tick / 24) % 2 ? '#fff' : '#9fb3e8', 1)
-    // #2874: and the invite finally says WHICH keys — permanent, quiet blue,
-    // never flashing (one-message law: the headline still owns the flicker).
-    label(ctx, TIP, Math.round((W - textWidth(TIP, 1)) / 2), 134, '#4a6db8', 1)
+    // shell branding sits low-center; the coin-op invite stays in the headline
+    // band, clear of the cast and never over the upper HUD.
+    label(ctx, 'PRESS ANY KEY', Math.round((W - textWidth('PRESS ANY KEY', 1)) / 2), 96, Math.floor(tick / 24) % 2 ? '#fff' : '#9fb3e8', 1)
 }
