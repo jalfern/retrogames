@@ -593,14 +593,21 @@ export default function Emberwood() {
                     </div>
                 </div>
             )}
+            {/* #1656 — the forgotten-how-to-play tap: start AND watch, one button.
+                Absolutely pinned in the pad-clear band (bottom 24%) so it can never
+                be overlapped by the story copy, which lives above it (#3933). */}
             {screen === 'attract' && (
-                <div className="absolute inset-0 flex flex-col items-center justify-center pointer-events-none font-mono px-4" style={{ textShadow: '3px 3px 0 #000' }}>
-                    <div className="text-amber-300 text-4xl sm:text-5xl font-bold tracking-widest mb-1">EMBERWOOD</div>
-                    <div className="text-violet-300 text-sm tracking-widest mb-5">THE CINDER VALE</div>
+                <div className="absolute inset-x-0 z-[70] flex justify-center pointer-events-none" style={{ bottom: '24%' }}>
+                    <AttractWatchButton />
+                </div>
+            )}
+            {screen === 'attract' && (
+                <div className="absolute inset-x-0 top-0 flex flex-col items-center justify-center pointer-events-none font-mono px-4" style={{ bottom: '24%', textShadow: '3px 3px 0 #000' }}>
+                    <div className="text-amber-300 text-4xl sm:text-5xl font-bold tracking-widest mb-1 leading-none">EMBERWOOD</div>
+                    <div className="text-violet-300 text-sm tracking-widest mb-4">THE CINDER VALE</div>
                     <div className="w-full max-w-[92%] text-center text-emerald-200 text-xs leading-snug font-bold">{line}</div>
                     <div className="text-white/80 text-sm mt-4 animate-pulse">PRESS ANY KEY OR TAP TO BEGIN</div>
                     <div className="text-stone-400 text-xs mt-2">Y — watch the proven route</div>
-                    <div className="mt-4 pointer-events-auto"><AttractWatchButton /></div>
                     {/* #965: phones have no third pad button and tap-to-start means
                         "new journey" — the save needs its own tappable affordance
                         here, or a phone can never continue. The tap dispatches the
