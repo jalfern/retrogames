@@ -1,72 +1,81 @@
-# STATE — forge board snapshot (slot b, 2026-11-28 — FROGGER ease shipped from a rescued corpse)
+# STATE — forge board snapshot (slot a, 2026-11-28 — one-shot blockers shipped; the marquee remembers its default)
 
-## This session (slot b) — step-1b resume, not a fresh claim
-- Found a **dying-lane trap on my slot's own issue**: #3854 (FROGGER difficulty
-  ease) was claimed by a slot-b session that crashed mid-`--mutate` (~04:42Z).
-  Its orphan `froggercheck --mutate` kept planting mutants under the service
-  daemon with `tail` piped to a dead session, `.mutant-running` stamped and
-  `attract.js` rewritten. Killed orphans (mutate + wrappers + zombie tail),
-  reverted the planted mutant to HEAD, cleared the stamp, verified mutateguard.
-  Posted the takeover comment on #3854 first thing after cleanup.
-- A parallel lane (slot a) ran the same resume concurrently — honest collision,
-  productive outcome: its tee'd board `/tmp/frogger-mutate-b.log` finished
-  **139/139 with all 27 mutants die** (incl. "the level-6 ease is removed"),
-  restored the tree, and the squash merge landed: PR #3858 → `1c05b24`
-  (05:25:05Z). My lane's contribution: orphan-plant cleanup (otherwise #2047
-  risk), merge-readiness proof (static SUCCESS at head `d3c497a`, MERGEABLE,
-  no hold, main-ok green), and prod verification + issue closure.
-- **Prod verified by behaviour, not hash**: pre-deploy index carried the old
-  monotonic `min(1+n*.12,1.8)`; live index `index-D-xfUy7u.js` contains the
-  `level>5` ease branch. https://jalfern.com/retrogames/frogger
-- #3854: `building`→`shipped`, closed (GitHub auto-closed at merge; labels
-  corrected + shipped comment with the recovery record).
+## This session (slot a) — never-dry rung, taken and shipped
+- Normal ladder dry, verified honest: halt/steer 0; `next` #1712 waiting-jon →
+  skipped; game-queue empty; feedback QA-held (#3860) or waiting-jon
+  (#3244/#2971); QA MASTER live → no borrow; flagship ladder spent.
+  `idle-kick` → `KICK LEMMINGS-LITE 0 weak` (same target the slot note carried).
+- Filed POLISH #3864 (blocker-wake — oldest gap that fits one session; BUILDER
+  stays for a dedicated multi-session claim per #3853 sizing). Shipped PR #3865
+  → squash `30f0af6`: **the block is one-shot**. A CLIMBER treats a blocker dead
+  ahead as the original's first rung (`traffic` mount: cross the head, land on
+  the far side); any body crossing the head line spends the block
+  (`releaseBlocker`/`wakeCheck`) — the blocker resumes walking the direction he
+  faced (pond-rim releases walk him under: fidelity, the original judges the
+  player). THE SPIRE ships `block: 1` — solver spends it at the west pond rim
+  (attract demos the line) and SPIRE now carries block+climb together, so the
+  combo is player-stageable. Re-solve: all four levels win, slack/proofs/
+  determinism unchanged.
+- **static caught a real regression mid-merge** (1 fail, fixed same session):
+  the mount path AND `recmethods` each derived "default selected skill = first
+  SKILLS-order skill with supply"; SPIRE's new `block: 1` flipped the marquee
+  default CLIMBER→BLOCKER and collapsed the pointer-only rec (pointer taps carry
+  no skill switch) to 1 tap, 0/4. Fix: `sim.defaultSkill(level)` — levels
+  declare their tutorial arm (SPIRE: climb), game + harness read one source.
+  On-disk `lemmings-pointer.json` byte-identical after the fix.
+- Proof: lemcheck 199/199 (+3 wake pins; hand-drift neutering `releaseBlocker`
+  → exactly 2 red → restore), lemplay 46/46 (new player-staged wake drive:
+  block mid-lane by aim+Space, climber at the line, blocker seen resuming on
+  page frames, climber lands west of where walkers turn), recmethods + 
+  goldentracecheck 89/89 + contractcheck 859/859 + attractcheck green, build
+  green. Prod verified by content: live `Lemmings-NCB4h2uC.js` carries
+  climbblock/wake code, SPIRE `block:1,...defaultSkill:"climb"`.
+- #3864: building→shipped, closed (auto-closed at merge; labels corrected).
 
 ## BOARD facts at close
-- main tip `26e5bbb` (slot a's STATE; its game squash `1c9488f` #3859 ponds +
-  docs `fe88741` precede it). Rule-4 streak: reset (game code merged).
-- building: none. building-qa: **#3860 QA — DEFENDER** (never touch).
-  game-queue: empty. halt/steer: 0. #3841 (lemplay flake) platform lane's.
-- jonq: #3791 AWAITING (deadline 11-29), #3516 AWAITING (default `done` at
-  its sweep ~11-28 12:35Z). Let the sweeps take them; do not re-file.
+- main tip `30f0af6`. Rule-4 streak: reset (game code merged).
+- building: **#3863 POLISH — LEMMINGS-LITE: BUILDER skill** (another lane is
+  inside Lemmings — NEVER touch; this is why `idle-kick` now answers NONE:
+  Lemmings + Defender both held, no unowned gaps score). building-qa: #3860.
+  halt/steer: 0. #3841 (lemplay flake) platform lane's — it fired once this
+  session mid-drive and reran green, as predicted by its title.
+- jonq: #3791 AWAITING (deadline 11-29), #3516 AWAITING (default `done` at its
+  sweep ~11-28 12:35Z). Let the sweeps take them; do not re-file.
 
 ## PLAYABLE on main right now
-- FROGGER with the arcade breath: levels 1–5 byte-equal, level 6 steps back
-  1.48→1.36 and re-climbs +12%/lvl, 1.8× cap at level 10:
-  https://jalfern.com/retrogames/frogger
-- LEMMINGS-LITE ponds everywhere (all four boards have water, 3-tile fatal
-  falls, demo parachutes); MINESWEEPER marquee; BARD'S TALE; PINBALL; KOI demo.
+- LEMMINGS-LITE with the original's one-shot line: https://jalfern.com/retrogames/lemmings
+  — block a walker, send a climber over him, watch the blocker wake and the
+  climber land where walkers must turn; SPIRE holds its crowd at the pond.
+- FROGGER eases at level six; MINESWEEPER marquee; BARD'S TALE; PINBALL; KOI demo.
 
 ## Open questions (links only — #605)
 - #3791 (dry shelf: which new flagship title — AWAITING, deadline 11-29),
   #3516 (Arkanoid texture rung — AWAITING, defaults done at its sweep).
 
 ## Next claims (for whoever is free)
-1. Lemmings **BUILDER** — oldest real gap, first legitimate multi-session WIP
-   branch (placed-cell planks + solver search space + re-solve all four levels;
-   sized on #3853 at 1–2 days). Alternates: blocker-wake (medium, re-solve),
-   float-while-dig (design question first). idle-kick will keep naming
-   LEMMINGS-LITE while those gaps stand.
-2. Two lanes crashed this window mid-work (slot-b pre-merge, and both new slot
-   kicks came from one tick the board was empty — the never-dry warden kicked
-   slot-a AND slot-b at 04:44 while a half-built corpse sat unclaimed). The
-   resume rung works but cost a collision; whoever picks the next claim, check
-   `pgrep -fl froggercheck|mutate` style residue BEFORE touching a worktree.
+1. LEMMINGS-LITE still owns the shelf's last two unowned gaps: **BUILDER** is
+   held by #3863 (in flight), **float-while-dig** remains — but it opens with a
+   design question (the horizontal tunneler contradicts the original's
+   air-dig; decide dig-model scope BEFORE filing a stage, `jonq` fodder rather
+   than a fake stage). While #3863 is live, idle-kick correctly says NONE —
+   do not kick Lemmings twice.
+2. If #3863 ships and float stays undecided, the dry-shelf question (#3791) is
+   the only question Jon sees; its default holds the shelf if unanswered.
 
 ## Slot state at handoff
-- :5178 stopped via `scripts/devstop.sh`; no other lane's port touched.
-- Worktree `retrogames-forge-frogger-ease` left detached at `origin/main`
-  (merge cleanup detached it after squash); remote branch deleted; tree clean;
-  no `.mutant-running` anywhere in slot paths. mergeclean will prune it.
+- :5173 stopped via `scripts/devstop.sh`; no other lane's port touched.
+- Worktree `retrogames-forge-lemmings-wake` left detached at `origin/main`
+  (mergeclean: remote branch gone, lane re-detached, clean). mergeclean/warden
+  prune; node_modules symlink unlink first if you prune by hand.
 - STATE committed to main (step-9 allowance: the forge game merged this
-  session) and parked slot-scoped via `statepark.mjs park b`.
+  session) and parked slot-scoped via `statepark.mjs park a`.
 
 ## Harness facts worth keeping
-- (a) A crashed lane's background commands survive under the opencode service
-  daemon (pid 3073) — `pgrep` for the *check*, not the session; dead lanes
-  leave live mutant plants ticking. Kill pattern: match `scripts/<name>check`,
-  never `npm run dev` (kills lanes).
-- (b) jalfern.com assets are behind apex→www 308 + CDN HTML cache: poll for a
-  *changed index hash* with a cache-buster query, then grep the new index —
-  FROGGER is bundled in the index (not lazy); LEMMINGS is its own chunk.
-- (c) The frogger mutator's board is 27 mutants / ~30 min serial; B1's promised
-  "merge on green" was satisfiable by tee'd log evidence — keep boards tee'd.
+- (a) Any default-skill/auto-select derivation duplicated between game and
+  harness drifts when a level's supply dict changes — read it through
+  `sim.defaultSkill` (level may declare `defaultSkill`), never re-find.
+- (b) `recmethods` pointer recs can only commit the SELECTED skill — before
+  changing a game's skill supply, run `npm run recmethods` locally (it's a
+  static step and it bites exactly here).
+- (c) Claim-time ladder: `next` #1712 carries waiting-jon → builders skip it;
+  skip list stable across four sessions now.
