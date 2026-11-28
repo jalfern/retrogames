@@ -868,7 +868,7 @@ const DefenderGame = () => {
 
     return (
         <div className="fixed inset-0 bg-black flex items-center justify-center p-4">
-            <div ref={containerRef} className="relative w-full max-w-[600px] aspect-[3/4] border-2 border-neutral-800 rounded-lg overflow-hidden shadow-2xl shadow-neutral-900 bg-black">
+            <div ref={containerRef} className="relative w-full max-w-[600px] max-h-full aspect-[3/4] border-2 border-neutral-800 rounded-lg overflow-hidden shadow-2xl shadow-neutral-900 bg-black">
                 <canvas ref={canvasRef} className="block w-full h-full" />
                 {paused && <PauseOverlay game={GAMES.find(g => g.label === 'DEFENDER')} onResume={handleResume} />}
                 {/* #1654: the discoverable WATCH line, before the first Y press. */}
