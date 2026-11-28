@@ -102,15 +102,6 @@ breakable — every pin here has survived a manual mutation.
   cannot span a gap wider than its shelf. The demo shows wood everywhere the
   solver needs it (#3866 put roads in the attract replays), but the wood sits
   flat — a sloped sprite per descent direction is unclaimed polish.
-- The autopilot carries a pre-existing one-tick stamp offset that makes THE
-  DOOR's replay world lose two extra walkers to the pond (6/1 solve, 6/3
-  replay — verified identical on main before #3866; need 6 holds either way).
-  Replay-vs-replay determinism is bit-identical and the product contract —
-  attract delivers the quota — holds; any new pin must compare replay outcomes,
-  not solve outcomes, or it will flake. Planner-tuning note, nothing depends
-  on it. (Its old twin — the optimistic BUILDER commits on THE DOOR and THE
-  LEDGE that died at the crater lip before laying any wood — is closed: the
-  solver now certifies its own script against the replay world, see Closed.)
 - Float-while-digging (the original's floating lemming chews straight down
   through dirt while descending) does not port to the horizontal-tunnel digger;
   it needs either a second dig mode or a rethink of the dig model.
@@ -121,6 +112,34 @@ breakable — every pin here has survived a manual mutation.
 
 ## Closed
 
+- #3892 — the replay phase, honest at last: `replay()` fetched
+  `byTick.get(g.tick + 1)`, so every scripted command fired **one tick before**
+  the phase `solve()` had verified it in (stamp T applies between the steps;
+  the step advancing to T+1 moves the body — the same phase a human keypress
+  has). On THE DOOR the cascade drowned two walkers the oracle never claimed
+  (6/1 solve, 6/3 replay); the attract and WATCH drivers in `index.jsx` and
+  lemcheck's demo mirror carried the same `+1` on screen. All three now apply
+  stamp T at `g.tick === T` — DOOR replays 6/1, identical to its proof;
+  SPIRE 4/0, MASSIF 5/0, LEDGE 5/3 unchanged; replay-vs-replay stays
+  bit-identical. BoulderDash/Sonar/ArenaArchery already fetched by the current
+  tick; Lemmings was the shelf's only offender. Side effect worth its notice:
+  the honest world holds its crowds, so the crowd-falls that #3853's picker
+  relied on for its mid-air canopy vanished — the demo float is now
+  CERTIFIED, not hoped: `attract.js certifyDemoFloat` scans the replay world
+  for the picker's candidates and accepts a grant only when replaying it keeps
+  win/exited/dead identical. Result on today's boards: SPIRE deploys TWO
+  chutes mid-descent, DOOR catches the post-bomb drop mid-air (better than the
+  desync-era demo ever showed), MASSIF and LEDGE grant proof-neutral walker
+  stripes. Harness: lemcheck 282 → **314** — a REPLAY PHASE section (per-board
+  replay-outcome-equals-solve pins, THE DOOR direct probe demanding every
+  command silent at stamp T and live at T+1, shell-source audit of the attract
+  and WATCH applies), the rewritten parachute drive (certified grants applied
+  exactly as the shell applies them, demo outcome demanded equal to the
+  certificate), and the #3876 plant-probe observation moved to plantT+1 — the
+  early fetch's old visibility signature was itself the bug encoded in a pin.
+  Hand mutation: restore `+ 1` in `replay()` → 5 pins red (phase probe, DOOR
+  outcome, demo certificate), restore → green. New product law for this game:
+  pins may now compare solve outcomes again — replay runs the oracle's world.
 - #3879 (SOUND slice) — the game has a voice: an ORIGINAL Graveyard-era
   homage bed (`MUSIC.lemmings`, 64 steps × 0.16 s, square lead + triangle
   lament bass + two heartbeat kicks) with the bed following the game
@@ -241,7 +260,11 @@ breakable — every pin here has survived a manual mutation.
   player's supply is untouched because `startPlay` rebuilds the level.
   lemcheck pins the picker, the per-level demo replays (win + canopy + supply
   cap) and a live Chrome run paints the striped canopy (16 cream + 8 red px).
-  **CLOSED by #3853**
+  **CLOSED by #3853** — superseded in part by #3892: with the replay phase
+  fixed, DOOR's airborne pick came from the desync, not the game; the grant is
+  now certified per board (`certifyDemoFloat`) and mid-air deploys live on
+  SPIRE and DOOR, script targets included (the certificate, not the exclusion,
+  guards the proven line).
 - #3849 — fatal fall distance: `CFG.maxFall` was 7, the original kills past ~3.
   Now 3 — falls off the spire kill, floaters become precious. THE SPIRE's east
   stair dropped its last step ~6 tiles to the floor (the old lax value hid it);
