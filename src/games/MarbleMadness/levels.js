@@ -46,6 +46,15 @@ export const SIDE1 = '#5a6a96'
 export const SIDE2 = '#3c4668'
 export const STEEL = '#101018'
 
+// #3895 art pass — stone grain: four dither-shade variants of each checker
+// colour (the cabinet dithered its platforms; we do the same in code). The
+// hash keys on (c,r) only, never tick — grain is stone, not sparkle.
+const shade = (hex, amt) => '#' + [1, 3, 5].map((i) =>
+    Math.max(0, Math.min(255, parseInt(hex.slice(i, i + 2), 16) + amt)).toString(16).padStart(2, '0')).join('')
+export const TILE_TINTS = PAIRS.map((pair) => pair.map((col) => [shade(col, -8), shade(col, -4), col, shade(col, 5)]))
+export const tileTint = (c, r, pairIdx, parity) =>
+    TILE_TINTS[pairIdx % TILE_TINTS.length][parity][(((c * 73856093) ^ (r * 19349663)) >>> 8) & 3]
+
 // run: rectangle corners inclusive; z lerps along the longer axis
 function run(blocks, x0, y0, x1, y1, z0 = null, z1 = null) {
     blocks.push({ x0, y0, x1, y1, z0, z1 })
