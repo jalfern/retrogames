@@ -40,6 +40,10 @@ export const FIXED_DT = 1 / 60
 export const AIR = 0
 export const DIRT = 1
 export const STEEL = 2
+// WATER (#3828): the original's signature hazard — any lemming that touches it
+// drowns, from any height, no skill saves it. Water is NOT ground: walkers walk
+// into it and sink. Only DIRT yields to digging and blasting; water stays.
+export const WATER = 3
 
 export const CFG = {
     walkSp: 2.3,
@@ -68,7 +72,7 @@ export const cell = (g, cx, cy) => {
     if (cx < 0 || cx >= W || cy < 0 || cy >= H) return STEEL   // world edges are steel
     return g.grid[cy * W + cx]
 }
-export const solid = (g, cx, cy) => cell(g, cx, cy) !== AIR
+export const solid = (g, cx, cy) => { const c = cell(g, cx, cy); return c === DIRT || c === STEEL }
 const groundRow = (y) => Math.floor(y + 1e-6)
 const bodyRow = (y) => Math.floor(y - 0.5)
 
@@ -97,6 +101,7 @@ export function makeGame(level, grid) {
         spawned: 0,
         exited: 0,
         dead: 0,
+        drowned: 0,                       // #3828 deaths by water, for HUD/harness honesty
         cursor: { x: 6.5, y: 18 },
         selected: 'climb',
         skills: { ...level.skills },
@@ -178,6 +183,11 @@ export function step(g, cursorTarget = null) {
         if (!L.live) continue
         if (L.flashT > 0) L.flashT--
         if (exitTouch(g, L)) continue
+        // #3828 water: a live body whose chest or feet cell is water drowns,
+        // whatever height it arrived from and whatever state it was in. Checked
+        // before the state machine so a faller over a pond sinks instead of
+        // splatting, and a walker that wades in dies at the surface.
+        if (inWater(g, L)) { kill(g, L, 'drown'); continue }
         switch (L.state) {
             case 'walk': case 'bomb': case 'block': walker(g, L); break
             case 'fall': faller(g, L); break
@@ -228,8 +238,14 @@ function exitTouch(g, L) {
 function kill(g, L, cause) {
     L.live = false; L.state = 'dead'
     g.dead++
-    g.events.push({ type: cause === 'fall' ? 'splat' : 'boom', id: L.id })
+    if (cause === 'drown') g.drowned = (g.drowned | 0) + 1
+    g.events.push({ type: cause === 'fall' ? 'splat' : cause === 'drown' ? 'drown' : 'boom', id: L.id })
 }
+
+// chest or feet in a water cell = drowned (#3828). Out-of-bounds reads as
+// STEEL, so only real WATER tiles ever answer true.
+const inWater = (g, L) => cell(g, Math.floor(L.x), bodyRow(L.y)) === WATER
+    || cell(g, Math.floor(L.x), groundRow(L.y)) === WATER
 
 function walker(g, L) {
     if (L.state === 'bomb') {
@@ -350,7 +366,8 @@ function digger(g, L) {
         return
     }
     L.state = 'walk'
-    g.events.push({ type: chest === STEEL ? 'digstop' : 'digthru', id: L.id })
+    // water, like steel, refuses the digger (#3828 — only dirt yields)
+    g.events.push({ type: chest === STEEL || chest === WATER ? 'digstop' : 'digthru', id: L.id })
 }
 
 function blast(g, L) {

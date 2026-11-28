@@ -9,7 +9,7 @@
 // Coordinates: cell (col, row), row 0 at top. A lemming standing on a surface
 // has feet y = the surface row; its chest is the cell above (see sim.js).
 
-import { W, H, AIR, DIRT, STEEL } from './sim.js'
+import { W, H, AIR, DIRT, STEEL, WATER } from './sim.js'
 
 class Carve {
     constructor(fill = DIRT) { this.g = new Uint8Array(W * H).fill(fill) }
@@ -49,6 +49,13 @@ export const LEVELS = [
             for (let x = 23; x <= 33; x++) c.column(x, x - 15, 23, DIRT)
             // exit plinth
             c.rect(40, 23, 44, 23, DIRT)
+            // #3828 the pond: the original's first level had one, and the
+            // drown rule is its most famous hazard. At the spire's west foot
+            // it converts the tutorial's old free-for-all — bounced, unclimbed
+            // walkers pacing west forever — into a drain: dawdle and the
+            // stragglers walk into the water instead of pacing for free.
+            // The spawn→spire route (cols 4+ ground) never touches it.
+            for (let x = 0; x <= 3; x++) c.rect(x, 23, x, 24, WATER)
             return c.g
         },
     },

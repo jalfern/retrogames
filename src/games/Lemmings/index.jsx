@@ -23,7 +23,7 @@ import { makeFitCanvas } from '../../utils/fitCanvas'
 import { LEVELS, buildLevel } from './levels.js'
 import { LAYOUT } from './layout.js'
 import { PRESS, MESSAGES } from './attract.js'
-import { makeGame, step, solve, assign, nearestLemming, stateHash, SKILLS, SKILL_NAME, SKILL_KEY, CFG, W, H, DIRT, STEEL, FIXED_DT } from './sim.js'
+import { makeGame, step, solve, assign, nearestLemming, stateHash, SKILLS, SKILL_NAME, SKILL_KEY, CFG, W, H, DIRT, STEEL, WATER, FIXED_DT } from './sim.js'
 import WatchButton, { WatchToast, AttractWatchButton } from '../../components/WatchButton'
 import { isWatchKey, isTakeoverKey, playWatchStart, playWatchStop, watchSfxLog, WATCH_ATTRACT_HINT } from '../../utils/watch'
 
@@ -90,6 +90,7 @@ const LemGame = () => {
         let raf = 0, last = 0, acc = 0
         let runCmds = []                          // player-command log of the live run
         let watchScript = null                    // #1637 the solver's commands for the WATCH seat
+        const splashes = []                       // #3828 drown splashes: {x,y,t}
         const cursor = { x: 8, y: 18 }
         let selected = 'climb'
         const keys = new Set()
@@ -120,6 +121,7 @@ const LemGame = () => {
             cursor.x = meta.spawn.x; cursor.y = meta.spawn.y - 1
             selected = (SKILLS.find(s => meta.skills[s] > 0)) || 'climb'
             watchScript = null                            // #1637 a new level starts in your hands
+            splashes.length = 0                       // #3828 no ghost splashes across boards
             watchingRef.current = false; setWatching(false)
             abortGesture()                        // no press from the previous run survives into this one
         }
@@ -153,6 +155,14 @@ const LemGame = () => {
                 else if (e.type === 'assign') audioController.playTone(e.skill === 'bomb' ? 180 : 520 + SKILLS.indexOf(e.skill) * 90, 0.07, 'square', 0.07)
                 else if (e.type === 'blast') { audioController.playNoise(0.5, 0.16); audioController.playSweep(220, 50, 0.5, 'sawtooth', 0.1) }
                 else if (e.type === 'splat') audioController.playSweep(360, 60, 0.22, 'sawtooth', 0.09)
+                else if (e.type === 'drown') {
+                    // #3828: the original's wet, descending "blub" — a soft
+                    // splash followed by a sinking tone, not a harsh splat.
+                    audioController.playNoise(0.14, 0.05)
+                    audioController.playSweep(300, 70, 0.4, 'sine', 0.07)
+                    const L = gs.lemmings.find((l) => l.id === e.id)
+                    if (L) splashes.push({ x: L.x, y: L.y, t: 0 })
+                }
                 else if (e.type === 'dig') audioController.playNoise(0.06, 0.03)
                 else if (e.type === 'land') audioController.playTone(120, 0.05, 'triangle', 0.04)
                 else if (e.type === 'step') audioController.playTone(220, 0.03, 'triangle', 0.025)
@@ -208,6 +218,9 @@ const LemGame = () => {
         const stepGesture = (p) => pointerGesture(gest, p, liveCands(), p.x * W, p.y * H, stageScale(), commitAssign)
 
         const doSim = () => {
+            // #3828 splash rings are cosmetic but ride the WORLD clock, so FF
+            // and slow-mo animate them with the sim (never setTimeout — AGENTS).
+            for (let i = splashes.length - 1; i >= 0; i--) { if (++splashes[i].t > 30) splashes.splice(i, 1) }
             if (screenRef.current === 'attract') {
                 // attract = the solver's proven script, replayed on screen
                 const c = plan.find(cc => cc.tick === gs.tick + 1)
@@ -296,6 +309,26 @@ const LemGame = () => {
                     const t = gs.grid[y * W + x]
                     if (t === 0) continue
                     const px = x * TS, py = y * TS
+                    if (t === WATER) {
+                        // #3828 the pond: layered blue with a sunlit surface. The
+                        // row under open sky is the surface — a bright, rippling
+                        // band that shifts with the clock so the water reads as
+                        // water even in a still screenshot.
+                        const surf = y === 0 || gs.grid[(y - 1) * W + x] !== WATER
+                        ctx.fillStyle = surf ? '#2f7fb8' : '#1d5b8c'
+                        ctx.fillRect(px, py, TS, TS)
+                        if (surf) {
+                            const ph = Math.floor(gs.tick / 14) + x
+                            ctx.fillStyle = ph % 3 === 0 ? '#8ad9f2' : ph % 3 === 1 ? '#5cb8e0' : '#43a4d2'
+                            ctx.fillRect(px, py, TS, 2)
+                            ctx.fillStyle = 'rgba(13,48,74,0.35)'
+                            ctx.fillRect(px + 1, py + TS - 3, TS - 2, 1)
+                        } else {
+                            ctx.fillStyle = 'rgba(10,36,58,0.4)'
+                            ctx.fillRect(px + 2, py + 2 + (x % 2) * 2, 3, 1)
+                        }
+                        continue
+                    }
                     if (t === DIRT) {
                         ctx.fillStyle = '#7a4a22'; ctx.fillRect(px, py, TS, TS)
                         ctx.fillStyle = speck(x, y) > 0.5 ? '#8d5a2c' : '#68391a'
@@ -336,6 +369,11 @@ const LemGame = () => {
                 if (!L.live && L.state !== 'dead') continue
                 const px = Math.round(L.x * TS - 3), py = Math.round(L.y * TS - (L.state === 'dead' ? 3 : 8))
                 if (L.state === 'dead') {
+                    // #3828: drowned lemmings sink — no grey corpse left sitting
+                    // on the pond; the splash ring already marked where.
+                    const gx = Math.min(W - 1, Math.max(0, Math.floor(L.x)))
+                    const gy = Math.min(H - 1, Math.max(0, Math.floor(L.y)))
+                    if (gs.grid[gy * W + gx] === WATER) continue
                     ctx.fillStyle = '#8d97a3'; ctx.fillRect(px - 1, py + 5, 8, 3)
                     continue
                 }
@@ -371,6 +409,18 @@ const LemGame = () => {
                 ctx.strokeStyle = `rgba(255,216,61,${(0.25 + 0.75 * f).toFixed(2)})`
                 ctx.lineWidth = 2
                 ctx.beginPath(); ctx.arc(rx, ry, 8 + (1 - f) * 7, 0, Math.PI * 2); ctx.stroke()
+            }
+
+            // #3828 drown splashes: an expanding cyan ring with foam flecks,
+            // so "who the pond took" reads at a glance even in a busy crowd.
+            for (const s of splashes) {
+                const f = 1 - s.t / 30
+                const rx = Math.round(s.x * TS), ry = Math.round((s.y - 0.5) * TS)
+                ctx.strokeStyle = `rgba(138,217,242,${(0.85 * f).toFixed(2)})`
+                ctx.lineWidth = 2
+                ctx.beginPath(); ctx.arc(rx, ry, 3 + (1 - f) * 10, 0, Math.PI * 2); ctx.stroke()
+                ctx.fillStyle = `rgba(240,250,255,${(0.9 * f).toFixed(2)})`
+                ctx.fillRect(rx - 4, ry - 1, 2, 2); ctx.fillRect(rx + 3, ry - 2, 2, 2); ctx.fillRect(rx - 1, ry - 4, 2, 2)
             }
 
             // cursor (play) or autopilot ghost (attract): in attract the box
@@ -575,7 +625,7 @@ const LemGame = () => {
                     cursor: { ...cursor }, selected,
                     aim: gest.aim ? { id: gest.aim.id, skill: selected } : null,
                     skills: { ...gs.skills },
-                    spawned: gs.spawned, exited: gs.exited, dead: gs.dead, need: meta.need,
+                    spawned: gs.spawned, exited: gs.exited, dead: gs.dead, drowned: gs.drowned, need: meta.need,
                     end: gs.end, win: gs.win, score: gs.score, hash: stateHash(gs),
                     cmds: runCmds.length, gcmds: gs.cmds.length, board: board(), // #1637 gcmds = solver-line assignments too
                     lemmings: gs.lemmings.map(L => ({ id: L.id, x: L.x, y: L.y, state: L.state, dir: L.dir, climber: L.climber, digger: L.digger, flash: L.flashT, live: L.live })),
