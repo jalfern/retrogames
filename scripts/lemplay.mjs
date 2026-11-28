@@ -276,6 +276,12 @@ r.check('real cursor aiming + real keys assigned solver skills to lemmings', ass
 {
     await wait(600)
     const p = await probe()
+    // #3930: the tailwind script spends its build stamp as the LAST command,
+    // so the in-loop sampler (which samples on cargo-spent beats) may never
+    // fire — sample the painted road here too: wood is down (cargo check
+    // below), the board restarts a beat after the win, and this lands before
+    // both. Keep the fullest frame.
+    if (p.skills.build < 12) await lookSample(true)
     r.check('#3866: the autopilot BUILDER command rode the player input path (Digit6/Space saw, lemming carries)', sawBuild, `sawBuild=${sawBuild}`)
     r.check('#3866: the solver-line build spends cargo in the browser sim', p.skills.build < 12, `cargo=${p.skills.build}`)
     r.check('#3866: the plank road paints on the descent (tan grain on the spire face)', roadShot !== null && roadShot >= 80, `tan px=${roadShot}`)
