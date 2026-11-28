@@ -39,7 +39,8 @@ const MESSAGES = [
     'HARD DROP SLAMS THE STACK',
     'FIRST TO 2 ROUNDS WINS',
 ]
-const PRESS = 'PRESS ANY KEY  ·  1 EASY · 3 HARD CPU · 2 LOCAL 2P'
+// The attract overlay splits its mode hint into two lines on purpose: one
+// long line wrapped mid-phrase across the wells on a 440px viewport (#3843).
 const CHAIN_SCALE = [0, 4, 7, 12, 16, 19, 24, 28, 31, 36]
 const GO_FRAMES = 180 // 3 s of 3-2-1: both online boxes see the countdown before the board moves
 
@@ -767,7 +768,8 @@ const BlobBattleGame = () => {
             {screen === 'attract' && !netUi && (
                 <div className="absolute inset-0 bg-black/55 flex flex-col items-center justify-center text-center px-6 pointer-events-none">
                     <AttractMessage className="mb-6 text-pink-200/80" messages={MESSAGES} />
-                    <p className="text-lg font-mono font-bold animate-pulse text-pink-300">{PRESS}</p>
+                    <p className="text-lg font-mono font-bold animate-pulse text-pink-300">PRESS ANY KEY</p>
+                    <p className="mt-2 text-xs font-mono font-bold tracking-widest text-pink-200/70">1 EASY · 3 HARD CPU · 2 LOCAL 2P</p>
                     <span className="block mt-2 text-xs text-white/50 tracking-widest">{WATCH_ATTRACT_HINT}</span>
                 </div>
             )}
