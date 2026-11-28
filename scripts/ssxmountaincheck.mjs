@@ -8,7 +8,7 @@ import { readFileSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
 import { dirname, join } from 'node:path'
 import { buildCourse, terrainY, openness, undulate, bankTurn, sceneryPlan, COURSE_COUNT, DS, WALL_X, SHELF_PROPS, slopePos } from '../src/games/SSX/course.js'
-import { snowColor, buildTerrain, THEMES, GRIDS, SUN, GROOVE, TRACK_DARKEN, surfaceInfo, peaksRing, CLOUD_LAYER, cloudPlan } from '../src/games/SSX/art.js'
+import { snowColor, buildTerrain, THEMES, GRIDS, SUN, GROOVE, TRACK_DARKEN, surfaceInfo, peaksRing, CLOUD_LAYER, cloudPlan, aerialHaze, peakSkinLuma, SASTRUGI } from '../src/games/SSX/art.js'
 import { makeGame, step } from '../src/games/SSX/sim.js'
 import { decide } from '../src/games/SSX/planner.js'
 
@@ -284,6 +284,35 @@ for (const f of ['course.js', 'sim.js', 'planner.js']) {
             Object.values(THEMES).every((T) => T.capSnow[0] * 0.3 + T.capSnow[1] * 0.59 + T.capSnow[2] * 0.11
                 > T.snowB[0] * 0.3 + T.snowB[1] * 0.59 + T.snowB[2] * 0.11 + 10))
         ok('peak ring is deterministic', JSON.stringify(peaksRing()) === JSON.stringify(ring))
+    }
+    // #3900 fidelity gaps 2-4: aerial haze + snowline/strata skin on the far
+    // peaks, an additive bloom on the sun, cords that bite on open snow.
+    {
+        const artSrc = readFileSync(join(here, '..', 'src', 'games', 'SSX', 'art.js'), 'utf8')
+        ok('#3900: haze is zero at the nearest peak and deep at the farthest',
+            aerialHaze(420) === 0 && aerialHaze(720) >= 0.45 && aerialHaze(720) <= 0.6)
+        let mono = true
+        for (let d = 420; d < 720; d += 10) mono = mono && aerialHaze(d + 10) >= aerialHaze(d)
+        ok('#3900: haze grows monotonically with distance', mono)
+        ok('#3900: every ring peak sits inside the haze range',
+            peaksRing().every((p) => aerialHaze(p.dist) >= 0 && aerialHaze(p.dist) < 0.6))
+        ok('#3900: peak skin — summit brightens above the rock body',
+            peakSkinLuma(0.31, 0.95) > peakSkinLuma(0.31, 0.3) + 0.15)
+        let lineLo = 1, lineHi = 0
+        for (let u = 0; u < 1; u += 0.05) {
+            const d = peakSkinLuma(u, 0.95) - peakSkinLuma(u, 0.3)
+            lineLo = Math.min(lineLo, d); lineHi = Math.max(lineHi, d)
+        }
+        ok('#3900: snowline is jittered, not one straight ring', lineHi - lineLo > 0.08)
+        let stratLo = 1, stratHi = 0
+        for (let u = 0; u < 1; u += 0.02) { const v = peakSkinLuma(u, 0.45); stratLo = Math.min(stratLo, v); stratHi = Math.max(stratHi, v) }
+        ok('#3900: strata break the rock body around the cone', stratHi - stratLo > 0.04)
+        ok('#3900: cones are skinned and hazed in buildSky',
+            /map: peakTex/.test(artSrc) && /aerialHaze\(pk\.dist\)/.test(artSrc))
+        ok('#3900: the sun carries an additive bloom halo',
+            /AdditiveBlending/.test(artSrc) && /sunDisc\.add\(halo\)/.test(artSrc))
+        ok('#3900: cord amplitude rides flatness into the colour',
+            /flatK\)\s*\*\s*rip/.test(artSrc) && SASTRUGI.open >= 2.4 * SASTRUGI.base)
     }
     // #665 item 6: race-day grandstands at the finish, clear of gullies
     for (let c = 0; c < COURSE_COUNT; c++) {

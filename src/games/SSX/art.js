@@ -76,6 +76,11 @@ export const SUN = {
 export const GROOVE = { color: [0.05, 0.07, 0.13], alpha: 0.66, lipColor: [0.38, 0.46, 0.68], lipAlpha: 0.30 }
 export const TRACK_DARKEN = 0.12
 
+// #3900: sastrugi cords bite harder the flatter the face (grad below `loose`
+// is fully open snow, `tight` metres steeper and they fade to the base
+// amplitude that rock and shoulders already carry). Pinned by ssxterraincheck.
+export const SASTRUGI = { base: 0.022, open: 0.058, loose: 0.12, tight: 0.22 }
+
 // #911: crevasse interiors read as ice, not one flat dark ramp — the vertical
 // faces carry an ice-blue tint (per theme, so night ice stays moonlit), the
 // floor goes cold and dark with depth, and a bright crest line at the danger
@@ -234,10 +239,15 @@ export function surfaceInfo(c, s, x) {
     const sh = 0.04 + 0.62 * hollow
     rgb = rgb.map((v, k) => v * (1 - sh) + T.shadow[k] * sh * (k === 2 ? 1 + 0.12 * hollow : 1))
     rgb = rgb.map((v) => v * (1 - 0.20 * hollow) * (1 + 0.10 * crest))
-    // wind ripples (sastrugi): low-frequency cords across the face, small
-    // amplitude so the #638 continuity gate stays green
+    // wind ripples (sastrugi): low-frequency cords across the face. #3900:
+    // at one flat ~2 % the cords washed to near-uniform pale grey on the open
+    // racing face, so amplitude now scales with flatness — open snow shows the
+    // cords, steep/rock ground keeps its own texture. Amplitude stays inside
+    // the #638 continuity budget (≈4 luma per 0.2 m scan across the piste).
+    const grad = slopeAt(c, s, x)
+    const flatK = 1 - smooth01((grad - SASTRUGI.loose) / SASTRUGI.tight)
     const rip = Math.sin(s * 0.52 + x * 0.8 + c.rollPhase) + 0.5 * Math.sin(s * 1.07 - x * 0.35 + 1.3)
-    rgb = rgb.map((v) => v * (1 + 0.022 * rip))
+    rgb = rgb.map((v) => v * (1 + (SASTRUGI.base + (SASTRUGI.open - SASTRUGI.base) * flatK) * rip))
     // small lumps: soft bump field, lit on one flank and shaded on the other
     const bx = Math.sin(x * 2.7 + s * 0.11) * Math.cos(s * 0.61 + x * 0.6 + c.rollPhase * 1.7)
     const bz = Math.cos(x * 2.7 + s * 0.11) * Math.sin(s * 0.61 + x * 0.6 + c.rollPhase * 1.7)
@@ -245,7 +255,6 @@ export function surfaceInfo(c, s, x) {
     rgb = rgb.map((v) => v * (1 + 0.03 * lump) + (lump < 0 ? T.shadow[0] * 0.012 * -lump : 0))
 
     // ---- snow vs rock ----
-    const grad = slopeAt(c, s, x)
     const gx = (nat(s, x + 0.05) - nat(s, x - 0.05)) / 0.9
     // #665 two-tone walls: the disc sits on the +x-slope side of the view, so
     // faces whose height drops toward +x (the left wall) catch the light and
@@ -696,6 +705,24 @@ export function peaksRing() {
     return ring
 }
 
+// #3900: aerial haze — the far end of the range sinks toward the fog tint,
+// the classic depth cue that separates near ridges from background mass.
+// Pure data so the harness can grade the fall-off without a DOM.
+export function aerialHaze(dist) {
+    return 0.52 * smooth01((dist - 420) / 300)
+}
+
+// #3900: far-peak skin as pure luma (0..1) over (u around, v up): brighter at
+// the summit with a noise-jittered snowline, coarse strata steps across the
+// rock body below it. Rendered into one shared canvas by buildSky.
+export function peakSkinLuma(u, v) {
+    const base = 0.66 + 0.30 * v
+    const line = 0.60 + 0.12 * Math.sin(u * Math.PI * 6 + 1.3) + 0.05 * Math.sin(u * Math.PI * 14 + 0.5)
+    const snow = smooth01((v - line) / 0.12) * 0.30
+    const strata = 0.05 * Math.sin(v * 34 + u * Math.PI * 2 * 3 + hash(Math.floor(v * 14) * 7.7 + Math.floor(u * 16) * 3.1) * 2.2)
+    return Math.min(1, base + snow + strata)
+}
+
 // ---- wind + crowd life (#791 slice 11) --------------------------------------
 // The original's course flags snapped in the breeze and the grandstands at
 // the line were a shimmer of spectators. All of it is pure functions of
@@ -821,23 +848,72 @@ export function buildSky(course) {
     sunDisc.position.set(Math.sin(sd.az) * Math.cos(sd.el) * 680, Math.sin(sd.el) * 680, Math.cos(sd.az) * Math.cos(sd.el) * 680)
     sunDisc.lookAt(0, sunDisc.position.y * 0.4, 0)
     g.add(sunDisc)
+    // #3900: bloom halo — a soft additive glow wrapped around the disc so the
+    // sun sits in the sky instead of being pasted onto it. Child of the disc,
+    // so index.jsx's per-frame anchoring carries it for free; additive over a
+    // bright sky still reads, the night moon gets a thinner veil.
+    const haloCvs = document.createElement('canvas')
+    haloCvs.width = haloCvs.height = 128
+    const hctx = haloCvs.getContext('2d')
+    const hg = hctx.createRadialGradient(64, 64, 12, 64, 64, 64)
+    hg.addColorStop(0, 'rgba(255,255,255,0.38)')
+    hg.addColorStop(0.3, 'rgba(255,255,255,0.14)')
+    hg.addColorStop(1, 'rgba(255,255,255,0)')
+    hctx.fillStyle = hg
+    hctx.fillRect(0, 0, 128, 128)
+    const haloTex = new THREE.CanvasTexture(haloCvs)
+    haloTex.colorSpace = THREE.SRGBColorSpace
+    const halo = new THREE.Sprite(new THREE.SpriteMaterial({
+        map: haloTex, color: T.sun, transparent: true,
+        blending: THREE.AdditiveBlending, depthWrite: false, fog: false,
+        opacity: course.theme === 'night' ? 0.4 : 0.8,
+    }))
+    const haloR = (course.theme === 'dusk' ? 46 : 30) * 3.4
+    halo.scale.set(haloR * 2, haloR * 2, 1)
+    sunDisc.add(halo)
     g.userData.sun = sunDisc
     g.userData.theme = course.theme
 
     // peaks ring (#665): rocky bodies with snow caps on the taller, luckier
     // peaks — varied silhouettes so the horizon range reads as mountains, not
     // sugar loaves. Bodies pick hazed rock; a lit minority catches the sun.
+    // #3900: the skin is one shared strata canvas (snow-bright summit over a
+    // banded rock body, snowline jittered by peakSkinLuma) and every body and
+    // cap lerps toward the fog tint with aerialHaze — flat white single-tone
+    // cones read as toys at MODERN; banding plus haze reads as distance.
+    const ptx = document.createElement('canvas')
+    ptx.width = 96; ptx.height = 128
+    const pctx = ptx.getContext('2d')
+    const img = pctx.createImageData(96, 128)
+    for (let py = 0; py < 128; py++) {
+        const v = 1 - py / 127
+        for (let px = 0; px < 96; px++) {
+            const l = clamp255(255 * peakSkinLuma(px / 95, v))
+            const o = (py * 96 + px) * 4
+            img.data[o] = l; img.data[o + 1] = l; img.data[o + 2] = l; img.data[o + 3] = 255
+        }
+    }
+    pctx.putImageData(img, 0, 0)
+    const peakTex = new THREE.CanvasTexture(ptx)
+    peakTex.colorSpace = THREE.SRGBColorSpace
+    const fogC = new THREE.Color(T.fog)
     const capCol = course.theme === 'night' ? 0x9aa4d8 : course.theme === 'dusk' ? 0xffe8dc : 0xf4f8ff
+    const mixHex = (c, k) => {
+        const col = new THREE.Color(Array.isArray(c) ? ((c[0] & 255) << 16) | ((c[1] & 255) << 8) | (c[2] & 255) : c)
+        col.lerp(fogC, k)
+        return col
+    }
     for (const pk of peaksRing()) {
+        const haze = aerialHaze(pk.dist)
         const peak = new THREE.Mesh(
             new THREE.ConeGeometry(pk.rad, pk.h, pk.segs),
-            new THREE.MeshLambertMaterial({ color: pk.lit ? T.peakSun : pk.cap ? T.peak : T.peakRock }),
+            new THREE.MeshLambertMaterial({ color: mixHex(pk.lit ? T.peakSun : pk.cap ? T.peak : T.peakRock, haze), map: peakTex }),
         )
         peak.position.set(Math.sin(pk.ang) * pk.dist, -pk.h + pk.tip + pk.h / 2, Math.cos(pk.ang) * pk.dist)
         peak.scale.set(pk.sx, 1, pk.sz)
         peak.rotation.y = hash(pk.ang * 5.3) * Math.PI
         if (pk.cap) {
-            const cap = new THREE.Mesh(new THREE.ConeGeometry(pk.rad * 0.42, pk.h * 0.32, pk.segs), new THREE.MeshLambertMaterial({ color: capCol }))
+            const cap = new THREE.Mesh(new THREE.ConeGeometry(pk.rad * 0.42, pk.h * 0.32, pk.segs), new THREE.MeshLambertMaterial({ color: mixHex(capCol, haze * 0.8) }))
             cap.position.y = pk.h * 0.34
             cap.rotation.y = peak.rotation.y
             peak.add(cap)
