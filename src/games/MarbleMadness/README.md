@@ -99,7 +99,8 @@ the attract replay are bit-identical (marblecheck re-pins both).
 
 ```bash
 npm run marblecheck   # rules + determinism + win proof + 13 bed gates + 11 wobble gates
-                      #   + 16 camera push-in gates + 12 trampoline gates (#1758 item 5) (Node, ~2s)
+                      #   + 16 camera push-in gates + 12 trampoline gates (#1758 item 5)
+                      #   + 4 stone-grain gates (#3895) (Node, ~2s)
 npm run marbleplay    # browser drive (dev server): bed live, per-course re-voicing
                       #   rides the real raceStart events, finale switch, ladder,
                       #   death keeps it, game over stops it, restart brings it back,

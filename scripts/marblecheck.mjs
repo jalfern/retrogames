@@ -7,7 +7,7 @@
 // fails; restore).
 
 import { makeGame, step, stepOk, stateHash, CFG } from '../src/games/MarbleMadness/sim.js'
-import { RACES, GRID, BREAKDROP, buildHeights, FINALE_RACE, MENACE_RACE, AERIAL_RACE, MUSIC_STEPS, bedFor, musicStepFor } from '../src/games/MarbleMadness/levels.js'
+import { RACES, GRID, BREAKDROP, buildHeights, FINALE_RACE, MENACE_RACE, AERIAL_RACE, MUSIC_STEPS, PAIRS, TILE_TINTS, tileTint, bedFor, musicStepFor } from '../src/games/MarbleMadness/levels.js'
 import { busLevel, leadVibrato, dynamicsFor, SWELL_BASE, VIB_MAX_CENTS } from '../src/games/MarbleMadness/dynamics.js'
 import { wobbleAt, knockVibrato, WOBBLE_TICKS, KNOCK_TURNS, KNOCK_VIB_CENTS, KNOCK_VIB_HZ } from '../src/games/MarbleMadness/wobble.js'
 import { corridorWidth, narrowness, targetZoom, ZOOM_BASE, PUSH_GAIN, ZOOM_SMOOTH, OPEN_WIDTH, TIGHT_WIDTH } from '../src/games/MarbleMadness/camera.js'
@@ -550,6 +550,24 @@ ok('brake budget fits physics (maxV needs >0.4 + v*6)', CFG.maxV > 0.1)
         dropArc(0, p0, 1).springs === 0)
     ok('the shatter rule outranks the spring: an over-BREAKDROP drop still kills',
         dropArc(SILLY_RACE, hiCell, BREAKDROP + 1).phase === 'dying')
+}
+
+// #3895 art pass — stone grain: TILE_TINTS shades each checker colour into 4
+// deterministic variants keyed on (c,r) alone. Kill the grain (return the base
+// colour from tileTint) and the SPREAD gate reddens; make the hash tick-based
+// and DETERMINISM reddens; flatten a shade and STRUCTURE reddens.
+{
+    const hx = (h) => [1, 3, 5].map((i) => parseInt(h.slice(i, i + 2), 16))
+    const struct = TILE_TINTS.length === PAIRS.length &&
+        TILE_TINTS.every((p, pi) => p.length === PAIRS[pi].length && p.every((set, k) =>
+            set.length === 4 && new Set(set).size === 4 &&
+            set.every((t) => /^#[0-9a-f]{6}$/.test(t) && hx(t).every((v, ch) => Math.abs(v - hx(PAIRS[pi][k])[ch]) <= 8))))
+    ok('grain: 4 distinct in-register tints per checker colour', struct)
+    ok('grain hashes position only — no clock input (arity 4)', tileTint.length === 4)
+    ok('grain is deterministic (same cell, same tint)', tileTint(7, 11, 2, 1) === tileTint(7, 11, 2, 1))
+    const spread = new Set()
+    for (let r = 0; r < 8; r++) for (let c = 0; c < 8; c++) spread.add(tileTint(c, r, 0, 0))
+    ok('grain varies cell to cell (>=3 tints in an 8x8 patch)', spread.size >= 3, `${spread.size} tints`)
 }
 
 if (fails) {

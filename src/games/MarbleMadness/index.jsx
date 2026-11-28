@@ -7,7 +7,7 @@ import { isWatchKey, isTakeoverKey, playWatchStart, playWatchStop, watchSfxLog, 
 import { GAMES } from '../../config/games'
 import { mountDbg } from '../../utils/DebugKit'
 import { makeGame, step, CFG } from './sim.js'
-import { RACES, GRID, W, H, TW, TH, TZ, PAIRS, SKY_TOP, SKY_BOT, SIDE1, SIDE2, bedFor, musicStepFor } from './levels.js'
+import { RACES, GRID, W, H, TW, TH, TZ, PAIRS, SKY_TOP, SKY_BOT, SIDE1, SIDE2, tileTint, bedFor, musicStepFor } from './levels.js'
 import { dynamicsFor } from './dynamics.js'
 import { wobbleAt, knockVibrato, WOBBLE_TICKS } from './wobble.js'
 import { ZOOM_BASE, ZOOM_SMOOTH, targetZoom } from './camera.js'
@@ -245,7 +245,7 @@ const MarbleMadnessGame = () => {
             ctx.scale(camZoom, camZoom)
             ctx.translate(-camIsoX, -camIsoY)
 
-            const pair = PAIRS[gs.race.pairs % PAIRS.length]
+            const pairIdx = gs.race.pairs % PAIRS.length
             const minZ = gs.heights.flat().reduce((a, b) => Math.min(a, b), 99)
             for (let s = 0; s <= 2 * (GRID - 1); s++) {
                 for (let r = Math.max(0, s - GRID + 1); r <= Math.min(GRID - 1, s); r++) {
@@ -255,6 +255,8 @@ const MarbleMadnessGame = () => {
                     // side skirts toward lower/void neighbors (south then east)
                     const zr = r + 1 < GRID ? gs.heights[r + 1][c] : -1
                     const zc = c + 1 < GRID ? gs.heights[r][c + 1] : -1
+                    const zn = r > 0 ? gs.heights[r - 1][c] : -1
+                    const zw = c > 0 ? gs.heights[r][c - 1] : -1
                     const dS = z - (zr >= 0 ? Math.min(zr, z) : minZ)
                     const dE = z - (zc >= 0 ? Math.min(zc, z) : minZ)
                     if (dS > 0) {
@@ -280,7 +282,30 @@ const MarbleMadnessGame = () => {
                     const zt = z + (gs.waves.length && c >= gs.waves[0].x0 && c <= gs.waves[0].x1 && r >= gs.waves[0].y0 && r <= gs.waves[0].y1
                         ? Math.max(0, Math.sin((c + 0.5 - gs.tick * gs.waves[0].speed * 2) * 0.55) * gs.waves[0].amp)
                         : 0)
-                    diamond(c, r, zt, pair[(c + r) % 2])
+                    // #3895 art pass — stone grain + slab edges: every tile top
+                    // takes a stable dither tint; the board's rim lights on the
+                    // two seams that face away from lower/void ground (N/W) and
+                    // darkens where it drops into a skirt (S/E). One 1px stroke
+                    // language for the whole world; painter-only, sim never sees it.
+                    diamond(c, r, zt, tileTint(c, r, pairIdx, (c + r) & 1))
+                    const litN = z - (zn >= 0 ? Math.min(zn, z) : minZ) > 0
+                    const litW = z - (zw >= 0 ? Math.min(zw, z) : minZ) > 0
+                    if (litN || litW) {
+                        ctx.strokeStyle = 'rgba(255,255,255,0.16)'
+                        ctx.lineWidth = 1
+                        ctx.beginPath()
+                        if (litN) { ctx.moveTo(isoX(c, r), isoY(c, r, zt)); ctx.lineTo(isoX(c + 1, r), isoY(c + 1, r, zt)) }
+                        if (litW) { ctx.moveTo(isoX(c, r), isoY(c, r, zt)); ctx.lineTo(isoX(c, r + 1), isoY(c, r + 1, zt)) }
+                        ctx.stroke()
+                    }
+                    if (dS > 0 || dE > 0) {
+                        ctx.strokeStyle = 'rgba(12,14,34,0.5)'
+                        ctx.lineWidth = 1
+                        ctx.beginPath()
+                        if (dS > 0) { ctx.moveTo(isoX(c, r + 1), isoY(c, r + 1, zt)); ctx.lineTo(isoX(c + 1, r + 1), isoY(c + 1, r + 1, zt)) }
+                        if (dE > 0) { ctx.moveTo(isoX(c + 1, r), isoY(c + 1, r, zt)); ctx.lineTo(isoX(c + 1, r + 1), isoY(c + 1, r + 1, zt)) }
+                        ctx.stroke()
+                    }
                 }
             }
 
