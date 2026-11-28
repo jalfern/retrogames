@@ -104,6 +104,14 @@ takeoff throws OVER.
     the *other* way banks `CFG.revertPts` (chain- and OVER-scaled) and
     renames the trick `REVERT …`. The bonus pays score but never the
     meter — the boost economy stays the trick economy. Bails eat it.
+13. Manuals (#3901): a landing that PAID (`evalTrick pts > 0`) met with the
+    edge still held (↓ — the #547 scrub verb, drag and all) rolls the rider
+    into a nose-up manual. The hold itself scores nothing; releasing clean
+    pays `CFG.manualPts × min(1, t/CFG.manualCap)` × the chain mult, with the
+    meter fed at the trick-economy rate (rails precedent). Ollie, crest, lip
+    and rail exits pay on the way out; a crash forfeits silently. The cap is
+    what keeps Showoff farmable-proof. The planner is cold (it never emits ↓),
+    so CPU/attract/WATCH lines are byte-identical — pinned by 15 ssxcheck gates.
 
 ## The hero rider (#548)
 
@@ -604,6 +612,11 @@ goes red; restore → 257 green.
 
 ## Honest gaps (filed as the polish pass)
 
+- Manuals are a player verb: `planner.js` never emits ↓ (it predates #547's
+  scrub), so the rival field and the attract reel never ride a manual. The
+  original's demo shows buttered rollers — an attract hot-line that lands a
+  grab, manuals the crest and ollies out is QA-lane polish, not this stage.
+
 - **CLOSED by #980**: Board decals reach every rider and the boot weld is solved, not posed
   (#615/#620; #883: `weldBoots` in `art.js` pins each boot's underside to
   the deck-top surface every frame after the pose blend — roll-space corner
@@ -672,7 +685,9 @@ Tuck and scrub are the original SSX stick verbs: ↑ aero-tucks (lower stance,
 `CFG.tuckAcc` m/s² extra downhill pull), ↓ edge-check scrubs (`CFG.scrubDrag`,
 proportional speed bite). Steering stays live through both — and through the
 crouch-charge (ssxcheck pins it). The rider pose drops to `legs.scale.y 0.66`
-while tucked. `__ssxTest.probe().p` carries `tuck`/`scrub` for QA.
+while tucked. `__ssxTest.probe().p` carries `tuck`/`scrub` for QA. A scrub
+held into a *paid* landing is also the manual's entry — rule 13 (#3901); the
+probe carries `manual`/`manualT` beside them.
 
 ## ONLINE (#845) — friends race a tournament over the internet
 
