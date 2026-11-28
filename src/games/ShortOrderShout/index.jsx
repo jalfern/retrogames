@@ -1144,12 +1144,17 @@ export default function ShortOrderShout() {
             const mm = Math.floor(remain / 3600), ss = Math.floor((remain % 3600) / 60)
             ctx.fillStyle = remain < 900 && Math.floor(t / 20) % 2 ? '#ff5252' : '#e8e0d0'
             ctx.fillText(`${mm}:${ss < 10 ? '0' : ''}${ss}`, 6, 38)
+            // #3914: right-align the score block so the digits clear the diner
+            // tip meter (bx=170 below) — at 6px advance/glyph the left-aligned
+            // block ran underneath the bottle. Strikes keep their position.
+            ctx.textAlign = 'right'
             ctx.fillStyle = hud.popT > 0 ? '#ffe082' : '#e8e0d0'
             ctx.font = '10px "Press Start 2P", monospace'
-            ctx.fillText(`SCORE ${g.score}`, 130, 13)
+            ctx.fillText(`SCORE ${g.score}`, 162, 13)
             ctx.font = '9px "Press Start 2P", monospace'
             ctx.fillStyle = '#c8bfa4'
-            ctx.fillText(`QUOTA ${QUOTA}`, 130, 24)
+            ctx.fillText(`QUOTA ${QUOTA}`, 162, 24)
+            ctx.textAlign = 'left'
             for (let i = 0; i < MAX_STRIKES; i++) {
                 ctx.fillStyle = i < g.strikes ? '#ff5252' : '#3a2430'
                 ctx.fillRect(130 + i * 12, 30, 8, 8)
