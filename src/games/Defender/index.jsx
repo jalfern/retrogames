@@ -8,6 +8,7 @@ import { createSim, WORLD_WIDTH, START_LIVES, BOMBS_PER_WAVE, watchRoute, thrust
 import { attractFrame, DIM } from './attract.js'
 import WatchButton, { WatchToast, AttractWatchButton } from '../../components/WatchButton'
 import { isWatchKey, isTakeoverKey, playWatchStart, playWatchStop, watchSfxLog, WATCH_ATTRACT_HINT } from '../../utils/watch'
+import { fitStage } from '../../utils/fitCanvas'
 
 const HI_KEY = 'retrogames-defender-hi'
 
@@ -212,6 +213,20 @@ const DefenderGame = () => {
 
         const resize = () => {
             if (!canvas || !ctx || !containerRef.current) return
+            // #3860 — the stage fits the viewport, not just the width cap:
+            // `w-full max-w-[600px] aspect-[3/4]` grew to 600x800 on short landscape
+            // windows and the flex-centered spill clipped the SCORE/WAVE row off-screen.
+            // fitStage caps width by height too (the p-4 shell leaves -32px); portrait
+            // phones answer the same as w-full did before, so the touch laws are
+            // untouched.
+            const parent = containerRef.current.parentElement
+            if (parent) {
+                const sw = fitStage(parent.clientWidth - 32, parent.clientHeight - 32)
+                if (sw > 0) {
+                    containerRef.current.style.width = `${sw}px`
+                    containerRef.current.style.height = `${sw * 4 / 3}px`
+                }
+            }
             const { width, height } = containerRef.current.getBoundingClientRect()
             const dpr = window.devicePixelRatio || 1
             canvas.width = width * dpr
