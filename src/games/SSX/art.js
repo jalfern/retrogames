@@ -1224,7 +1224,7 @@ export function makeRider(color) {
 // authored per-bone offsets. Every bone blends toward its target each frame,
 // so pose changes read as motion, never as pops.
 
-export const HERO_POSES = ['stand', 'tuck', 'crouch', 'air', 'grab', 'grabFlat', 'grabIndy', 'grabMethod', 'grabSalis', 'grabNose', 'grabTail', 'tumble']
+export const HERO_POSES = ['stand', 'tuck', 'crouch', 'air', 'grab', 'grabFlat', 'grabIndy', 'grabMethod', 'grabSalis', 'grabNose', 'grabTail', 'tumble', 'manual']
 
 // #620: every rider rides a real CC0 KayKit body (one per sim.js id).
 // The whole Adventurers pack shares one skeleton, so the pose bases,
@@ -1348,8 +1348,19 @@ const OFFS = {
         'upperlegl': [0.12, 0, 0.06], 'lowerlegl': [-0.35, 0, 0],
         'upperlegr': [0.1, 0, -0.06], 'lowerlegr': [-0.3, 0, 0],
     },
+    // #3901 manual — weight over the tail: torso leans back, chin up the fall
+    // line, front leg extended to the deck, back leg loaded, balance arm out.
+    // Deck nose-up pitch rides roll.rotation.z in poseRider (the somersault
+    // axis, #904), not the pose table, so the boot weld still solves.
+    manual: {
+        hips: [0, 0, 0, -0.04], spine: [-0.3, 0, 0], chest: [-0.42, 0, 0], head: [0.52, 0, 0],
+        'upperlegl': [0.42, 0, 0.05], 'lowerlegl': [-0.95, 0, 0], footl: [0.5, 0, 0],
+        'upperlegr': [-0.34, 0, -0.05], 'lowerlegr': [0.2, 0, 0], footr: [0.62, 0, 0],
+        'upperarml': [0.9, 0, 0.5], 'lowerarml': [0.7, 0, 0],
+        'upperarmr': [-0.8, 0, -0.35], 'lowerarmr': [0.5, 0, 0],
+    },
 }
-const POSE_BASE = { stand: 'stand', tuck: 'stand', crouch: 'crouch', air: 'air', grab: 'air', grabFlat: 'air', grabIndy: 'air', grabMethod: 'air', grabSalis: 'air', grabNose: 'air', grabTail: 'air', tumble: 'air' }
+const POSE_BASE = { stand: 'stand', tuck: 'stand', crouch: 'crouch', air: 'air', grab: 'air', grabFlat: 'air', grabIndy: 'air', grabMethod: 'air', grabSalis: 'air', grabNose: 'air', grabTail: 'air', tumble: 'air', manual: 'stand' }
 
 function poseOffset(name, bone) {
     const a = STANCE[bone]
@@ -1573,6 +1584,7 @@ export function heroPose(r, override) {
     if (r.tumble > 0) return 'tumble'
     if (r.air) return r.grab ? (GRAB_POSES[r.grabKind] || 'grab') : 'air'
     if (r.crouch) return 'crouch'
+    if (r.manual) return 'manual'
     if (r.tuck) return 'tuck'
     if (r.scrub) return 'crouch'
     return 'stand'
@@ -1834,6 +1846,10 @@ export function poseRider(root, r, tick, override) {
     // #904: a carve tips the deck onto its edge about the long axis (x); the
     // nose stays down the fall line. The somersault axis (z) rests at 0.
     roll.rotation.z = 0
+    // #3901: a manual rides nose-up about the same somersault axis (~22°, the
+    // back-flip's opening quarter direction) — weight over the tail, nose off
+    // the snow. The boot weld below follows the deck, so boots stay welded.
+    if (r.manual) roll.rotation.z = -0.38
     roll.rotation.x = r.steerSm * 0.28
     root.scale.y = 1 - stomp
     if (hero) blendHero(hero, pose, tick)

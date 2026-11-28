@@ -1182,6 +1182,148 @@ for (let c = 0; c < COURSE_COUNT; c++) {
     }
 }
 
+// ---- 9g. #3901 manuals — land paid with the edge held, release clean and get paid ----
+{
+    ok('#3901 the manual knobs are exported and sane',
+        CFG.manualPts >= 100 && CFG.manualPts <= 300 && CFG.manualCap >= 0.6 && CFG.manualCap <= 2)
+
+    // Drop a spin 200 with scrub held through the landing — a paid trick that
+    // should roll into the manual. Then hold `hold` ticks and release.
+    const land = (scrubAtLanding, hold = 0) => {
+        const g = makeGame('race'); run(g, 181); clear(g)
+        const p = g.riders[0]
+        p.x = 0; p.v = 8
+        p.air = true; p.airT = 0.9; p.spin = 200
+        p.y = terrainY(g.course, p.s, p.x) + 4; p.vy = -2
+        let t = 0
+        while (p.air && t < 180) { step(g, { scrub: scrubAtLanding }); t++ }
+        const entered = p.manual
+        const startEv = hasEv(g, 'manualstart')
+        const sc0 = p.score
+        const mt0 = p.meter
+        for (let i = 0; i < hold; i++) step(g, { scrub: scrubAtLanding })
+        const heldDelta = p.score - sc0
+        clear(g)
+        step(g, {})   // release — the manual hands off
+        return { g, p, entered, startEv, heldDelta, ev: g.events.find((e) => e.type === 'manual'), dScore: p.score - sc0, dMeter: p.meter - mt0 }
+    }
+    const m = land(true, 45)
+    ok('#3901 a paid landing with the edge held enters the manual', m.entered === true && m.startEv === true)
+    ok('#3901 the same landing with the edge free rides out plain', land(false, 45).entered === false)
+    ok('#3901 the hold itself adds nothing — the clean release is the collect', m.heldDelta === 0)
+    ok('#3901 releasing clean pays and renames the trick MANUAL',
+        !!m.ev && m.ev.pts > 0 && /MANUAL/.test(m.p.lastTrick))
+
+    // Pay arithmetic without long ground rolls (the hold timer drives it all).
+    const payOf = (secs, chain = null) => {
+        const g = makeGame('race'); run(g, 181); clear(g)
+        const p = g.riders[0]
+        p.x = 0; p.v = 8
+        p.air = true; p.airT = 0.9; p.spin = 200
+        p.y = terrainY(g.course, p.s, p.x) + 4; p.vy = -2
+        let t = 0
+        while (p.air && t < 180) { step(g, { scrub: true }); t++ }
+        if (chain !== null) p.chain = chain
+        p.manualT = secs
+        const sc0 = p.score; const mt0 = p.meter
+        clear(g)
+        step(g, {})
+        const ev = g.events.find((e) => e.type === 'manual')
+        return { pts: ev ? ev.pts : 0, dScore: p.score - sc0, dMeter: p.meter - mt0 }
+    }
+    // chain is 1 after the banking spin — the manual lands on the x2 rung
+    ok('#3901 a full hold pays base x the chain mult', payOf(CFG.manualCap).pts === CFG.manualPts * 2)
+    ok('#3901 half a hold pays half — the pay scales with the seconds', payOf(CFG.manualCap / 2).pts === Math.round(CFG.manualPts * 0.5 * 2))
+    ok('#3901 the hold is capped — sitting in a manual cannot farm',
+        payOf(CFG.manualCap * 3).pts === payOf(CFG.manualCap).pts)
+    ok('#3901 the chain multiplies the manual like the trick it grew from',
+        payOf(CFG.manualCap, 3).pts === CFG.manualPts * CFG.comboCap && payOf(CFG.manualCap, 3).pts === 2 * payOf(CFG.manualCap).pts)
+    {
+        const f = payOf(CFG.manualCap)
+        ok('#3901 the manual feeds the meter at the trick-economy rate (rails precedent)',
+            Math.abs(f.dMeter - f.pts * CFG.boostGain) < 1e-9 && f.dScore === f.pts)
+    }
+
+    // Exits: crash forfeits silently; the ollie and the rail pay on the way out.
+    {
+        const g = makeGame('race'); run(g, 181); clear(g)
+        const p = g.riders[0]
+        p.x = 0.8; p.v = 16
+        p.air = true; p.airT = 0.9; p.spin = 200
+        p.y = terrainY(g.course, p.s, p.x) + 4; p.vy = -2
+        let t = 0
+        while (p.air && t < 180) { step(g, { scrub: true }); t++ }
+        p.manualT = 1.0
+        const sc0 = p.score
+        t = 0
+        while (!hasEv(g, 'crash') && t < 400) { step(g, { scrub: true, steer: 1 }); t++ }
+        ok('#3901 a crash eats the manual — no pay, and it leaves no paid event',
+            hasEv(g, 'crash') && p.manual === false && !hasEv(g, 'manual', (e) => e.pts > 0))
+    }
+    {
+        const g = makeGame('race'); run(g, 181); clear(g)
+        const p = g.riders[0]
+        p.x = 0; p.v = 14
+        p.air = true; p.airT = 0.9; p.spin = 200
+        p.y = terrainY(g.course, p.s, p.x) + 4; p.vy = -2
+        let t = 0
+        while (p.air && t < 180) { step(g, { scrub: true }); t++ }
+        p.manualT = 1.0
+        run(g, 6, { scrub: true, jump: true })
+        clear(g)
+        run(g, 3, { scrub: true })   // release the ollie
+        ok('#3901 buttering off the snow pays the manual on the way into the air',
+            p.air === true && p.manual === false && hasEv(g, 'manual', (e) => e.pts > 0))
+    }
+    {
+        const g = makeGame('race'); run(g, 181); clear(g)
+        const p = g.riders[0]
+        p.x = 0; p.v = 14
+        p.air = true; p.airT = 0.9; p.spin = 200
+        p.y = terrainY(g.course, p.s, p.x) + 4; p.vy = -2
+        let t = 0
+        while (p.air && t < 180) { step(g, { scrub: true }); t++ }
+        p.manualT = 1.0
+        const rl = g.course.rails[0]
+        p.s = rl.i0 * DS + 4; p.x = rl.x
+        clear(g)
+        step(g, { scrub: true })
+        ok('#3901 buttering onto a rail pays the manual and the rail takes over',
+            p.grind !== null && hasEv(g, 'manual', (e) => e.pts > 0))
+    }
+
+    ok('#3901 the manual rides the replay hash — same drive, same state; held vs free hashes apart',
+        (() => {
+            const hs = (scrub) => {
+                const g = makeGame('race'); run(g, 181)
+                const p = g.riders[0]
+                p.x = 0; p.v = 8
+                p.air = true; p.airT = 0.9; p.spin = 200
+                p.y = terrainY(g.course, p.s, p.x) + 4; p.vy = -2
+                let t = 0
+                while (p.air && t < 180) { step(g, { scrub }); t++ }
+                run(g, 30, { scrub })
+                return stateHash(g)
+            }
+            return hs(true) === hs(true) && hs(true) !== hs(false)
+        })())
+
+    // The witness field rides cold: the planner never sends scrub, so autopilot
+    // worlds — attract, CPU seats, WATCH — never manual, and every existing
+    // witness pin keeps byte-identical lines.
+    {
+        const g = makeGame('race')
+        let manuals = 0, t = 0
+        while (!g.end && t < 400000) {
+            step(g, g.phase === 'run' ? decide(g, g.riders[0], true) : {})
+            for (const e of g.events) if (e.type === 'manual') manuals++
+            g.events.splice(0)
+            t++
+        }
+        ok('#3901 the cold planner never manuals — attract/WITNESS lines are untouched', manuals === 0)
+    }
+}
+
 // ---- #791 slice 11: wind + crowd life ----------------------------------------
 // The face is never frozen: every flag rides one deterministic wind field, and
 // the finish grandstands hop as the line comes up. Pure art.js functions — the
