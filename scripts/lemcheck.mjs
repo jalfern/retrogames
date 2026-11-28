@@ -1770,6 +1770,45 @@ section('FLOAT-WHILE-DIGGING (#3925: an airborne digger chews straight down)')
     }
 }
 
+// ------------------------------------------------------------- #3932 ----------
+{
+    section('THE SHELF (#3932: the plank-shelf climb-over — board ladder 1/4)')
+    const { meta, grid } = buildLevel(4)
+    ok(meta.name === 'THE SHELF', `level 4 is ${meta.name}, not THE SHELF — the ladder slot was taken`)
+    // the trap: two-row moat, steel floor, both rims two-tile walls from it.
+    ok(grid[23 * sim.W + 21] === sim.AIR && grid[24 * sim.W + 21] === sim.AIR && grid[25 * sim.W + 21] === sim.STEEL,
+        '#3932: THE SHELF moat lost its depth — floor row 25 or an open rim row is gone')
+    ok(grid[23 * sim.W + 19] === sim.DIRT && grid[24 * sim.W + 19] === sim.DIRT
+        && grid[23 * sim.W + 24] === sim.DIRT && grid[24 * sim.W + 24] === sim.DIRT,
+        '#3932: a moat rim dropped to one tile — the one-way trap is climbable again')
+    // the prize: shelf top row 22 (a mount from the strip, a wall from the
+    // pit), and the far side carved to row 24 so the descent is a span site.
+    ok(grid[22 * sim.W + 28] === sim.DIRT && grid[21 * sim.W + 28] === sim.AIR,
+        '#3932: THE SHELF lost its shelf top (row 22 at col 28) — the climb-over is gone')
+    ok(grid[23 * sim.W + 40] === sim.AIR && grid[24 * sim.W + 40] === sim.DIRT,
+        '#3932: the far-side drop was filled in — the descent road has no gap to bridge')
+    ok(grid[23 * sim.W + 0] === sim.WATER && grid[24 * sim.W + 46] === sim.WATER,
+        '#3932: THE SHELF lost its taxes — the west pond or the exit-side bay is dry')
+    // the proof line: cargo paves the moat AND the descent, replay carries
+    // the quota, and the road exists in the replayed world (attract shows it).
+    const r = runSolver(4)
+    ok(r.cmds.some(c => c.skill === 'build'),
+        '#3932: THE SHELF script spends no cargo — the crossing is luck, not carpentry')
+    const rp = sim.replay(meta, grid, r.cmds)
+    ok(rp.win && rp.exited >= meta.need,
+        `#3932: replaying the climb-over script delivers ${rp.exited}/${meta.need} — the recorded road does not carry the quota`)
+    let road = 0
+    for (let x = 20; x <= 23; x++) if (rp.grid[24 * sim.W + x] === sim.PLANK) road++
+    ok(road === 4, `#3932: the moat road is ${road}/4 planks at row 24 — the crossing bridge is incomplete`)
+    let span = 0
+    for (let x = 38; x <= 41; x++) if (rp.grid[23 * sim.W + x] === sim.PLANK) span++
+    ok(span >= 3, `#3932: the far-side descent spans ${span}/4 planks at row 23 — bodies fall past the door instead of walking to it`)
+    // sharper than the proves loop: without wood the trap is not merely
+    // un-winnable, it is EMPTY — the quota never even reaches the water line.
+    const r0 = sim.solve(sim.makeGame({ ...meta, skills: { ...meta.skills, build: 0 } }, grid))
+    ok(r0.exited === 0, `#3932: zero build still delivered ${r0.exited} — the moat leaks, the climb-over is not cargo-gated`)
+}
+
 console.log(`\nlemcheck: ${pass}/${pass + fails.length} checks passed${fails.length ? `  — ${fails.length} FAILED` : '  — OK'}`)
 fails.forEach(f => console.log(`  FAIL  ${f}`))
 process.exit(fails.length ? 1 : 0)
