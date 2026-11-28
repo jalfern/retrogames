@@ -159,6 +159,13 @@ const SimCityMinGame = () => {
         }
 
         // ---------------------------------------------------------------- paint ----
+        // one stroke language: a 1px darker seam on every cell, so the grid
+        // reads as one pixel language — same register as the cursor's 1px stroke.
+        const edge = (px, py) => {
+            ctx.fillStyle = 'rgba(0,0,0,0.30)'
+            ctx.fillRect(px, py, TILE, 1)
+            ctx.fillRect(px, py, 1, TILE)
+        }
         const drawCell = (x, y, c, tk, lit) => {
             const px = x * TILE, py = y * TILE
             if (c.t === T.WATER) {
@@ -178,11 +185,13 @@ const SimCityMinGame = () => {
                     ctx.fillStyle = ph === 0 ? '#5497c4' : '#4e8bb8'
                     ctx.fillRect(px + (ph === 0 ? 4 : 8), py + (ph === 0 ? 9 : 15), 11, 2)
                 }
+                edge(px, py)
                 return
             }
             if (c.t === T.ROCK) {
                 ctx.fillStyle = '#4c4c58'; ctx.fillRect(px, py, TILE, TILE)
                 ctx.fillStyle = '#5f5f6d'; ctx.fillRect(px + 4, py + 4, TILE - 10, TILE - 12)
+                edge(px, py)
                 return
             }
             ctx.fillStyle = c.scar > 0 ? '#2a2620' : ['#1f3d20', '#234522', '#1c381d'][hashNoise(x, y)]
@@ -237,6 +246,7 @@ const SimCityMinGame = () => {
                 ctx.fillRect(px + 4, py + TILE - 3 - (f >> 1), 5, f >> 1)
                 ctx.fillRect(px + 19, py + TILE - 3 - (f >> 1), 5, f >> 1)
             }
+            edge(px, py)
         }
 
         const paint = () => {
@@ -255,9 +265,8 @@ const SimCityMinGame = () => {
             if (screenRef.current === 'play') {
                 const { x, y } = gs.cursor
                 ctx.strokeStyle = tk % 36 < 18 ? '#ffffff' : TOOLCOLS[toolIdx]
-                ctx.lineWidth = 2
-                ctx.strokeRect(x * TILE + 1, y * TILE + 1, TILE - 2, TILE - 2)
                 ctx.lineWidth = 1
+                ctx.strokeRect(x * TILE + 1, y * TILE + 1, TILE - 2, TILE - 2)
                 ctx.font = 'bold 11px monospace'
                 ctx.fillStyle = TOOLCOLS[toolIdx]
                 ctx.fillText(TOOLNAMES[toolIdx], x * TILE + 2, y * TILE - 3)
