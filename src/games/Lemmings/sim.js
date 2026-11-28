@@ -461,11 +461,17 @@ function candidates(g) {
             if (!L.digger) push(L.id, 'dig')
             if (!L.climber) push(L.id, 'climb')
         }
-        if (a0 === AIR && a1 === AIR) {                // the floor ends
+        // #3859: a pond rim is an edge too. Water reads as walkable to the
+        // walker (it wades in and drowns), so if the solver only sees AIR
+        // floor-ends it can never block a crowd short of open water — the
+        // stock original play at every pond. A climber gets nothing across
+        // water (no wall on the far side of a rim), so CLIMB stays AIR-only.
+        if ((a0 === AIR || a0 === WATER) && a1 === AIR) {   // the floor ends
             // a blocker needs solid ground under its own feet — a would-be
-            // blocker standing over the void just becomes another corpse
-            if (cell(g, Math.floor(L.x), k) !== AIR) push(L.id, 'block')
-            if (!L.climber) push(L.id, 'climb')
+            // blocker standing over the void (or the pond) just becomes
+            // another corpse
+            if (solid(g, Math.floor(L.x), k)) push(L.id, 'block')
+            if (a0 === AIR && !L.climber) push(L.id, 'climb')
         }
         // A bomb is a TIMER: assigned at the wall it has already bounced and
         // explodes a tile short. Offer it while the walker still has runway

@@ -43,7 +43,7 @@ if (mapArg !== null) {
             const t = grid[y * sim.W + x]
             line += x === meta.spawn.x && y === meta.spawn.y - 1 ? 'S'
                 : x === meta.exit.x && y === meta.exit.y ? 'E'
-                    : t === sim.DIRT ? '#' : t === sim.STEEL ? '=' : '.'
+                    : t === sim.DIRT ? '#' : t === sim.STEEL ? '=' : t === sim.WATER ? '~' : '.'
         }
         console.log(line)
     }
@@ -360,6 +360,81 @@ for (let i = 0; i < LEVELS.length; i++) {
         for (let t = 0; t < 130; t++) sim.step(g)      // fuse is 1.6 s
         ok(g.grid[23 * sim.W + 3] === sim.WATER && g.grid[24 * sim.W + 3] === sim.WATER,
             'a blast drained the pond — water must survive explosions the way steel does (#3828)')
+    }
+    // #3859: ponds EVERYWHERE. The original's level packs put open water on
+    // nearly every board; one pond on one level left three boards drought-
+    // dead. Every built level must carry visible open water, SPIRE carries
+    // TWO bodies (west pond + exit-side bay), and the DOOR/LEDGE voids have
+    // shores at the walking row (the punishing east walk ends in the drown).
+    {
+        let boards = 0
+        for (let i = 0; i < LEVELS.length; i++) {
+            const { grid: lg } = buildLevel(i)
+            let w = 0
+            for (let k = 0; k < lg.length; k++) if (lg[k] === sim.WATER) w++
+            ok(w >= 4, `${LEVELS[i].name}: dry board — ${w} water cells, the #3859 shore never shipped`)
+            boards += w > 0 ? 1 : 0
+        }
+        ok(boards === LEVELS.length, 'not every level carries water — "ponds everywhere" is back to one')
+        ok(grid[23 * sim.W + 2] === sim.WATER && grid[23 * sim.W + 46] === sim.WATER,
+            'THE SPIRE lost its second body of water — the exit-side bay (#3859) is gone')
+        const { grid: dg } = buildLevel(2)
+        const { grid: lg } = buildLevel(3)
+        ok(dg[23 * sim.W + 35] === sim.WATER, 'THE DOOR void has no shore — bounced lemmings still splat unseen below the map (#3859)')
+        ok(lg[23 * sim.W + 30] === sim.WATER, 'THE LEDGE void has no shore — the shuffler still dies in the dark (#3859)')
+    }
+    // #3859: a void drop into the shore resolves as the drown — splash, sink,
+    // tone — never the silent splat below the map
+    for (const [i, px] of [[2, 35], [3, 30]]) {
+        const { meta: m, grid: gr } = buildLevel(i)
+        const g = sim.makeGame({ ...m, spawnCount: 1, spawnEvery: 44 }, gr)
+        for (let t = 0; t < 70; t++) sim.step(g)
+        const L = g.lemmings[0]
+        L.state = 'fall'; L.vy = 8; L.fallDist = 1; L.x = px; L.y = 10
+        let drown = 0, splat = 0
+        for (let t = 0; t < 300; t++) {
+            sim.step(g)
+            drown += g.events.filter(e => e.type === 'drown').length
+            splat += g.events.filter(e => e.type === 'splat').length
+        }
+        ok(drown > 0 && splat === 0,
+            `${m.name}: a void drop resolved as drown ${drown} / splat ${splat} — the shore must answer with the drown (#3859)`)
+    }
+    // #3859: and at ground level the shore bites like any pond rim — a
+    // walker shuffling east into THE DOOR's shore drowns at the surface
+    {
+        const { meta: m, grid: gr } = buildLevel(2)
+        const g = sim.makeGame({ ...m, spawnCount: 1, spawnEvery: 44 }, gr)
+        for (let t = 0; t < 70; t++) sim.step(g)
+        const L = g.lemmings[0]
+        L.state = 'walk'; L.x = 29.5; L.y = 23; L.dir = 1
+        let drown = 0
+        for (let t = 0; t < 240; t++) { sim.step(g); drown += g.events.filter(e => e.type === 'drown').length }
+        ok(!L.live && L.state === 'dead' && drown > 0,
+            '#3859: a walker shuffling into THE DOOR shore survived — the shore is decorative')
+    }
+    // #3859 RULE: a pond rim is an edge. A lone walker marching at open water
+    // with one blocker of supply must be held by the solver at the rim — the
+    // stock original play at every pond. (Before this the solver's edge test
+    // was AIR-only: it could not SEE a pond rim and would spend nothing while
+    // the lemming walked into the deep.)
+    {
+        const wg = new Uint8Array(sim.W * sim.H).fill(sim.AIR)
+        for (let x = 0; x < sim.W; x++) { wg[23 * sim.W + x] = sim.DIRT; wg[24 * sim.W + x] = sim.STEEL }
+        for (let x = 8; x <= 10; x++) { wg[23 * sim.W + x] = sim.WATER; wg[24 * sim.W + x] = sim.WATER }
+        const g = sim.makeGame({ ...meta, time: 14, spawnCount: 1, spawnEvery: 1,
+            spawn: { x: 4.5, y: 23, dir: 1 }, exit: { x: 46, y: 22 }, skills: { block: 1, bomb: 0, climb: 0, dig: 0, float: 0 } }, wg)
+        const r = sim.solve(g)
+        ok(r.cmds.some(c => c.skill === 'block') && r.dead === 0,
+            '#3859: the solver let a lone walker walk into open water it could have blocked — the pond-rim edge rule died')
+    }
+    // determinism survives the shores too: the attract replay is the game
+    {
+        const { meta: m, grid: gr } = buildLevel(2)
+        const r = sim.solve(sim.makeGame(m, gr))
+        const a = sim.stateHash(sim.replay(m, gr, r.cmds))
+        const b = sim.stateHash(sim.replay(m, gr, r.cmds))
+        ok(a === b, 'two replays over THE DOOR shore disagree — the shore is not deterministic (#3859)')
     }
     // determinism survives the new board: attract mode IS this replay
     {

@@ -84,11 +84,29 @@ breakable — every pin here has survived a manual mutation.
 - Float-while-digging (the original's floating lemming chews straight down
   through dirt while descending) does not port to the horizontal-tunnel digger;
   it needs either a second dig mode or a rethink of the dig model.
-- Water is static: no level currently carries a second pond, nothing flows
-  into one, and a bomb that punches a wall INTO a pond drains nothing — the
-  original never flowed either, but it had ponds everywhere; THE SPIRE has one.
+- Water NEVER flows (and never will): the 1991 original's water is static —
+  draining ponds are a Lemmings 2 mechanic. What the original DID have,
+  ponds everywhere, shipped in #3859 (see Closed); the static law itself is
+  fidelity, not a gap.
 
 ## Closed
+
+- #3859 — ponds everywhere: three of four boards were drought-dead and the
+  solver could not even SEE a pond rim (its edge test was AIR-only, so no
+  autopilot or attract replay would ever block one). Now every level carries
+  open water — THE DOOR and THE LEDGE voids have shores at the walking row,
+  so the punishing east walk ends in the original's drown (splash, sink,
+  tone) instead of a silent splat below the map; THE SPIRE gained a second
+  body, a bay east of the exit plinth; THE MASSIF's pace-ground west of the
+  massif drowns dawdlers at the west foot, and the level ships a second
+  BLOCKER because holding that rim is now load-bearing solver work (slack
+  rule — the solver spends one there in its winning script). The edge rule:
+  `candidates()` reads WATER at foot level as floor-gone — a blocker is
+  offered at the pond rim, and the blocker's own footing must be `solid`,
+  never a pond cell; CLIMB stays AIR-only (nothing to grip across water).
+  Winning scripts held: all four levels win with slack, loads-bearing and
+  determinism proofs replay unchanged (void deaths switch cause fall→drown,
+  counts identical). **CLOSED by #3859**
 
 - #3853 — attract-parachute: the demo now spends its OWN float charges showing
   the fifth skill. `attract.js` exports a pure picker (`demoFloatPick`): an
