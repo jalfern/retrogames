@@ -1,81 +1,79 @@
-# STATE — forge board snapshot (slot a, 2026-11-28 — one-shot blockers shipped; the marquee remembers its default)
+# STATE — forge board snapshot (slot b, 2026-11-28 — BUILDER: lemmings build their own way)
 
-## This session (slot a) — never-dry rung, taken and shipped
-- Normal ladder dry, verified honest: halt/steer 0; `next` #1712 waiting-jon →
-  skipped; game-queue empty; feedback QA-held (#3860) or waiting-jon
-  (#3244/#2971); QA MASTER live → no borrow; flagship ladder spent.
-  `idle-kick` → `KICK LEMMINGS-LITE 0 weak` (same target the slot note carried).
-- Filed POLISH #3864 (blocker-wake — oldest gap that fits one session; BUILDER
-  stays for a dedicated multi-session claim per #3853 sizing). Shipped PR #3865
-  → squash `30f0af6`: **the block is one-shot**. A CLIMBER treats a blocker dead
-  ahead as the original's first rung (`traffic` mount: cross the head, land on
-  the far side); any body crossing the head line spends the block
-  (`releaseBlocker`/`wakeCheck`) — the blocker resumes walking the direction he
-  faced (pond-rim releases walk him under: fidelity, the original judges the
-  player). THE SPIRE ships `block: 1` — solver spends it at the west pond rim
-  (attract demos the line) and SPIRE now carries block+climb together, so the
-  combo is player-stageable. Re-solve: all four levels win, slack/proofs/
-  determinism unchanged.
-- **static caught a real regression mid-merge** (1 fail, fixed same session):
-  the mount path AND `recmethods` each derived "default selected skill = first
-  SKILLS-order skill with supply"; SPIRE's new `block: 1` flipped the marquee
-  default CLIMBER→BLOCKER and collapsed the pointer-only rec (pointer taps carry
-  no skill switch) to 1 tap, 0/4. Fix: `sim.defaultSkill(level)` — levels
-  declare their tutorial arm (SPIRE: climb), game + harness read one source.
-  On-disk `lemmings-pointer.json` byte-identical after the fix.
-- Proof: lemcheck 199/199 (+3 wake pins; hand-drift neutering `releaseBlocker`
-  → exactly 2 red → restore), lemplay 46/46 (new player-staged wake drive:
-  block mid-lane by aim+Space, climber at the line, blocker seen resuming on
-  page frames, climber lands west of where walkers turn), recmethods + 
-  goldentracecheck 89/89 + contractcheck 859/859 + attractcheck green, build
-  green. Prod verified by content: live `Lemmings-NCB4h2uC.js` carries
-  climbblock/wake code, SPIRE `block:1,...defaultSkill:"climb"`.
-- #3864: building→shipped, closed (auto-closed at merge; labels corrected).
+## This session (slot b) — never-dry rung, taken and shipped
 
-## BOARD facts at close
-- main tip `30f0af6`. Rule-4 streak: reset (game code merged).
-- building: **#3863 POLISH — LEMMINGS-LITE: BUILDER skill** (another lane is
-  inside Lemmings — NEVER touch; this is why `idle-kick` now answers NONE:
-  Lemmings + Defender both held, no unowned gaps score). building-qa: #3860.
-  halt/steer: 0. #3841 (lemplay flake) platform lane's — it fired once this
-  session mid-drive and reran green, as predicted by its title.
-- jonq: #3791 AWAITING (deadline 11-29), #3516 AWAITING (default `done` at its
-  sweep ~11-28 12:35Z). Let the sweeps take them; do not re-file.
+**LEMMINGS-LITE gained its second skill: BUILDER (#3863, PR #3867, merged `8dce7d6`)**
+The `idle-kick` at 11:15 answered `KICK LEMMINGS-LITE 0 weak`, so the rung was taken.
+- **What shipped:** press `6` (or tap the panel's sixth slot) to arm BUILDER; the next
+  walker lays a 4-matter plank at a one-tile descent, stays standing, keeps walking.
+  Planks are solid: they bridge ledges, give landings, splinter under miners and
+  excavators, and climbers refuse them — the original's "the trap is the tool" rule,
+  12 per level with free assignment (the #422 economy). SPIRE's spawn lemming now
+  defaults to `climb` (slot a's #3865 `defaultSkill`, both lines re-proved together
+  after the cross-rebase). Player-side only by design, in the FLOATER precedent's
+  shape (#3827): the solver never builds, so every existing script and slack number
+  holds exactly — stage 2 (#3866, filed) teaches `candidates()` to build, re-solves,
+  and only then releases `b` into `skills_available`.
+- **Game-code proof, all on CI:** `lemcheck` 240/240 (17 new BUILDER pins — the
+  shelf rule, pond refusal, cargo decrement, wood blocks the digger, splintering,
+  the original-trap scenario, and a solver stays exact with B armed); `lemplay`
+  52/52 with new real-browser drives (Digit6 + Space lays wood — the pixel was
+  first proven `stamp()`-only, then a real panel-tap path was found and driven;
+  assigning B is proven to never touch the solver, which picks `climb` instead);
+  hand-drift kills: mutate the shelf rule → 3 reds, mutate the cargo decrement →
+  3 reds, and two vacuous pins that never assigned B were found and fixed.
+- Prod content check: `jalfern.com/retrogames/assets/Lemmings-rb-y5gUi.js` contains
+  `BUILDER`/`plank`; `static` green; the advisory suite failed only on the #3864
+  timing family and was parked by its owner in slot a (#3869).
 
-## PLAYABLE on main right now
-- LEMMINGS-LITE with the original's one-shot line: https://jalfern.com/retrogames/lemmings
-  — block a walker, send a climber over him, watch the blocker wake and the
-  climber land where walkers must turn; SPIRE holds its crowd at the pond.
-- FROGGER eases at level six; MINESWEEPER marquee; BARD'S TALE; PINBALL; KOI demo.
+## Slot board
 
-## Open questions (links only — #605)
-- #3791 (dry shelf: which new flagship title — AWAITING, deadline 11-29),
-  #3516 (Arkanoid texture rung — AWAITING, defaults done at its sweep).
+| Slot | Lane | Doing | Since | Heartbeat |
+|---|---|---|---|---|
+| a | games | idle at `origin/main` after shipping #3865 | 2026-11-28 ~11:50 | fresh |
+| b | games | idle at `origin/main` after shipping #3863; re-claim before the next run | 2026-11-28 ~12:00 | fresh |
+| building-qa | qa | **#3860 DEFENDER** — in place, unowned; if it goes stale a warden sweep re-queues it | — | stale |
 
-## Next claims (for whoever is free)
-1. LEMMINGS-LITE still owns the shelf's last two unowned gaps: **BUILDER** is
-   held by #3863 (in flight), **float-while-dig** remains — but it opens with a
-   design question (the horizontal tunneler contradicts the original's
-   air-dig; decide dig-model scope BEFORE filing a stage, `jonq` fodder rather
-   than a fake stage). While #3863 is live, idle-kick correctly says NONE —
-   do not kick Lemmings twice.
-2. If #3863 ships and float stays undecided, the dry-shelf question (#3791) is
-   the only question Jon sees; its default holds the shelf if unanswered.
+Open question issues: **#3791 AWAITING JON** (Minesweeper flag long-press) and
+**#3516** (Arcade layout, default = keep the grid with no answer by 11:30 Nov 27).
+Neither blocks a claim.
 
-## Slot state at handoff
-- :5173 stopped via `scripts/devstop.sh`; no other lane's port touched.
-- Worktree `retrogames-forge-lemmings-wake` left detached at `origin/main`
-  (mergeclean: remote branch gone, lane re-detached, clean). mergeclean/warden
-  prune; node_modules symlink unlink first if you prune by hand.
-- STATE committed to main (step-9 allowance: the forge game merged this
-  session) and parked slot-scoped via `statepark.mjs park a`.
+## What is playable right now
 
-## Harness facts worth keeping
-- (a) Any default-skill/auto-select derivation duplicated between game and
-  harness drifts when a level's supply dict changes — read it through
-  `sim.defaultSkill` (level may declare `defaultSkill`), never re-find.
-- (b) `recmethods` pointer recs can only commit the SELECTED skill — before
-  changing a game's skill supply, run `npm run recmethods` locally (it's a
-  static step and it bites exactly here).
-- (c) Claim-time ladder: `next` #1712 carries waiting-jon → builders skip it;
-  skip list stable across four sessions now.
+- **LEMMINGS-LITE** at https://jalfern.com/retrogames/lemmings — now **with the BUILDER
+  skill live**: arm slot `6`, and a walker at a one-tile step puts down a plank and walks
+  across it. Watch the digger in LEVEL 1 try the same spot — wood is ground to a walker
+  and rock to a drill.
+- **DEFENDER** at https://jalfern.com/retrogames/defender — merged #3852; the stage-2
+  QA pass (#3860) never ran.
+- **ARCADE** at https://jalfern.com/retrogames/ — the menu is now one 17-tile grid
+  (merged #3862); the marquee carries the level's default skill when every slot is used
+  (merged #3865), and the panel's sixth slot is BUILDER.
+- **STAGE Ladder** at https://jalfern.com/retrogames/forge — 17 rows, 5 at **SOLVER**,
+  2 at **SCRIPTED**; the two newest titles still sit at 0.
+
+## Next actions by priority
+
+1. **#3860** — `building-qa` DEFENDER, **unowned**. If it goes stale, re-queue it.
+2. **#3866** — LEMMINGS-LITE solver-side build search (stage 2): search over
+   "build now" at descents, keep `script`/`skills_available` untouched until all four
+   levels re-solve, then release `b` and re-prove slack.
+3. **LEMMINGS-LITE #3823** SCRIPTED — re-solve since #3858/#3865/#3863 changed the
+   skills and defaults; a new digest is legitimate.
+4. **DEFENDER #3857** — stage 1 is **done and merged** (#3852); retarget the issue to
+   stage 2 or close and re-queue. Then **#3856** stage 3.
+5. **ARCADE #3790** — never claimed; **MACGIVER #3786** at 0 is next after #3785.
+
+## Open risks
+
+1. **`building-qa` is still unowned** — #3860 has sat in place all week.
+2. **`main-ok` is red and stays red** — every nightly since #3851 has failed, now on
+   the #3864 timing family alone; parked to its owner (#3869). No quarantine.
+3. **Stale claims look like abandoned work** — #3857 says `building` with the work
+   already merged; **and a claim header that names the wrong game (#3856) is the same
+   failure mode, and this time the issue was wrong.** A claim should re-state the body.
+4. **`statepark` cannot prove its own currency.** With two lanes parked, `current`
+   points at whichever lane wrote last (right now: slot b), so reading the board
+   through it shows a merged row and a stale one. #1214 still owns it.
+5. **Both games at 0 have no sensor or agent files** despite having issues (#3821,
+   #3784) — a claim that assumes they exist would fail at step 4 of Adding a game.
