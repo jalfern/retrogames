@@ -372,6 +372,9 @@ export const GAMES = [
     },
     {
         path: '/ice-climber',
+        // #3856: the attract copy and the shared bottom footer are two bottom-centre texts — the
+        // footer paints straight over the PRESS line inside the shaft (Frogger #3436 precedent: the game owns its bottom band)
+        footer: 'none',
         builtBy: 'forge',
         added: '2026-10-10',
         component: IceClimberGame,
