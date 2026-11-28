@@ -179,10 +179,11 @@ breakable — every pin here has survived a manual mutation.
   replay), while parachutists over the trench mouth still get shoved west into
   the trap (pinned, dx < −0.5). No new player command, no solver search-space
   change; all four boards still solve with their supplies and with one fewer
-  of every supply (the slack loop). Harness: the wind section renamed and
+  of every supply (the slack loop). Harness: lemcheck 397 → **407** — the
+  wind section renamed and
   rebuilt (tailwind exit proof, both-directions lab, walker wall-pin,
   lip-drown, proof-line wind-blindness, relocated-trap shove), with the old
-  "walkers hold" pin flipped to demand the drag; counts below. Proven red
+  "walkers hold" pin flipped to demand the drag. Proven red
   5 ways (drag disabled), restored green.
 - #3879 (terrain gadget 3 of 3) — **teleports**: linked maws sunk into the
   trench floor (`teleports: [{x, y, pair}]`). A body STANDING on a mouth —
