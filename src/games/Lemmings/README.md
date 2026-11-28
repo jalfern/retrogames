@@ -16,7 +16,7 @@ supplies fails the build.
   the attract replay run on exactly the code the browser runs.
   - Geometry: a lemming's feet sit on a row boundary (`y = k` ⇒ row `k` is the
     ground under it, body = row `k−1`). The three cells ahead — foot, chest,
-    next floor — decide step / wall / fall. Matter: AIR/DIRT/STEEL/WATER.
+    next floor — decide step / wall / fall. Matter: AIR/DIRT/STEEL/WATER/PLANK.
   - Agent-per-entity: each lemming is a small state machine (walk/fall/climb/
     dig/block/bomb/corpse) stepped in id order ⇒ the game is a deterministic
     function of (level, grid, command list). `stateHash` pins that; the attract
@@ -25,17 +25,24 @@ supplies fails the build.
     can reproduce.
   - Rules that carry the game: climbers need DIRT handholds (steel refuses,
     overhangs refuse); the digger TUNNELS one tile at a time so the swarm
-    follows single file; bombs clear dirt only, chain other bombers, and
-    corpses block walkers; a fatal fall is > `CFG.maxFall`; **water drowns**
-    (#3828) — chest or feet in a WATER cell kills from any height, water is
-    not ground, and neither dig nor blast yields it.
-  - Skills: BLOCKER, BOMBER, CLIMBER, DIGGER, **FLOATER** (#3827). Climber,
-    digger and floater are flags for life — re-granting any of them refuses
-    rather than burning supply (#422). The floater's parachute caps descent at
-    `CFG.floatSp` and makes no landing height fatal. The solver's
-    `candidates()` never offers FLOATER, so every level's proven solution,
-    load-bearing proofs and slack margin ride the four original mechanics; the
-    two floaters per level are pure player-side slack.
+    follows single file; bombs clear dirt (and splinter planks) only, chain
+    other bombers, and corpses block walkers; a fatal fall is > `CFG.maxFall`;
+    **water drowns** (#3828) — chest or feet in a WATER cell kills from any
+    height, water is not ground, and neither dig nor blast yields it. Planks
+    (#3863) are ground but NOT dirt: they support walkers, landings and the
+    whole plank-road, climbers refuse their face (no dirt handhold), blasts
+    clear them; the digger never chews wood because the mount/turn checks read
+    the same row the chest would — wood faces arrive as walls first.
+  - Skills: BLOCKER, BOMBER, CLIMBER, DIGGER, **FLOATER** (#3827),
+    **BUILDER** (#3863). Climber, digger and floater are flags for life —
+    re-granting any of them refuses rather than burning supply (#422). The
+    floater's parachute caps descent at `CFG.floatSp` and makes no landing
+    height fatal. The solver's `candidates()` never offers FLOATER, so every
+    level's proven solution, load-bearing proofs and slack margin ride the
+    four original mechanics; the two floaters per level are pure player-side
+    slack. BUILDER shares the law (#3863): `candidates()` never offers it and
+    never spends planks, so proven scripts replay unchanged — its 12-plank
+    cargo is the sixth skill's player-side slack (see Builder below).
 - `levels.js` — levels CARVED from solid rock in code (IronKeep lesson), each
   with a `proves:` list lemcheck re-solves at zero supply (a skill you can take
   away is decoration) and a slack pass (one fewer of every supply the winning
@@ -58,13 +65,15 @@ supplies fails the build.
 ```bash
 npm run lemcheck            # ~2 s, no browser: solve all levels, rule pins
                            # (water rules, float immunity / slow descent /
-                           # supply discipline, #3853 attract parachute), slack,
+                           # supply discipline, #3853 attract parachute,
+                           # #3863 BUILDER placement/cargo/wood-rules), slack,
                            # determinism, readability, #470
 npm run lemcheck -- --mutate  # planted load-bearing CFG bugs, each must go red
 npm run lemcheck -- --map 2 # ASCII view of a level
 npm run dev -- --port 5178 --strictPort   # then:
 npm run lemplay            # real Chrome: keys/taps only, start→play→die→
-                          # restart, pond pixels + live drown, Digit5 → FLOATER
+                          # restart, pond pixels + live drown, Digit5 → FLOATER,
+                          # #3863: Digit6 → BUILDER, plank pixel, panel tap
 ```
 
 The `--mutate` suite mutates CFG values only; the drown guard and the float
@@ -74,10 +83,19 @@ breakable — every pin here has survived a manual mutation.
 
 ## Honest gaps
 
-- BUILDER is missing — the original's sixth skill (a 12-plank staircase that
-  turns a crowd into a ladder). It is the one skill this engine has no
-  plank-platform concept for; adding it means placed-cell geometry the solver
-  must learn to reason about (and a re-solve of every level).
+- Solver never builds: `candidates()` does not offer BUILDER and no proven
+  script spends planks — the cargo is player-side slack (the FLOATER law,
+  #3827). That keeps every load-bearing proof and slack margin honest today;
+  giving the autopilot staircase command is stage 2: search space plus a
+  re-solve of all four boards (#3863).
+- Planks are flat shelf-cells, not slopes: the original's planks lean into a
+  descent at an angle; this engine's grid speaks in whole cells, so a plank
+  adds one level at a time and the road tracks a staircase plank-per-step.
+  A plank cannot span a gap wider than its shelf, and the demo never shows
+  wood — none of the four boards ends its spawn row at a dry shelf (the road
+  appears when a player stacks CLIMBER + BUILDER and walks SPIRE's east face
+  down). A BUILDER attract moment needs a board whose walking row ends in a
+  shelf, or a scripted demo build like #3853's picker.
 - Float-while-digging (the original's floating lemming chews straight down
   through dirt while descending) does not port to the horizontal-tunnel digger;
   it needs either a second dig mode or a rethink of the dig model.
@@ -103,6 +121,25 @@ breakable — every pin here has survived a manual mutation.
   release, head-line landing, uncrossed-line-holds) with the release neutered
   as the red drift. **CLOSED by #3864**
 
+- #3863 — BUILDER stage 1 (the sixth skill, player-side): PLANK is placed
+  matter — solid for walkers, mountable one-tile steps, soft landings; the
+  carrier lays a plank at each one-tile descent while its cargo holds wood
+  (12-plank original loadout, `Digit6`, panel slot six), and the plank road
+  follows a staircase step-for-step — THE SPIRE's east face is its showcase
+  with CLIMBER + BUILDER on one lemming. Economy is the original's panel:
+  assigning is FREE (flag for life, re-grant refuses per #422), the counter
+  drops per LAYING; empty cargo refuses and lays nothing. Wood is not dirt:
+  climbers refuse its face, blasts splinter it, ponds and deep holes take the
+  builder instead (no shelf, no plank). `candidates()` never offers it, so
+  all solver scripts, proves and slack replay bit-identical — stage 2
+  (solver-side) stays on the board as this README's first honest gap.
+  lemcheck +17 pins (232/232: placement, one-wood-per-laying, pond/deep-hole
+  refusal, staircase tracking, cargo exhaustion, supply law, climb/dig/blast
+  interactions, determinism-with-wood, solver-never-builds, cargo per level);
+  hand-drift proof: removing the shelf rule reddens 3 pins, removing the
+  cargo decrement reddens 3, restored green — every rule is load-bearing.
+  lemplay +6 drives (Digit6, Space assign, free-grant through the input path,
+  wood pixel paint, panel tap) — 47/47.
 - #3859 — ponds everywhere: three of four boards were drought-dead and the
   solver could not even SEE a pond rim (its edge test was AIR-only, so no
   autopilot or attract replay would ever block one). Now every level carries

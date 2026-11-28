@@ -43,7 +43,7 @@ if (mapArg !== null) {
             const t = grid[y * sim.W + x]
             line += x === meta.spawn.x && y === meta.spawn.y - 1 ? 'S'
                 : x === meta.exit.x && y === meta.exit.y ? 'E'
-                    : t === sim.DIRT ? '#' : t === sim.STEEL ? '=' : t === sim.WATER ? '~' : '.'
+                    : t === sim.DIRT ? '#' : t === sim.STEEL ? '=' : t === sim.WATER ? '~' : t === sim.PLANK ? 'P' : '.'
         }
         console.log(line)
     }
@@ -600,12 +600,18 @@ const pressFits = () => PRESS.length <= 24 && /ANY KEY/i.test(PRESS)
     for (const L of g.lemmings.filter(l => l.live)) {
         for (const s of sim.SKILLS) {
             g.skills[s] = 9
-            const b = { st: L.state, c: L.climber, d: L.digger, f: L.floater }
+            const b = { st: L.state, c: L.climber, d: L.digger, f: L.floater, u: L.builder }
             const before = g.skills[s]
             const granted = sim.assign(g, L.id, s)
             const spent = before - g.skills[s]
-            const changed = L.state !== b.st || L.climber !== b.c || L.digger !== b.d || L.floater !== b.f
-            ok(!granted || (spent === 1 && changed),
+            const changed = L.state !== b.st || L.climber !== b.c || L.digger !== b.d || L.floater !== b.f || L.builder !== b.u
+            // #3863: BUILDER's counter is the original's PLANK CARGO, not a
+            // per-lemming charge — granting flags the carrier and spends
+            // nothing; the cargo drops when wood is LAID (pinned in the
+            // BUILDER section). The invariant survives in spirit: every grant
+            // changes its target visibly, and nothing spends without a grant.
+            const want = s === 'build' ? 0 : 1
+            ok(!granted || (spent === want && changed),
                 `#${470}: '${s}' on lemming #${L.id} spent ${spent} charge(s) and changed ${changed ? 'the' : 'nothing'} — a charge dropped without a visible skill`)
             ok(granted || spent === 0,
                 `#${470}: a refused '${s}' on lemming #${L.id} still cost a supply`)
@@ -624,6 +630,189 @@ const pressFits = () => PRESS.length <= 24 && /ANY KEY/i.test(PRESS)
         '#470: the renderer never draws the grant flash — assign() has a flashT and paint ignores it')
     ok(/else\s+audioController\.playTone\(140/.test(src),
         '#470: a refused assign is silent on the click paths — the player cannot hear that nothing happened')
+}
+
+// ---------------------------------------------------------------- builder (#3863) ---
+// BUILDER — the original's sixth skill. The sim questions the issue asked for:
+// wood is laid at a one-tile descent (never over a pond, never into a hole the
+// plank cannot reach), the cargo drains one plank per LAYING (not per assign),
+// wood is ground for walkers but refuses the digger and the climber, blasts
+// splinter it — and the solver still never offers or spends it, so every
+// proven script above rides unchanged. Synthetic boards keep each rule pinned
+// in isolation.
+section('BUILDER (#3863: placed planks — wood is ground, dirt-only rules hold)')
+{
+    const mk = (f) => {
+        const g = new Uint8Array(sim.W * sim.H).fill(sim.AIR)
+        for (let y = 0; y < sim.H; y++) for (let x = 0; x < sim.W; x++) { const t = f(x, y); if (t) g[y * sim.W + x] = t }
+        return g
+    }
+    const bmeta = (over) => ({
+        name: 'B', time: 60, spawnCount: 1, spawnEvery: 1, need: 99, exit: { x: 46, y: 0 },
+        ...over, skills: { block: 0, bomb: 0, climb: 0, dig: 0, float: 0, build: 0, ...(over.skills || {}) },
+    })
+    const runFor = (g, n, stop) => { for (let t = 0; t < n && !(stop && g.lemmings.length && stop(g)); t++) sim.step(g) }
+    const EV = (g, type) => g.events.some(e => e.type === type)
+
+    // A: shelf one lower — the builder lays a plank at the edge and walks on it.
+    {
+        const grid = mk((x, y) => (x < 10 ? (y >= 10 && y <= 12 ? sim.DIRT : 0) : (y >= 11 && y <= 12 ? sim.DIRT : 0)))
+        const g = sim.makeGame(bmeta({ spawn: { x: 3, y: 10, dir: 1 }, skills: { build: 3 } }), grid)
+        runFor(g, 10)
+        ok(sim.assign(g, 0, 'build'), '#3863: harness setup — the BUILDER grant failed on a walking lemming')
+        let crossed = false
+        runFor(g, 400, () => (crossed = g.grid[10 * sim.W + 10] === sim.PLANK && g.lemmings[0].live && g.lemmings[0].y === 10 && g.lemmings[0].x > 10.4))
+        ok(g.grid[10 * sim.W + 10] === sim.PLANK, '#3863: no plank laid at a one-tile descent — the builder walked off the shelf')
+        ok(g.skills.build === 2, `#3863: laying one plank spent ${3 - g.skills.build} from the cargo — one wood per laying`)
+        ok(crossed, `#3863: the builder did not walk across its own plank (y=${g.lemmings[0].y} x=${g.lemmings[0].x.toFixed(2)})`)
+        // a plain walker crosses pre-laid wood at foot level — planks are ground.
+        const g2 = sim.makeGame(bmeta({ spawn: { x: 3, y: 10, dir: 1 } }), grid)   // no builder, plank pre-laid
+        g2.grid[10 * sim.W + 10] = sim.PLANK
+        let crossed2 = false
+        runFor(g2, 400, () => (crossed2 = g2.lemmings[0].live && g2.lemmings[0].y === 10 && g2.lemmings[0].x > 10.4))
+        ok(crossed2, '#3863: a plank is not ground — a walker fell through laid wood')
+        // and one mounting from the shelf below steps UP onto the wood, then
+        // rides the road over the drop — the crowd-climb half. Flat shelf at
+        // foot 11; planks hover one above at row 10, cols 10 and 11.
+        const mountGrid = mk((x, y) => (y >= 11 && y <= 12 ? sim.DIRT : 0))
+        mountGrid[10 * sim.W + 10] = sim.PLANK
+        mountGrid[10 * sim.W + 11] = sim.PLANK
+        const g3 = sim.makeGame(bmeta({ spawn: { x: 7, y: 11, dir: 1 } }), mountGrid)
+        let mounted = false
+        runFor(g3, 400, () => (mounted = g3.lemmings[0].live && g3.lemmings[0].y === 10 && g3.lemmings[0].x > 11))
+        ok(mounted, '#3863: a walker on the shelf could not step up onto plank level and ride the road — planks are not steps')
+    }
+
+    // B: the descent is a pond — wood needs a shelf below; drown instead, no plank.
+    {
+        const grid = mk((x, y) => (x < 10 ? (y >= 10 && y <= 12 ? sim.DIRT : 0) : (y === 11 ? sim.WATER : (y === 12 ? sim.DIRT : 0))))
+        const g = sim.makeGame(bmeta({ spawn: { x: 3, y: 10, dir: 1 }, skills: { build: 3 } }), grid)
+        runFor(g, 10)
+        sim.assign(g, 0, 'build')
+        runFor(g, 400, () => g.dead >= 1)
+        ok(g.grid[10 * sim.W + 10] === sim.AIR && g.drowned === 1 && g.skills.build === 3,
+            '#3863: a plank was laid (or held) over open water — ponds drown builders too')
+    }
+
+    // B2: hole deeper than one tile — out of the plank's reach; the drop is taken.
+    {
+        const grid = mk((x, y) => (x < 10 ? (y >= 10 && y <= 13 ? sim.DIRT : 0) : (y >= 12 && y <= 13 ? sim.DIRT : 0)))
+        const g = sim.makeGame(bmeta({ spawn: { x: 3, y: 10, dir: 1 }, skills: { build: 3 } }), grid)
+        runFor(g, 10)
+        sim.assign(g, 0, 'build')
+        runFor(g, 400)
+        const L = g.lemmings[0]
+        ok(g.grid[10 * sim.W + 10] === sim.AIR && g.skills.build === 3 && L.live && L.y === 12,
+            `#3863: a 2-tile descent was planked (fall reach broken) or the drop killed (${L.state} y=${L.y})`)
+    }
+
+    // C: staircase — the road follows the steps down, and 12 wood is 12 planks.
+    {
+        const grid = mk((x, y) => {
+            const surf = x < 5 ? 10 : x < 10 ? 11 : x < 15 ? 12 : 13
+            return y >= surf && y <= 14 ? sim.DIRT : 0
+        })
+        const g = sim.makeGame(bmeta({ spawn: { x: 2, y: 10, dir: 1 }, skills: { build: 12 } }), grid)
+        runFor(g, 10)
+        sim.assign(g, 0, 'build')
+        runFor(g, 2000)
+        let planks = 0
+        const rows = new Set()
+        for (let y = 0; y < sim.H; y++) for (let x = 0; x < sim.W; x++) if (g.grid[y * sim.W + x] === sim.PLANK) { planks++; rows.add(y) }
+        ok(planks === 12 && g.skills.build === 0, `#3863: cargo miscount on the staircase — ${planks} planks laid, cargo ${g.skills.build}`)
+        ok(rows.size >= 2, `#3863: the plank road ignored the staircase (single row ${[...rows]}) — wood must track each step down`)
+    }
+
+    // D: an exhausted cargo lays nothing more.
+    {
+        const grid = mk((x, y) => (x < 6 ? (y >= 10 && y <= 12 ? sim.DIRT : 0) : (y >= 11 && y <= 12 ? sim.DIRT : 0)))
+        const g = sim.makeGame(bmeta({ spawn: { x: 2, y: 10, dir: 1 }, skills: { build: 2 } }), grid)
+        runFor(g, 10)
+        sim.assign(g, 0, 'build')
+        runFor(g, 600)
+        ok(g.grid[10 * sim.W + 6] === sim.PLANK && g.grid[10 * sim.W + 7] === sim.PLANK && g.grid[10 * sim.W + 8] === sim.AIR && g.skills.build === 0,
+            '#3863: an empty cargo still laid wood, or the first two edges were missed')
+    }
+
+    // E: supply law (#422 shape): empty refuses free, re-grant refuses, line/bomb jobs refuse.
+    {
+        const grid = mk((x, y) => (y >= 10 && y <= 12 ? sim.DIRT : 0))
+        const g0 = sim.makeGame(bmeta({ spawn: { x: 3, y: 10, dir: 1 }, skills: { build: 0 } }), grid)
+        runFor(g0, 30)
+        ok(!sim.assign(g0, 0, 'build') && g0.skills.build === 0, '#3863: an empty plank cargo handed out the BUILDER flag')
+        const g = sim.makeGame(bmeta({ spawn: { x: 3, y: 10, dir: 1 }, skills: { build: 3 } }), grid)
+        runFor(g, 30)
+        ok(sim.assign(g, 0, 'build') && g.skills.build === 3 && g.lemmings[0].builder,
+            '#3863: the BUILDER grant did not flag the carrier without touching the cargo (or vice versa)')
+        const held = g.skills.build
+        ok(!sim.assign(g, 0, 'build') && g.skills.build === held, '#3863 (#422): a second BUILDER grant on the carrier burned cargo')
+        g.lemmings[0].state = 'block'
+        ok(!sim.assign(g, 0, 'build'), '#3863: the blocker job accepted a plank flag')
+        g.lemmings[0].state = 'bomb'
+        ok(!sim.assign(g, 0, 'build'), '#3863: a lit bomber was handed the BUILDER flag')
+    }
+
+    // F: wood is not dirt — the digger stops at plank chest-height, the climber
+    // refuses a plank handhold, and a blast splinters the wood.
+    {
+        // Wood in the tunnel line blocks: the plank face is read at mount
+        // height (the row the chest chews), so the digger climbs the wood or
+        // bounces off it — and the plank is never chewed away.
+        const grid = mk((x, y) => (y >= 10 && y <= 12 ? sim.DIRT : 0))
+        const g = sim.makeGame(bmeta({ spawn: { x: 3, y: 10, dir: 1 }, skills: { dig: 1 } }), grid)
+        g.grid[9 * sim.W + 16] = sim.PLANK          // wood across the tunnel line
+        runFor(g, 10)
+        sim.assign(g, 0, 'dig')
+        let blocked = false
+        runFor(g, 500, () => {
+            const L = g.lemmings[0]
+            blocked = L.live && (L.dir === -1 || L.y === 9) && L.x > 14
+            return blocked
+        })
+        ok(blocked && g.grid[9 * sim.W + 16] === sim.PLANK, '#3863: wood in the tunnel line did not block the digger, or the plank was chewed through — wood is not dirt')
+        const gw = mk((x, y) => (y >= 10 && y <= 12 ? sim.DIRT : (x === 10 && y >= 8 && y <= 9 ? sim.DIRT : 0)))
+        const g2 = sim.makeGame(bmeta({ spawn: { x: 3, y: 10, dir: 1 } }), gw)
+        g2.grid[9 * sim.W + 10] = sim.PLANK; g2.grid[8 * sim.W + 10] = sim.PLANK
+        runFor(g2, 10)
+        sim.assign(g2, 0, 'climb')
+        let turned = false
+        runFor(g2, 400, () => (turned = g2.lemmings[0].dir === -1 && g2.lemmings[0].state === 'walk'))
+        ok(turned && g2.grid[9 * sim.W + 10] === sim.PLANK, '#3863: a climber scaled a plank wall — wood refuses handholds')
+        const gb = mk((x, y) => (y >= 10 && y <= 12 ? sim.DIRT : 0))
+        const g3 = sim.makeGame(bmeta({ spawn: { x: 3, y: 10, dir: 1 }, skills: { bomb: 1 } }), gb)
+        // the bomber keeps walking while the fuse burns — the far plank is
+        // parked outside the blast circle at fuse-out (~x 8.5), the near one under it.
+        g3.grid[10 * sim.W + 8] = sim.PLANK; g3.grid[10 * sim.W + 11] = sim.PLANK
+        for (let t = 0; t < 55; t++) sim.step(g3)
+        sim.assign(g3, 0, 'bomb')
+        for (let t = 0; t < 140; t++) sim.step(g3)
+        ok(g3.grid[10 * sim.W + 8] === sim.AIR && g3.grid[10 * sim.W + 11] === sim.PLANK,
+            '#3863: the blast spared wood inside its radius or destroyed wood outside it')
+    }
+
+    // G: determinism rides planks — the same script twice lays the same road.
+    {
+        const grid = mk((x, y) => (x < 10 ? (y >= 10 && y <= 12 ? sim.DIRT : 0) : (y >= 11 && y <= 12 ? sim.DIRT : 0)))
+        const meta = bmeta({ spawn: { x: 3, y: 10, dir: 1 }, skills: { build: 3 } })
+        const cmds = [{ tick: 40, id: 0, skill: 'build' }]
+        const a = sim.replay(meta, grid, cmds, { maxTicks: 400 })
+        const b = sim.replay(meta, grid, cmds, { maxTicks: 400 })
+        ok(sim.stateHash(a) === sim.stateHash(b) && a.grid[10 * sim.W + 10] === sim.PLANK,
+            '#3863: a build script replays to different worlds — planks broke determinism')
+        const c = sim.replay(meta, grid, [], { maxTicks: 400 })
+        ok(sim.stateHash(c) !== sim.stateHash(a), '#3863: stateHash ignores laid planks — the audit could not see a plank desync')
+    }
+
+    // H: the solver is untouched — no level offers or spends planks, so every
+    // script, load-bearing proof and slack margin above replays unchanged;
+    // and the whole shelf ships the original's 12-plank cargo.
+    {
+        for (let i = 0; i < LEVELS.length; i++) {
+            const r = runSolver(i)
+            ok(r.cmds.every(c => c.skill !== 'build'), `#3863: level ${i} (${r.meta.name}): the solver spent planks — the solver-side gap (#3863 stage 2) is not closed, do not let scripts depend on them`)
+            ok((LEVELS[i].skills.build | 0) >= 12, `#3863: level ${i} (${LEVELS[i].name}) ships less than the original's 12-plank cargo`)
+        }
+    }
 }
 
 // ------------------------------------------------------------------ mutations ---
