@@ -37,7 +37,7 @@ export const LEVELS = [
         // by the perfect solver, and Jon watched one climber die and a
         // "winnable" level become mathematically lost. A tutorial must be
         // losable-ly winnable: six climbers, four needed, two to burn.
-        skills: { block: 0, bomb: 0, climb: 6, dig: 0 },
+        skills: { block: 0, bomb: 0, climb: 6, dig: 0, float: 2 },
         proves: ['climb'],
         build() {
             const c = new Carve()
@@ -63,7 +63,7 @@ export const LEVELS = [
         name: 'THE MASSIF', time: 170,
         spawn: { x: 3.5, y: 23 }, exit: { x: 43, y: 22 },
         spawnCount: 10, spawnEvery: 55, need: 5,
-        skills: { block: 1, bomb: 1, climb: 0, dig: 3 },
+        skills: { block: 1, bomb: 1, climb: 0, dig: 3, float: 2 },
         proves: ['dig'],
         build() {
             const c = new Carve()
@@ -80,7 +80,7 @@ export const LEVELS = [
         name: 'THE DOOR', time: 170,
         spawn: { x: 24.5, y: 23, dir: -1 }, exit: { x: 3, y: 22 },
         spawnCount: 10, spawnEvery: 80, need: 6,
-        skills: { block: 1, bomb: 2, climb: 0, dig: 0 },
+        skills: { block: 1, bomb: 2, climb: 0, dig: 0, float: 2 },
         proves: ['bomb'],
         build() {
             const c = new Carve()
@@ -100,7 +100,7 @@ export const LEVELS = [
         name: 'THE LEDGE', time: 150,
         spawn: { x: 20.5, y: 23, dir: 1 }, exit: { x: 3, y: 22 },
         spawnCount: 9, spawnEvery: 55, need: 5,
-        skills: { block: 2, bomb: 2, climb: 0, dig: 0 },
+        skills: { block: 2, bomb: 2, climb: 0, dig: 0, float: 2 },
         proves: ['block', 'bomb'],
         build() {
             const c = new Carve()

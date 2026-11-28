@@ -149,10 +149,16 @@ const LemGame = () => {
             return true
         }
 
+        // #3827 FLOATER: deploying a parachute is a swoosh — a falling pitch,
+        // the canopy catching air. Other grants keep the per-skill blip ladder.
+        const skillSfx = (s) => s === 'float'
+            ? audioController.playSweep(880, 392, 0.28, 'triangle', 0.08)
+            : audioController.playTone(s === 'bomb' ? 180 : 520 + SKILLS.indexOf(s) * 90, 0.07, 'square', 0.07)
+
         const handleEvents = (evts) => {
             for (const e of evts) {
                 if (e.type === 'exit') { audioController.playSweep(660, 1320, 0.22, 'square', 0.08); audioController.playTone(1760, 0.1, 'square', 0.05) }
-                else if (e.type === 'assign') audioController.playTone(e.skill === 'bomb' ? 180 : 520 + SKILLS.indexOf(e.skill) * 90, 0.07, 'square', 0.07)
+                else if (e.type === 'assign') skillSfx(e.skill)
                 else if (e.type === 'blast') { audioController.playNoise(0.5, 0.16); audioController.playSweep(220, 50, 0.5, 'sawtooth', 0.1) }
                 else if (e.type === 'splat') audioController.playSweep(360, 60, 0.22, 'sawtooth', 0.09)
                 else if (e.type === 'drown') {
@@ -165,6 +171,7 @@ const LemGame = () => {
                 }
                 else if (e.type === 'dig') audioController.playNoise(0.06, 0.03)
                 else if (e.type === 'land') audioController.playTone(120, 0.05, 'triangle', 0.04)
+                else if (e.type === 'landsoft') audioController.playTone(200, 0.07, 'sine', 0.035)
                 else if (e.type === 'step') audioController.playTone(220, 0.03, 'triangle', 0.025)
                 else if (e.type === 'crest') audioController.playTone(880, 0.07, 'sine', 0.05)
                 else if (e.type === 'turn') audioController.playTone(90, 0.02, 'triangle', 0.015)
@@ -194,7 +201,7 @@ const LemGame = () => {
             if (!L) { audioController.playTone(140, 0.06, 'sawtooth', 0.05); return }
             if (assign(gs, L.id, selected)) {
                 runCmds.push({ tick: gs.tick, id: L.id, skill: selected })
-                audioController.playTone(520 + SKILLS.indexOf(selected) * 90, 0.07, 'square', 0.07)
+                skillSfx(selected)
             } else audioController.playTone(140, 0.06, 'sawtooth', 0.05)
         }
 
@@ -212,7 +219,7 @@ const LemGame = () => {
             if (!a) return                        // release on nothing: nothing
             if (assign(gs, a.id, selected)) {
                 runCmds.push({ tick: gs.tick, id: a.id, skill: selected })
-                audioController.playTone(520 + SKILLS.indexOf(selected) * 90, 0.07, 'square', 0.07)
+                skillSfx(selected)
             } else audioController.playTone(140, 0.06, 'sawtooth', 0.05)
         }
         const stepGesture = (p) => pointerGesture(gest, p, liveCands(), p.x * W, p.y * H, stageScale(), commitAssign)
@@ -397,6 +404,21 @@ const LemGame = () => {
                 // #470: two pixels thick — at 1 px the gold hairline vanished
                 // into the hair row and a clump looked like nobody had a skill.
                 if (L.climber && L.state !== 'bomb') { ctx.fillStyle = LAYOUT.badge.climber; ctx.fillRect(px, py - 2, 7, 2) }
+                // #3827 FLOATER: the original rides its parachute even while
+                // walking — you always know who carries one. Striped canopy,
+                // 2-frame sway, shroud lines to the shoulders.
+                if (L.floater && L.state !== 'bomb') {
+                    const cy = py - 8
+                    const sway = Math.floor(gs.tick / 7 + L.id) % 2
+                    ctx.fillStyle = '#efe9d8'
+                    ctx.fillRect(px - 3 + sway, cy, 12, 2)
+                    ctx.fillStyle = '#d83a3a'
+                    ctx.fillRect(px - 1 + sway, cy, 2, 2)
+                    ctx.fillRect(px + 3 + sway, cy, 2, 2)
+                    ctx.fillStyle = 'rgba(239,233,216,0.7)'
+                    ctx.fillRect(px - 2 + sway, cy + 2, 1, 3)
+                    ctx.fillRect(px + 7 + sway, cy + 2, 1, 3)
+                }
             }
 
             // #470: the grant flash — the lemming that JUST received a skill
@@ -628,7 +650,7 @@ const LemGame = () => {
                     spawned: gs.spawned, exited: gs.exited, dead: gs.dead, drowned: gs.drowned, need: meta.need,
                     end: gs.end, win: gs.win, score: gs.score, hash: stateHash(gs),
                     cmds: runCmds.length, gcmds: gs.cmds.length, board: board(), // #1637 gcmds = solver-line assignments too
-                    lemmings: gs.lemmings.map(L => ({ id: L.id, x: L.x, y: L.y, state: L.state, dir: L.dir, climber: L.climber, digger: L.digger, flash: L.flashT, live: L.live })),
+                    lemmings: gs.lemmings.map(L => ({ id: L.id, x: L.x, y: L.y, state: L.state, dir: L.dir, climber: L.climber, digger: L.digger, floater: L.floater, flash: L.flashT, live: L.live })),
                 }),
                 // The next move the PROVEN solver makes at this point in the
                 // replay — as the live position of that live lemming. Read-only:
@@ -694,7 +716,7 @@ const LemGame = () => {
                     if (!gs) return ['(no level mounted yet)']
                     const rows = [
                         `need ${gs.exited}/${meta.need}  dead ${gs.dead}  live ${gs.lemmings.filter(l => l.live).length}  spawn ${gs.spawned}/${meta.spawnCount}`,
-                        `stock blk${gs.skills.block} bmb${gs.skills.bomb} clm${gs.skills.climb} dig${gs.skills.dig}  tick ${gs.tick}  end ${gs.end || '-'}`,
+                        `stock blk${gs.skills.block} bmb${gs.skills.bomb} clm${gs.skills.climb} dig${gs.skills.dig} flt${gs.skills.float}  tick ${gs.tick}  end ${gs.end || '-'}`,
                     ]
                     for (const L of gs.lemmings.filter(l => l.live).slice(0, 10)) {
                         rows.push(`#${L.id} ${L.state}${L.climber ? 'C' : ''}${L.digger ? 'D' : ''} (${L.x.toFixed(1)},${L.y.toFixed(0)})`)
@@ -717,6 +739,7 @@ const LemGame = () => {
                     { label: '+BOMBER', run: () => { gs.skills.bomb++ } },
                     { label: '+CLIMBER', run: () => { gs.skills.climb++ } },
                     { label: '+DIGGER', run: () => { gs.skills.dig++ } },
+                    { label: '+FLOATER', run: () => { gs.skills.float++ } },
                     { label: 'KILL A CLIMBER', run: () => {
                         const L = gs.lemmings.find(l => l.live && (l.climber || l.state === 'climb')) || gs.lemmings.find(l => l.live)
                         if (!L) return 'none live'

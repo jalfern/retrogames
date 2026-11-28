@@ -229,6 +229,50 @@ for (let i = 0; i < LEVELS.length; i++) {
         ok(!sim.assign(g2, D.id, 'dig') && g2.skills.dig === dh,
             'a walking digger still took a second DIG — the persistent-flag guard is missing (#422)')
     }
+    // #3827 FLOATER: the parachute is a rule, not a decal. Three ways it can
+    // die — immunity, slow descent, supply discipline — pinned separately,
+    // because "the canopy draws" and "the canopy works" are different claims.
+    {
+        const g = mk()
+        for (let t = 0; t < 60; t++) sim.step(g)
+        const L = g.lemmings[0]
+        L.state = 'fall'; L.fallDist = sim.CFG.maxFall + 1; L.vy = 8
+        L.x = 4.5; L.y = 22.5; L.floater = true
+        for (let t = 0; t < 60; t++) sim.step(g)
+        ok(L.live && L.state === 'walk',
+            '#3827: a floater died on a landing past maxFall — the parachute does not save (immunity is dead)')
+        const drop = (floater) => {
+            const gg = mk()
+            for (let t = 0; t < 60; t++) sim.step(gg)
+            const X = gg.lemmings[0]
+            X.state = 'fall'; X.vy = 0; X.fallDist = 0; X.floater = floater
+            X.x = 4.5; X.y = 8                       // ~16 tiles above the spire floor
+            let n = 0
+            while (X.live && X.state === 'fall' && n < 900) { sim.step(gg); n++ }
+            return { n, alive: X.live, d: 16 }
+        }
+        const fl = drop(true), nl = drop(false)
+        ok(!nl.alive, '#3827 setup: a bare lemming should splat from ~16 tiles — the height is not fatal at all')
+        ok(fl.alive, '#3827: a floater splatted from ~16 tiles — floaters must survive any height')
+        ok(fl.n > nl.n * 2,
+            `#3827: parachute descent (${fl.n} ticks) is not meaningfully slower than free fall (${nl.n}) — floatSp is decoration`)
+    }
+    // float supply discipline: the #422 law applies to the fifth skill too
+    {
+        const g = mk()
+        for (let t = 0; t < 80; t++) sim.step(g)
+        const F = g.lemmings[0]
+        const have = g.skills.float
+        ok(sim.assign(g, F.id, 'float') && g.skills.float === have - 1,
+            '#3827 setup: a first FLOATER grant did not cost exactly one supply')
+        const held = g.skills.float
+        ok(!sim.assign(g, F.id, 'float') && g.skills.float === held,
+            '#3827: re-granting FLOATER to a lemming already under a canopy still cost a supply — the flag-for-life guard is missing (#422 law)')
+    }
+    // the fifth skill is reachable everywhere the game is playable
+    for (let i = 0; i < LEVELS.length; i++) {
+        ok((LEVELS[i].skills.float | 0) >= 1, `level ${i} (${LEVELS[i].name}) ships zero floaters — the fifth skill cannot be used where it is offered`)
+    }
     // the count is the whole goal (issue #110): once `need` have escaped the
     // ledge is over, even with lemmings still pacing on screen. Before the fix
     // the criteria was met at ~31s but the level paced to the 120s clock.
@@ -374,11 +418,11 @@ const pressFits = () => PRESS.length <= 24 && /ANY KEY/i.test(PRESS)
     for (const L of g.lemmings.filter(l => l.live)) {
         for (const s of sim.SKILLS) {
             g.skills[s] = 9
-            const b = { st: L.state, c: L.climber, d: L.digger }
+            const b = { st: L.state, c: L.climber, d: L.digger, f: L.floater }
             const before = g.skills[s]
             const granted = sim.assign(g, L.id, s)
             const spent = before - g.skills[s]
-            const changed = L.state !== b.st || L.climber !== b.c || L.digger !== b.d
+            const changed = L.state !== b.st || L.climber !== b.c || L.digger !== b.d || L.floater !== b.f
             ok(!granted || (spent === 1 && changed),
                 `#${470}: '${s}' on lemming #${L.id} spent ${spent} charge(s) and changed ${changed ? 'the' : 'nothing'} — a charge dropped without a visible skill`)
             ok(granted || spent === 0,
@@ -417,6 +461,16 @@ if (MUT) {
     tryMut('maxFall = 0 (every hop splats)', c => { c.maxFall = 0 }, () => runSolver(0).win)
     tryMut('blast = 0.6 (door never opens)', c => { c.blast = 0.6 }, () => runSolver(2).win)
     tryMut('digSp = 0 (massif stays shut)', c => { c.digSp = 0 }, () => runSolver(1).win)
+    tryMut('floatSp = fallSp (parachute is paper)', c => { c.floatSp = c.fallSp }, () => {
+        const { meta, grid } = buildLevel(0)
+        const g = sim.makeGame(meta, grid)
+        for (let t = 0; t < 60; t++) sim.step(g)
+        const X = g.lemmings[0]
+        X.state = 'fall'; X.vy = 0; X.fallDist = 0; X.floater = true; X.x = 4.5; X.y = 8
+        let n = 0
+        while (X.live && X.state === 'fall' && n < 900) { sim.step(g); n++ }
+        return X.live && n > 120      // alive AND slow — either half failing is the mutation caught
+    })
     tryMut('flash = 0 (grants go back to invisible)', c => { c.flash = 0 }, () => {
         const { meta, grid } = buildLevel(0)
         const g = sim.makeGame(meta, grid)

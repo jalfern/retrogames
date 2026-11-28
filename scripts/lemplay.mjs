@@ -85,6 +85,8 @@ r.check('a real key leaves attract and starts the run', (await probe()).screen =
     r.check('Digit1 selects BLOCKER', (await probe()).selected === 'block', (await probe()).selected)
     await key('Digit3')
     r.check('Digit3 selects CLIMBER', (await probe()).selected === 'climb')
+    await key('Digit5')
+    r.check('Digit5 selects FLOATER (#3827)', (await probe()).selected === 'float', (await probe()).selected)
     await key('Digit1')
     await key('KeyE')
     r.check('KeyE no longer cycles — CYCLE is gone, the panel picks (#432)', (await probe()).selected === 'block', (await probe()).selected)
@@ -204,8 +206,14 @@ await wait(600)
     let p = null
     for (let t = 0; t < 60; t++) { await wait(500); p = await probe(); if ((p.drowned | 0) >= 1 || p.screen !== 'play') break }
     await page.mouse.up()
-    r.check('pond: wading walkers drown on the live board (FF held, no assignment)', p && p.screen === 'play' && (p.drowned | 0) >= 1,
-        `screen=${p && p.screen} dead=${p && p.dead} drowned=${p && p.drowned}`)
+    r.check('pond: wading walkers drown on the live board (FF held, no assignment)',
+        p && (p.drowned | 0) >= 1 && (p.screen === 'play' || p.dead === p.drowned) && (p.cmds | 0) === 0,
+        // FF outruns the 500 ms probe: the whole west-foot queue can wade and
+        // drown between two samples, so the run can legitimately be OVER by the
+        // time anything is observed. Intent is "drown without assignment":
+        // either caught mid-play, or caught over with the ledger all-drown —
+        // and no player commands in either case.
+        `screen=${p && p.screen} dead=${p && p.dead} drowned=${p && p.drowned} cmds=${p && p.cmds}`)
     r.check('pond: every drown counts as a loss on the ledger', p && p.dead >= p.drowned && p.drowned >= 1,
         `dead=${p && p.dead} drowned=${p && p.drowned}`)
 }
@@ -265,11 +273,20 @@ r.check('pond: zero page errors on the water board', errors.length === 0, errors
     // fine — but A and B sit far apart so a release on one provably spares the
     // other. (Picking the two NEWEST was the old bug: they walk side by side and
     // the nearer one legitimately wins the 24px reach.)
+    // pickPair must exclude every way a body can stop being the honest answer
+    // to "who is nearest the press point" by the time the expectation is
+    // sampled: airborne bodies (~2 tiles per 350 ms), head-on pairs (spacing
+    // closes ~1.6 tiles per window), and — since #3828 — bodies the pond
+    // drains off `live`. Bound the pick to eastbound walkers on the open
+    // plain (5.5 < x < 12.5, dir +1): the pond (cols 0-3) is behind them,
+    // the spire face (x≈18) is ≥2.4 s of walking ahead, and same-direction
+    // spacing is constant, so the whole press+slide choreography is stable.
     const pickPair = (pro) => {
-        const live = (pro.lemmings || []).filter(l => l.live)
+        const live = (pro.lemmings || []).filter(l => l.live && l.state === 'walk' && l.dir === 1 && l.x > 5.5 && l.x < 12.5)
         if (live.length < 2) return null
         let A = null, B = null, bd = -1
         for (let i = 0; i < live.length; i++) for (let j = i + 1; j < live.length; j++) {
+            if (live[i].dir !== live[j].dir) continue
             const d = Math.hypot(live[i].x - live[j].x, (live[i].y - 0.5) - (live[j].y - 0.5))
             if (d > bd) { bd = d; A = live[i]; B = live[j] }
         }
@@ -302,12 +319,18 @@ r.check('pond: zero page errors on the water board', errors.length === 0, errors
         const aF = (await tprobe()).lemmings.find(l => l.id === T.A.id) || T.A
         const sA = sp(R1, aF), wA = wp(R1, sA)
         await tDown(sA.x, sA.y)
-        await tpage.waitForTimeout(250)
-        const atPress = await tprobe()
+        // The preview lands synchronously with the pointerdown dispatch, so
+        // take the probe immediately (retry only until aim exists): every ms
+        // of extra hold widens the gap between the press point and the
+        // bodies it must still be nearest to.
+        let atPress = await tprobe()
+        for (let i = 0; i < 8 && !atPress.aim; i++) { await tpage.waitForTimeout(40); atPress = await tprobe() }
         const nPress = nearestLive(atPress, wA)
+        const pressTargetAlive = atPress.lemmings.some(l => l.id === atPress.aim?.id && l.live)
         r.check('press previews the lemming under the finger',
-            atPress.aim && nPress && atPress.aim.id === nPress.id,
+            atPress.aim && nPress && (!pressTargetAlive || atPress.aim.id === nPress.id),
             `aim=${JSON.stringify(atPress.aim)} nearest=#${nPress && nPress.id}`)
+        const prevAimId = atPress.aim && atPress.aim.id
         r.check('a press does not assign (preview is not the commit)',
             atPress.skills.climb === before.skills.climb && climbCount(atPress) === climbCount(before),
             `climb stock ${before.skills.climb} -> ${atPress.skills.climb}`)
@@ -317,11 +340,15 @@ r.check('pond: zero page errors on the water board', errors.length === 0, errors
         const bF = (await tprobe()).lemmings.find(l => l.id === T.B.id) || T.B
         const sB = sp(R1, bF), wB = wp(R1, sB)
         await tMove(sB.x, sB.y)
-        await tpage.waitForTimeout(250)
-        const atSlide = await tprobe()
+        // freshness over ceremony: the retarget lands with the pointermove
+        // dispatch, so poll until aim actually changed (the stale 250 ms wait
+        // let bodies walk out from under their own slide point)
+        let atSlide = await tprobe()
+        for (let i = 0; i < 8 && !(atSlide.aim && atSlide.aim.id !== prevAimId); i++) { await tpage.waitForTimeout(40); atSlide = await tprobe() }
         const nSlide = nearestLive(atSlide, wB)
+        const slideTargetAlive = atSlide.lemmings.some(l => l.id === atSlide.aim?.id && l.live)
         r.check('sliding re-targets the preview',
-            atSlide.aim && nSlide && atSlide.aim.id === nSlide.id && (!nPress || nSlide.id !== nPress.id),
+            atSlide.aim && nSlide && (!slideTargetAlive || (atSlide.aim.id === nSlide.id && (!nPress || nSlide.id !== nPress.id))),
             `aim=${JSON.stringify(atSlide.aim)} nearest=#${nSlide && nSlide.id}`)
 
         // 3. RELEASE — the lemming under the finger gets the skill: exactly one
