@@ -42,6 +42,16 @@ const demoRun = (sc) => {
 
 const hashNoise = (x, y) => ((x * 7 + y * 13 + ((x * y) % 5)) % 3)
 
+// #3887 terrain texture: an integer hash per (tile, slot) — deterministic, so
+// the same tile wears the same grain every frame (the sim's own law: nothing
+// here may gamble). Slots 0..7 give each tile its own speckle/ripple layout.
+const tileRand = (x, y, k) => {
+    let h = (x * 374761393 + y * 668265263 + k * 1274126177) >>> 0
+    h = (h ^ (h >>> 13)) >>> 0
+    h = (h * 1274126177) >>> 0
+    return ((h ^ (h >>> 16)) >>> 0) % 100
+}
+
 const SimCityMinGame = () => {
     const stageRef = useRef(null)
     const [screen, setScreen] = useState('attract')
@@ -154,7 +164,13 @@ const SimCityMinGame = () => {
             if (c.t === T.WATER) {
                 ctx.fillStyle = hashNoise(x, y) === 1 ? '#1e5279' : '#1a4668'
                 ctx.fillRect(px, py, TILE, TILE)
-                if ((x + y + Math.floor(tk / 30)) % 7 === 0) { ctx.fillStyle = '#3f7fae'; ctx.fillRect(px + 6, py + 12, 10, 2) }
+                // #3887 wave texture: two seeded ripple dashes per tile, so no
+                // two water cells are twins; the tick glint stays the bright one.
+                ctx.fillStyle = '#2f6690'
+                ctx.fillRect(px + 3 + (tileRand(x, y, 1) % 9), py + 5 + (tileRand(x, y, 2) % 6), 6, 2)
+                ctx.fillStyle = '#3f7fae'
+                ctx.fillRect(px + 9 + (tileRand(x, y, 3) % 7), py + 15 + (tileRand(x, y, 4) % 7), 9, 2)
+                if ((x + y + Math.floor(tk / 30)) % 7 === 0) { ctx.fillStyle = '#5497c4'; ctx.fillRect(px + 6, py + 12, 10, 2) }
                 return
             }
             if (c.t === T.ROCK) {
@@ -165,6 +181,16 @@ const SimCityMinGame = () => {
             ctx.fillStyle = c.scar > 0 ? '#2a2620' : ['#1f3d20', '#234522', '#1c381d'][hashNoise(x, y)]
             ctx.fillRect(px, py, TILE, TILE)
             if (c.scar > 0) { ctx.fillStyle = '#4a4034'; ctx.fillRect(px + 6, py + TILE - 8, 3, 4); ctx.fillRect(px + 16, py + TILE - 6, 2, 3) }
+            else {
+                // #3887 ground grain: seeded speckles in two adjacent greens so
+                // the field reads as turf, not a spreadsheet (docs/ART.md #3).
+                // Within the RETRO bar — 2 px dots, era palette, zero motion.
+                ctx.fillStyle = '#182f19'
+                ctx.fillRect(px + 2 + (tileRand(x, y, 0) % 21), py + 3 + (tileRand(x, y, 1) % 21), 2, 2)
+                ctx.fillRect(px + 2 + (tileRand(x, y, 2) % 21), py + 2 + (tileRand(x, y, 3) % 21), 2, 2)
+                ctx.fillStyle = '#2b5229'
+                ctx.fillRect(px + 3 + (tileRand(x, y, 4) % 20), py + 3 + (tileRand(x, y, 5) % 20), 2, 2)
+            }
             if (c.t === T.ROAD) {
                 ctx.fillStyle = '#3b3b45'; ctx.fillRect(px, py, TILE, TILE)
                 ctx.fillStyle = lit ? '#6f6a3a' : '#54545e'

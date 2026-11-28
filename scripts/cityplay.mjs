@@ -115,6 +115,52 @@ if (sea) {
     r.check('a refusal costs nothing', (await probe()).funds === f0)
 }
 
+// 3b — #3887 TERRAIN TEXTURE, graded in pixels (docs/ART.md #3: texture, not
+// flat fills). The sim cannot see the canvas; the canvas is the only witness.
+// Grass wears seeded grain, the river wears ripples, no two water tiles are
+// twins, and the grain is determinism-still: same tile, same pixels.
+const tileSig = (gx, gy) => page.evaluate(([x, y]) => {
+    const c = document.querySelector('canvas[data-sc-stage]')
+    if (!c) return null
+    const d = c.getContext('2d').getImageData(x * 28, y * 28, 28, 28).data
+    const set = new Set()
+    let sig = 0
+    for (let i = 0; i < d.length; i += 4) {
+        set.add((d[i] << 16) | (d[i + 1] << 8) | d[i + 2])
+        sig = ((sig * 31) + d[i] + d[i + 1] * 3 + d[i + 2] * 7) >>> 0
+    }
+    return { colors: set.size, sig }
+}, [gx, gy])
+const cellsWith = (t, cap) => page.evaluate(([tt, n]) => {
+    const out = []
+    for (let y = 0; y < 16 && out.length < n; y++) for (let x = 0; x < 24 && out.length < n; x++) {
+        const c = window.__scTest.probe().cellAt(x, y)
+        if (c && c.t === tt && !(c.scar > 0) && !c.burn) out.push([x, y])
+    }
+    return out
+}, [t, cap])
+const greens = await cellsWith(0, 8)
+let grainOK = 0
+for (const [gx, gy] of greens) { const tg = await tileSig(gx, gy); if (tg && tg.colors >= 3) grainOK++ }
+r.check(`grass wears seeded grain, not a flat fill (${grainOK}/${greens.length} tiles show ≥3 tones)`, greens.length >= 4 && grainOK === greens.length)
+const blues = await cellsWith(1, 8)
+const blueSigs = new Set()
+let rippleOK = 0
+for (const [gx, gy] of blues) {
+    const tb = await tileSig(gx, gy)
+    if (tb && tb.colors >= 3) rippleOK++
+    if (tb) blueSigs.add(tb.sig)
+}
+r.check(`the river wears wave texture (${rippleOK}/${blues.length} tiles show ≥3 tones)`, blues.length >= 4 && rippleOK === blues.length)
+r.check(`no two water tiles are twins (${blueSigs.size}/${blues.length} distinct signatures)`, blueSigs.size >= Math.max(2, blues.length - 2))
+if (greens.length) {
+    const [gx, gy] = greens[0]
+    const g0 = await tileSig(gx, gy)
+    await wait(700)
+    const g1 = await tileSig(gx, gy)
+    r.check('the grain is deterministic — the same grass tile paints the same pixels (no gambling)', !!g0 && !!g1 && g0.sig === g1.sig)
+}
+
 // 4 — power is wired: the plant lights the road graph it touches. Sweep for
 // grass the keys can actually build on — the map is allowed to say no, and
 // the harness asks the SIM where, not hope.

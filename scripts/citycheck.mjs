@@ -63,6 +63,18 @@ section('SCENARIO AUDIT')
     ok(SCEN.length === 3, `${SCEN.length} scenarios — three halls, like the arcade demands`)
 }
 
+// ------------------------------------------------------------- terrain texture ----
+// #3887 — the look lives in the shell, so the shell gets source pins: the grain
+// and ripple colours are named constants, and a mutant that flattens the
+// terrain back to a spreadsheet reddens these lines (cityplay grades pixels).
+section('TERRAIN TEXTURE (#3887)')
+{
+    const raw = readFileSync(join(HERE, '../src/games/SimCityMin/index.jsx'), 'utf8')
+    ok(/const tileRand = \(x, y, k\)/.test(raw), 'tileRand — the per-tile grain hash — is gone')
+    ok(raw.includes("'#182f19'") && raw.includes("'#2b5229'"), 'grass grain tones removed — the field is flat again')
+    ok(raw.includes("'#2f6690'"), 'the river lost its ripple tone — water is flat again')
+}
+
 // ------------------------------------------------------------- construction pins ----
 section('ENGINE PINS')
 {
