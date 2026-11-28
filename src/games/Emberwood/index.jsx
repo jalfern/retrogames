@@ -504,10 +504,11 @@ export default function Emberwood() {
                     ? { imageRendering: IS_LITE ? 'pixelated' : 'auto', width: '100%', height: '100%' }
                     : { imageRendering: IS_LITE ? 'pixelated' : 'auto', width: `min(100vw, calc((var(--shell-h) - 140px) * ${(W / H).toFixed(3)}))` }}
             />
-            {/* HUD — #773: clears the #437 chrome cluster (ARCADE left, PAUSE+mute
-                right sit at top 0.75rem), so the strip starts below both. */}
+            {/* HUD — clears the #437 chrome cluster TWICE: ARCADE/PAUSE+mute sit
+                at top 0.75rem and FEEDBACK/PADS at 2.75rem, both ~1.6rem tall —
+                the strip must start below the second band (~4.4rem), not 3.4rem. */}
             {inGame && !paused && (
-                <div className="absolute left-2 right-2 flex justify-between pointer-events-none font-mono select-none" data-hud="strip" style={{ top: 'calc(3.4rem + var(--sat, 0px))', textShadow: '2px 2px 0 #000' }}>
+                <div className="absolute left-2 right-2 flex justify-between pointer-events-none font-mono select-none" data-hud="strip" style={{ top: 'calc(4.9rem + var(--sat, 0px))', textShadow: '2px 2px 0 #000' }}>
                     <div data-hud="left" className="max-w-[220px]">
                         <div className="flex gap-0.5 flex-wrap">
                             {Array.from({ length: hud.max }).map((_, i) => <HeartIcon key={i} full={i < hud.hp} />)}
@@ -529,14 +530,8 @@ export default function Emberwood() {
             {inGame && watching && (
                 <WatchToast className="absolute top-[calc(10rem + var(--sat, 0px))]" style={{ textShadow: 'none' }} />
             )}
-            {/* #1656 — the forgotten-how-to-play tap: start AND watch, one button. */}
-            {screen === 'attract' && (
-                <div className="absolute inset-x-0 z-[70] flex justify-center pointer-events-none" style={{ bottom: '24%' }}>
-                    <AttractWatchButton />
-                </div>
-            )}
             {inGame && !paused && (
-                <div className="absolute pointer-events-auto" style={{ top: 'calc(6.6rem + var(--sat, 0px))', right: 'calc(0.5rem + var(--sar, 0px))' }}>
+                <div className="absolute pointer-events-auto" style={{ top: 'calc(7.9rem + var(--sat, 0px))', left: 'calc(0.5rem + var(--sal, 0px))' }}>
                     <WatchButton on={watching} />
                 </div>
             )}
@@ -599,12 +594,13 @@ export default function Emberwood() {
                 </div>
             )}
             {screen === 'attract' && (
-                <div className="absolute inset-0 flex flex-col items-center justify-center pointer-events-none font-mono" style={{ textShadow: '3px 3px 0 #000' }}>
-                    <div className="text-amber-300 text-5xl font-bold tracking-widest mb-1">EMBERWOOD</div>
-                    <div className="text-violet-300 text-sm tracking-widest mb-8">THE CINDER VALE</div>
-                    <div className="text-emerald-200 text-base mb-2">{line}</div>
-                    <div className="text-white/80 text-sm mt-6 animate-pulse">PRESS ANY KEY OR TAP TO BEGIN</div>
+                <div className="absolute inset-0 flex flex-col items-center justify-center pointer-events-none font-mono px-4" style={{ textShadow: '3px 3px 0 #000' }}>
+                    <div className="text-amber-300 text-4xl sm:text-5xl font-bold tracking-widest mb-1">EMBERWOOD</div>
+                    <div className="text-violet-300 text-sm tracking-widest mb-5">THE CINDER VALE</div>
+                    <div className="w-full max-w-[92%] text-center text-emerald-200 text-xs leading-snug font-bold">{line}</div>
+                    <div className="text-white/80 text-sm mt-4 animate-pulse">PRESS ANY KEY OR TAP TO BEGIN</div>
                     <div className="text-stone-400 text-xs mt-2">Y — watch the proven route</div>
+                    <div className="mt-4 pointer-events-auto"><AttractWatchButton /></div>
                     {/* #965: phones have no third pad button and tap-to-start means
                         "new journey" — the save needs its own tappable affordance
                         here, or a phone can never continue. The tap dispatches the
