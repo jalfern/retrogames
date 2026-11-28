@@ -3,7 +3,7 @@
 // goal inside the 2:00 run, and seed + pads replay identical hashes.
 // Run: npm run grindcheck [-- --mutate <rule>]  (--mutate proves it can fail)
 
-import { makeGame, step, stateOf, hashState, packIn, unpackIn, SCORE_GOAL, CRUISE_MIN, GEM_ALL, gemCount, REPLAY_MIN, replayWorthy, betterLine, beatsLine, encodeLine, decodeLine, validBank, SHARE_MAX_TICKS, RUN_MAX, RUN_MAX_AGE_MS, packRun, unpackRun, validRun, RUN_V } from '../src/games/GrindCity/sim.js'
+import { makeGame, step, stateOf, hashState, packIn, unpackIn, SCORE_GOAL, CRUISE_MIN, GEM_ALL, gemCount, REPLAY_MIN, replayWorthy, betterLine, beatsLine, encodeLine, decodeLine, validBank, SHARE_MAX_TICKS, RUN_MAX, RUN_MAX_AGE_MS, packRun, unpackRun, validRun, RUN_V, TRICK_PTS, BIG_RISE, MEGA_RISE, BIG_PER_M, bigAir } from '../src/games/GrindCity/sim.js'
 import { botPad, makeBot } from '../src/games/GrindCity/planner.js'
 import { parkHeight, LETTERS, RAILS, GEMS, GEM_PTS, SECRET, ROOF_Y, shadeAt } from '../src/games/GrindCity/park.js'
 import { BAR, bedVoices, landThud, ATTRACT_SFX, sfxGain } from '../src/games/GrindCity/music.js'
@@ -25,7 +25,7 @@ const MUTI = process.argv.indexOf('--mutate')
 const MUT = MUTI > -1 ? process.argv[MUTI + 1] : null
 if (MUTI > -1 && !MUT) {
     let died = 0
-    const RULES = ['letters', 'gap', 'replay', 'bed', 'gems', 'shade', 'grab', 'stall', 'tell', 'momentum', 'variety', 'nearmiss', 'bestline', 'bankline', 'codec', 'beats', 'store', 'sharewire', 'sfxduck', 'clone', 'need', 'sched', 'searchwire', 'restore', 'unpackclone', 'valid', 'runwire', 'runage', 'bankcap']
+    const RULES = ['letters', 'gap', 'replay', 'bed', 'gems', 'shade', 'grab', 'stall', 'tell', 'momentum', 'variety', 'nearmiss', 'bestline', 'bankline', 'codec', 'beats', 'store', 'sharewire', 'sfxduck', 'clone', 'need', 'sched', 'searchwire', 'restore', 'unpackclone', 'valid', 'runwire', 'runage', 'bankcap', 'ampl']
     for (const rule of RULES) {
         const res = spawnSync(process.execPath, [SELF, '--mutate', rule], { encoding: 'utf8' })
         // child convention below: exit 0 = the rule broke and the check saw red
@@ -863,6 +863,126 @@ import { makeSearchBot, searchPad } from '../src/games/GrindCity/search.js'
         /const savePending = \(\) => \{\n\s+if \(pausedRef\.current\) return/.test(cabRaw70) &&
         /sim\.msg = `RETURNED AT/.test(cabRaw70) &&
         /data-q="msg"/.test(cabRaw70))
+}
+
+// ── BIG AIR (#3941 slice 1): momentum pays ──────────────────────────────
+// Amplitude = apex height above the launch point. A lazy ollie never pays;
+// pump-assisted launches cash out on clean landings and ride the chain.
+// Test line: flat plaza at (-4, 6) heading +z — nothing to latch, no letter
+// within reach, ground level y = 0.
+{
+    ok('big air law: under threshold and junk pay nothing',
+        bigAir(BIG_RISE - 0.01) === null && bigAir(-2) === null && bigAir(NaN) === null && bigAir(Infinity) === null)
+    const lo = bigAir(BIG_RISE), hi = bigAir(MEGA_RISE)
+    ok('big air law: BIG pays base at threshold, MEGA fires at 1.9 m, ramp monotonic',
+        lo.tier === 'Big Air' && lo.pts === TRICK_PTS['Big Air'] &&
+        bigAir(MEGA_RISE - 0.01).tier === 'Big Air' && hi.tier === 'Mega Air' &&
+        hi.pts === TRICK_PTS['Mega Air'] + Math.round(BIG_PER_M * (MEGA_RISE - BIG_RISE)) &&
+        bigAir(2.4).pts > hi.pts)
+
+    // Launch off the flat at raw speed, ride out the air, drain events.
+    // mode: 'lazy' | 'pump' | 'shortflip' | 'megajump'
+    const skate = (mode, kill = false) => {
+        const s = makeGame(5, 'run'); s.phase = 'play'
+        s.x = -4; s.z = 6; s.y = 0; s.heading = Math.PI / 2; s.vy = 0
+        s.speed = mode === 'lazy' ? CRUISE_MIN : 10
+        const evs = []
+        let k = 0, airMax = 0, airBigSeen = false
+        while (k++ < 300) {
+            if (mode === 'megajump' && k === 1) {   // a crest launch, expressed as the
+                s.air = true; s.vy = 7.3             // drop-away site would leave it:
+                s.launchY = s.y; s.airTop = s.y      // airborne, amplitude fresh
+                s.airTrick = { t: 0, grab: null, flip: 0, flipRot: 0, rot: 0, spin: 0 }
+                s.airVXZ = s.speed
+            }
+            const p = mode === 'megajump' ? {} : k === 1 ? { a: true } : mode === 'shortflip' && k === 3 ? { b: true } : {}
+            if (kill && s.air) s.airTop = s.launchY   // mutant: steal the amplitude
+            // shortflip: at tick 10 the board has turned ~120° — slam the air
+            // shut (the drop onto the deck a late flip makes) and land short.
+            if (mode === 'shortflip' && k === 10 && s.air) { s.y = parkHeight(s.x, s.z) + 0.001; s.vy = -3 }
+            step(s, p)
+            if (s.air) { airMax = Math.max(airMax, s.airTop - s.launchY); if (stateOf(s).airBig) airBigSeen = true }
+            evs.push(...s.events); s.events.length = 0
+            if (!s.air && k > 5 && (evs.some(e => e.startsWith('bank:') || e === 'bail'))) break
+        }
+        return { s, evs, airMax, airBigSeen, st: stateOf(s) }
+    }
+
+    const lazy = skate('lazy')
+    ok('big air: a lazy cruise ollie never pays',
+        lazy.airMax < BIG_RISE && !lazy.airBigSeen && lazy.st.lastAir === null &&
+        !lazy.evs.includes('bigair') && lazy.st.score === 0,
+        `rise=${lazy.airMax.toFixed(2)} score=${lazy.st.score}`)
+
+    const pump = skate('pump')
+    ok('big air: a pumped ollie pays BIG AIR into the chain',
+        pump.airMax >= BIG_RISE && pump.airBigSeen && pump.st.lastAir !== null &&
+        pump.st.lastAir.tier === 'Big Air' && pump.st.lastAir.pts === bigAir(pump.st.lastAir.rise).pts &&
+        pump.evs.includes('bigair') && pump.evs.includes('trick:Big Air:' + pump.st.lastAir.pts),
+        `rise=${pump.airMax.toFixed(2)} last=${JSON.stringify(pump.st.lastAir)}`)
+    ok('big air: the payout banks through the chain multiplier (ollie + Big Air ×2)',
+        pump.evs.includes(`bank:${(10 + pump.st.lastAir.pts) * 2}`) && pump.st.score === (10 + pump.st.lastAir.pts) * 2,
+        `bank=${pump.evs.find(e => e.startsWith('bank:'))} score=${pump.st.score}`)
+
+    const jump = skate('megajump')
+    ok('big air: crest launch amplitude reaches MEGA AIR',
+        jump.airMax >= MEGA_RISE && jump.evs.includes('megair') && jump.st.lastAir.tier === 'Mega Air' &&
+        jump.st.lastAir.pts === bigAir(jump.st.lastAir.rise).pts,
+        `rise=${jump.airMax.toFixed(2)} last=${JSON.stringify(jump.st.lastAir)}`)
+
+    const short = skate('shortflip')
+    ok('big air: a flip landed short bails — no payout, chain forfeit',
+        short.evs.includes('bail') && short.st.lastAir === null &&
+        !short.evs.includes('bigair') && short.st.score === 0,
+        `evs=${short.evs.join(',')} score=${short.st.score}`)
+
+    // Honesty: both autopilots recite their pre-feature lines — the witness
+    // scores exactly what it scored before Big Air existed, and neither bot
+    // throws a paid air (the search's commit bar was never crossed).
+    {
+        const wit = makeGame(7, 'run'); wit.phase = 'play'
+        const wb = makeBot()
+        let wBig = 0, wBail = 0
+        while (!wit.done) { step(wit, botPad(stateOf(wit), wb)); for (const e of wit.events) { if (e === 'bigair' || e === 'megair') wBig++; if (e === 'bail') wBail++ } wit.events.length = 0 }
+        ok('#3941 honesty: the witness line is untouched — same win, same score, zero paid airs',
+            stateOf(wit).won && wBig === 0 && wBail === 0 && stateOf(wit).score === 18910,
+            `score=${stateOf(wit).score} big=${wBig}`)
+    }
+    {
+        const sea = makeGame(7, 'run'); sea.phase = 'play'
+        const sb = makeSearchBot()
+        let sBig = 0, sBail = 0
+        while (!sea.done) { step(sea, searchPad(sea, sb)); for (const e of sea.events) { if (e === 'bigair' || e === 'megair') sBig++; if (e === 'bail') sBail++ } sea.events.length = 0 }
+        ok('#3941 honesty: the searched line is untouched — same win, same score, zero paid airs',
+            stateOf(sea).won && sBig === 0 && sBail === 0 && stateOf(sea).score === 20702,
+            `score=${stateOf(sea).score} big=${sBig}`)
+    }
+
+    // Schema law: the amplitude fields are part of the waiting-line contract —
+    // RUN_V moved, and an old-shape pack (no launchY) refuses the resume.
+    {
+        const p = makeGame(9, 'run'); p.phase = 'play'
+        for (let k = 0; k < 60; k++) step(p, {})
+        const r = packRun(p, new Array(p.tick).fill(0))
+        ok('#3941 schema: RUN_V bumped to 3; old shape without amplitude fields refuses resume',
+            RUN_V === 3 && validRun(r) &&
+            (() => { const old = JSON.parse(JSON.stringify(r)); old.sim.launchY = undefined; delete old.sim.launchY; return !validRun(old) })() &&
+            (() => { const old = JSON.parse(JSON.stringify(r)); old.v = 2; return !validRun(old) })())
+    }
+
+    // Cabinet wiring: live amplitude drives the fisheye, and both tiers have
+    // their own voices.
+    {
+        const cab80 = readFileSync(new URL('../src/games/GrindCity/index.jsx', import.meta.url), 'utf8')
+        ok('#3941 cabinet wiring: big airs cut to the action cam and get two voices',
+            /vst\.airBig/.test(cab80) && /e === 'bigair'/.test(cab80) && /e === 'megair'/.test(cab80))
+    }
+
+    // Mutant `ampl`: the amplitude is stolen mid-air — every paid-air law dies.
+    if (MUT === 'ampl') {
+        const l2 = skate('pump', true)
+        ok('ampl mutant: with amplitude stolen nothing pays', l2.st.lastAir === null)
+    }
 }
 
 if (MUT) {
