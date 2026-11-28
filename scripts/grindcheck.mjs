@@ -882,7 +882,7 @@ import { makeSearchBot, searchPad } from '../src/games/GrindCity/search.js'
 
     // Launch off the flat at raw speed, ride out the air, drain events.
     // mode: 'lazy' | 'pump' | 'shortflip' | 'megajump'
-    const skate = (mode, kill = false) => {
+    const skate = (mode) => {
         const s = makeGame(5, 'run'); s.phase = 'play'
         s.x = -4; s.z = 6; s.y = 0; s.heading = Math.PI / 2; s.vy = 0
         s.speed = mode === 'lazy' ? CRUISE_MIN : 10
@@ -896,7 +896,7 @@ import { makeSearchBot, searchPad } from '../src/games/GrindCity/search.js'
                 s.airVXZ = s.speed
             }
             const p = mode === 'megajump' ? {} : k === 1 ? { a: true } : mode === 'shortflip' && k === 3 ? { b: true } : {}
-            if (kill && s.air) s.airTop = s.launchY   // mutant: steal the amplitude
+            if (MUT === 'ampl' && s.air) s.airTop = s.launchY   // mutant: steal the amplitude
             // shortflip: at tick 10 the board has turned ~120° — slam the air
             // shut (the drop onto the deck a late flip makes) and land short.
             if (mode === 'shortflip' && k === 10 && s.air) { s.y = parkHeight(s.x, s.z) + 0.001; s.vy = -3 }
@@ -920,14 +920,15 @@ import { makeSearchBot, searchPad } from '../src/games/GrindCity/search.js'
         pump.st.lastAir.tier === 'Big Air' && pump.st.lastAir.pts === bigAir(pump.st.lastAir.rise).pts &&
         pump.evs.includes('bigair') && pump.evs.includes('trick:Big Air:' + pump.st.lastAir.pts),
         `rise=${pump.airMax.toFixed(2)} last=${JSON.stringify(pump.st.lastAir)}`)
+    const bankPts = pump.st.lastAir ? (10 + pump.st.lastAir.pts) * 2 : -1
     ok('big air: the payout banks through the chain multiplier (ollie + Big Air ×2)',
-        pump.evs.includes(`bank:${(10 + pump.st.lastAir.pts) * 2}`) && pump.st.score === (10 + pump.st.lastAir.pts) * 2,
+        pump.evs.includes(`bank:${bankPts}`) && pump.st.score === bankPts,
         `bank=${pump.evs.find(e => e.startsWith('bank:'))} score=${pump.st.score}`)
 
     const jump = skate('megajump')
     ok('big air: crest launch amplitude reaches MEGA AIR',
-        jump.airMax >= MEGA_RISE && jump.evs.includes('megair') && jump.st.lastAir.tier === 'Mega Air' &&
-        jump.st.lastAir.pts === bigAir(jump.st.lastAir.rise).pts,
+        jump.airMax >= MEGA_RISE && jump.evs.includes('megair') && jump.st.lastAir?.tier === 'Mega Air' &&
+        jump.st.lastAir?.pts === (bigAir(jump.st.lastAir?.rise ?? -1)?.pts ?? -1),
         `rise=${jump.airMax.toFixed(2)} last=${JSON.stringify(jump.st.lastAir)}`)
 
     const short = skate('shortflip')
@@ -978,11 +979,8 @@ import { makeSearchBot, searchPad } from '../src/games/GrindCity/search.js'
             /vst\.airBig/.test(cab80) && /e === 'bigair'/.test(cab80) && /e === 'megair'/.test(cab80))
     }
 
-    // Mutant `ampl`: the amplitude is stolen mid-air — every paid-air law dies.
-    if (MUT === 'ampl') {
-        const l2 = skate('pump', true)
-        ok('ampl mutant: with amplitude stolen nothing pays', l2.st.lastAir === null)
-    }
+    // Mutant `ampl` (see skate): the amplitude is stolen mid-air — every
+    // paid-air law above must go red.
 }
 
 if (MUT) {
