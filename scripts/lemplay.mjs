@@ -85,6 +85,8 @@ r.check('a real key leaves attract and starts the run', (await probe()).screen =
     r.check('Digit1 selects BLOCKER', (await probe()).selected === 'block', (await probe()).selected)
     await key('Digit3')
     r.check('Digit3 selects CLIMBER', (await probe()).selected === 'climb')
+    await key('Digit5')
+    r.check('Digit5 selects FLOATER (#3827)', (await probe()).selected === 'float', (await probe()).selected)
     await key('Digit1')
     await key('KeyE')
     r.check('KeyE no longer cycles — CYCLE is gone, the panel picks (#432)', (await probe()).selected === 'block', (await probe()).selected)
