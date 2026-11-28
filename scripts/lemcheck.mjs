@@ -374,11 +374,11 @@ const pressFits = () => PRESS.length <= 24 && /ANY KEY/i.test(PRESS)
     for (const L of g.lemmings.filter(l => l.live)) {
         for (const s of sim.SKILLS) {
             g.skills[s] = 9
-            const b = { st: L.state, c: L.climber, d: L.digger }
+            const b = { st: L.state, c: L.climber, d: L.digger, f: L.floater }
             const before = g.skills[s]
             const granted = sim.assign(g, L.id, s)
             const spent = before - g.skills[s]
-            const changed = L.state !== b.st || L.climber !== b.c || L.digger !== b.d
+            const changed = L.state !== b.st || L.climber !== b.c || L.digger !== b.d || L.floater !== b.f
             ok(!granted || (spent === 1 && changed),
                 `#${470}: '${s}' on lemming #${L.id} spent ${spent} charge(s) and changed ${changed ? 'the' : 'nothing'} — a charge dropped without a visible skill`)
             ok(granted || spent === 0,

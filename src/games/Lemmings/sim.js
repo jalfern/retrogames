@@ -32,6 +32,12 @@
 // - Bombs clear dirt and bodies, never steel; a bomb chains other bombers;
 //   corpses block walkers (the classic body-pile). Dirt is the only
 //   destructible matter.
+// - The FLOATER carries a parachute: descent is capped at floatSp and no
+//   landing height is fatal. Like climber/digger it is a flag for life — every
+//   later fall auto-opens the canopy, which is why re-granting refuses (#422).
+//   (The original's dig-while-floating does NOT port: this engine's digger is
+//   a horizontal tunneler that carries the swarm, per sim comment above — a
+//   vertical air-dig would contradict the dig model. Honest gap in README.)
 
 export const W = 48
 export const H = 27
@@ -48,6 +54,7 @@ export const WATER = 3
 export const CFG = {
     walkSp: 2.3,
     fallSp: 8.5,
+    floatSp: 2.6,
     maxFall: 7,
     climbSp: 2.6,
     digSp: 2.2,
@@ -57,9 +64,9 @@ export const CFG = {
     flash: 36,
 }
 
-export const SKILLS = ['block', 'bomb', 'climb', 'dig']
-export const SKILL_KEY = { Digit1: 'block', Digit2: 'bomb', Digit3: 'climb', Digit4: 'dig' }
-export const SKILL_NAME = { block: 'BLOCKER', bomb: 'BOMBER', climb: 'CLIMBER', dig: 'DIGGER' }
+export const SKILLS = ['block', 'bomb', 'climb', 'dig', 'float']
+export const SKILL_KEY = { Digit1: 'block', Digit2: 'bomb', Digit3: 'climb', Digit4: 'dig', Digit5: 'float' }
+export const SKILL_NAME = { block: 'BLOCKER', bomb: 'BOMBER', climb: 'CLIMBER', dig: 'DIGGER', float: 'FLOATER' }
 
 export const mulberry32 = (a) => () => {
     a |= 0; a = (a + 0x6D2B79F5) | 0
@@ -124,6 +131,7 @@ export function spawnLemming(g) {
         fuseT: -1,
         climber: false,
         digger: false,
+        floater: false,
         flashT: 0,
         turnCd: -1,
         live: true,
@@ -158,12 +166,19 @@ export function assign(g, id, skill) {
     if (skill === 'climb' && (st === 'climb' || L.climber)) return false
     if (skill === 'dig' && (st !== 'walk' || L.digger)) return false
     if (skill === 'bomb' && st === 'bomb') return false
+    // A floater carries its parachute for life (same law as climber/digger,
+    // #422): a second grant would only burn supply. Assigning while standing
+    // is fine — the canopy rides on show and auto-opens on the next fall.
+    // A blocker stays a blocker (the line depends on it standing) and a
+    // bomb's fuse does not un-light.
+    if (skill === 'float' && (L.floater || st === 'block' || st === 'bomb')) return false
     g.skills[skill]--
     g.cmds.push({ tick: g.tick, id, skill })
     if (skill === 'climb') L.climber = true
     else if (skill === 'block') L.state = 'block'
     else if (skill === 'dig') { L.digger = true; L.state = 'dig'; L.digT = 0 }
     else if (skill === 'bomb') { L.state = 'bomb'; L.fuseT = 0 }
+    else if (skill === 'float') L.floater = true
     L.flashT = CFG.flash
     g.events.push({ type: 'assign', id, skill })
     return true
@@ -315,14 +330,15 @@ function traffic(g, L) {
 }
 
 function faller(g, L) {
-    L.vy = Math.min(CFG.fallSp, L.vy + 20 * FIXED_DT)
+    const cap = L.floater ? CFG.floatSp : CFG.fallSp
+    L.vy = Math.min(cap, L.vy + 20 * FIXED_DT)
     const d = L.vy * FIXED_DT
     L.y += d; L.fallDist += d
     if (solid(g, Math.floor(L.x), groundRow(L.y))) {
         L.y = Math.floor(L.y + 1e-6)
-        if (L.fallDist > CFG.maxFall) { kill(g, L, 'fall'); return }
+        if (L.fallDist > CFG.maxFall && !L.floater) { kill(g, L, 'fall'); return }
         L.state = 'walk'
-        g.events.push({ type: 'land', id: L.id })
+        g.events.push({ type: L.floater ? 'landsoft' : 'land', id: L.id })
     } else if (L.climber && cell(g, Math.floor(L.x + L.dir * 0.5), bodyRow(L.y)) === DIRT) {
         L.state = 'climb'
     }
