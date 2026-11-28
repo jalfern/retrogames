@@ -107,6 +107,45 @@ const canvas = await page.evaluate(() => {
     return { left: r.left, top: r.top, w: r.width, h: r.height }
 })
 const at = (x, y) => ({ x: canvas.left + x / 48 * canvas.w, y: canvas.top + (y - 1) / 27 * canvas.h })
+
+// ---- #3863 BUILDER drive: Digit6 picks it, Space assigns it to a walker the
+// cursor is aimed at, and the plank cargo stays whole — the supply economy is
+// pinned in Node; this proves the input path reaches the sim through the
+// panel key, and that wood paints (DEV stamp = the same cheat family as
+// teleport/kill: mechanics proven honest in lemcheck).
+{
+    await key('Digit6')
+    r.check('#3863: Digit6 selects BUILDER', (await probe()).selected === 'build', (await probe()).selected)
+    const w = (await probe()).lemmings.find(l => l.live && l.state === 'walk')
+    r.check('#3863: a walker exists to carry wood', !!w)
+    if (w) {
+        const pt = at(w.x, w.y)
+        for (let k = 0; k < 6; k++) {
+            await page.mouse.move(pt.x, pt.y)
+            const c = (await probe()).cursor
+            if (Math.abs(c.x - w.x) < 0.9 && Math.abs(c.y - (w.y - 1)) < 0.9) break
+            await wait(120)
+        }
+        const before = await probe()
+        await key('Space')
+        await wait(80)
+        const after = await probe()
+        const L = after.lemmings.find(l => l.id === w.id)
+        r.check('#3863: Space assigns BUILDER — the walker carries wood', !!L && L.builder === true, `#${w.id} builder=${L && L.builder}`)
+        r.check('#3863: assigning costs no plank — the cargo economy spends on LAYING, not on granting',
+            after.skills.build === before.skills.build, `cargo ${before.skills.build} -> ${after.skills.build}`)
+    }
+    await page.evaluate(() => window.__lemTest.stamp(30, 22))
+    await wait(250)
+    const wood = await page.evaluate(() => {
+        const c = document.querySelector('canvas[data-lem-stage]')
+        const d = c.getContext('2d').getImageData(30 * 8, 22 * 8, 8, 8).data
+        let n = 0
+        for (let i = 0; i < d.length; i += 4) if (d[i] > 150 && d[i] < 235 && d[i + 1] > 105 && d[i + 1] < 175 && d[i + 2] > 50 && d[i + 2] < 115) n++
+        return n
+    })
+    r.check('#3863: laid wood paints as wood (tan grain, not dirt brown)', wood >= 20, `tan px=${wood}/64`)
+}
 for (let i = 0; i < 400; i++) {
     const s = await probe()
     if (s.screen !== 'play') break
@@ -347,6 +386,23 @@ await wait(600)
         await tDown(btn.x, btn.y); await tpage.waitForTimeout(120); await tUp()
         await tpage.waitForTimeout(150)
         r.check('touch: tapping the CLIMBER button selects it', (await tprobe()).selected === 'climb', (await tprobe()).selected)
+        const btnB = await tpage.evaluate(() => {
+            const b = document.querySelector('[data-lem-skill="build"]')
+            if (!b) return null
+            const r = b.getBoundingClientRect()
+            return { x: r.left + r.width / 2, y: r.top + r.height / 2 }
+        })
+        if (btnB) {
+            await tDown(btnB.x, btnB.y); await tpage.waitForTimeout(120); await tUp()
+            await tpage.waitForTimeout(150)
+            r.check('#3863 touch: tapping the BUILDER button selects it', (await tprobe()).selected === 'build', (await tprobe()).selected)
+            // restore CLIMBER: the gesture drive below spends climb — and
+            // BUILDER is the free-grant skill, it would spend nothing there.
+            await tDown(btn.x, btn.y); await tpage.waitForTimeout(120); await tUp()
+            await tpage.waitForTimeout(150)
+        } else {
+            r.check('#3863 touch: the BUILDER button is on the panel', false)
+        }
     }
 
     // two well-separated live lemmings: the press point (A) and the slide

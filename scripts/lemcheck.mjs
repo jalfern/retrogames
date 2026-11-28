@@ -43,7 +43,7 @@ if (mapArg !== null) {
             const t = grid[y * sim.W + x]
             line += x === meta.spawn.x && y === meta.spawn.y - 1 ? 'S'
                 : x === meta.exit.x && y === meta.exit.y ? 'E'
-                    : t === sim.DIRT ? '#' : t === sim.STEEL ? '=' : t === sim.WATER ? '~' : '.'
+                    : t === sim.DIRT ? '#' : t === sim.STEEL ? '=' : t === sim.WATER ? '~' : t === sim.PLANK ? 'P' : '.'
         }
         console.log(line)
     }
