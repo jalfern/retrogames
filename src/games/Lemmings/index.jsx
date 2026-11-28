@@ -625,7 +625,7 @@ const LemGame = () => {
                     cursor: { ...cursor }, selected,
                     aim: gest.aim ? { id: gest.aim.id, skill: selected } : null,
                     skills: { ...gs.skills },
-                    spawned: gs.spawned, exited: gs.exited, dead: gs.dead, need: meta.need,
+                    spawned: gs.spawned, exited: gs.exited, dead: gs.dead, drowned: gs.drowned, need: meta.need,
                     end: gs.end, win: gs.win, score: gs.score, hash: stateHash(gs),
                     cmds: runCmds.length, gcmds: gs.cmds.length, board: board(), // #1637 gcmds = solver-line assignments too
                     lemmings: gs.lemmings.map(L => ({ id: L.id, x: L.x, y: L.y, state: L.state, dir: L.dir, climber: L.climber, digger: L.digger, flash: L.flashT, live: L.live })),

@@ -101,6 +101,7 @@ export function makeGame(level, grid) {
         spawned: 0,
         exited: 0,
         dead: 0,
+        drowned: 0,                       // #3828 deaths by water, for HUD/harness honesty
         cursor: { x: 6.5, y: 18 },
         selected: 'climb',
         skills: { ...level.skills },
@@ -237,6 +238,7 @@ function exitTouch(g, L) {
 function kill(g, L, cause) {
     L.live = false; L.state = 'dead'
     g.dead++
+    if (cause === 'drown') g.drowned = (g.drowned | 0) + 1
     g.events.push({ type: cause === 'fall' ? 'splat' : cause === 'drown' ? 'drown' : 'boom', id: L.id })
 }
 

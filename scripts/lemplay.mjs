@@ -175,6 +175,42 @@ await wait(300)
 }
 r.check('zero page errors across the whole playthrough', errors.length === 0, errors.slice(0, 4).join(' | '))
 
+// ---- #3828 pond: drawn water + drown through the real input path ----------
+// The Node pins prove the rule; this proves the PLAYER sees it: the pond is
+// drawn where the grid says water, and an unmanaged crowd — any key to start,
+// the panel's FF button held with a real pointer — drowns stragglers with zero
+// page errors and an honest drowned counter on the probe.
+await page.goto(URL, { waitUntil: 'load' })
+await page.waitForFunction(() => !!window.__lemTest, null, { timeout: 20000 })
+await key('KeyJ')
+await wait(600)
+{
+    const p = await probe()
+    r.check('pond: THE SPIRE opens the fresh run', p.level === 0 && p.name === 'THE SPIRE', `level=${p.level} ${p.name}`)
+    const blue = await page.evaluate(() => {
+        const c = document.querySelector('canvas[data-lem-stage]')
+        const d = c.getContext('2d').getImageData(2, 184, 30, 16).data   // cols .5-3, rows 23-24 @ TS=8
+        let n = 0, tot = 0
+        for (let i = 0; i < d.length; i += 4) { tot++; if (d[i + 2] > d[i] + 25 && d[i + 2] > 110) n++ }
+        return n / tot
+    })
+    r.check('pond: water pixels are drawn where the grid says water', blue > 0.5, `blue fraction ${blue.toFixed(2)} of the pond box`)
+}
+{
+    const ff = await page.$('[data-lem-ff]')
+    const b = await ff.boundingBox()
+    await page.mouse.move(b.x + b.width / 2, b.y + b.height / 2)
+    await page.mouse.down()
+    let p = null
+    for (let t = 0; t < 60; t++) { await wait(500); p = await probe(); if ((p.drowned | 0) >= 1 || p.screen !== 'play') break }
+    await page.mouse.up()
+    r.check('pond: wading walkers drown on the live board (FF held, no assignment)', p && p.screen === 'play' && (p.drowned | 0) >= 1,
+        `screen=${p && p.screen} dead=${p && p.dead} drowned=${p && p.drowned}`)
+    r.check('pond: every drown counts as a loss on the ledger', p && p.dead >= p.drowned && p.drowned >= 1,
+        `dead=${p && p.dead} drowned=${p && p.drowned}`)
+}
+r.check('pond: zero page errors on the water board', errors.length === 0, errors.slice(0, 4).join(' | '))
+
 // ---- Touch: the issue's core, driven by REAL touch input ------------------
 //
 // CDP touchStart / touchMove / touchEnd are the browser's own input pipeline
