@@ -1383,6 +1383,7 @@ section('LOOK (#3879: sloped planks, animated sprites, splintering wood)')
     ok(/gs\.tick \* 2 \+ j \* \(L0 \/ 6\)/.test(wsrc), '#3879: the airstream froze — dashes no longer travel on the WORLD clock')
 }
 
+
 // ---------------------------------------------------- trampolines (#3879) ----
 {
     section('TRAMPOLINES (#3879: fixed bounce, absorbed fall, proofs stay mat-free)')
@@ -1491,6 +1492,63 @@ section('LOOK (#3879: sloped planks, animated sprites, splintering wood)')
     ok(/#c8323c/.test(wsrc2), '#3879: the deck lost its red — the mat reads as plain steel')
     ok(/padPing\[Math\.floor\(e\.x\)/.test(wsrc2) && /--padPing\[k\]/.test(wsrc2),
         '#3879: the mat ring froze or never rings — pad launches would be silent scenery')
+}
+
+section('FLOAT-WHILE-DIGGING (#3925: an airborne digger chews straight down)')
+{
+    // A dirt column with steel under it; an airborne digger dropped into it must
+    // CARVE the column and descend onto the steel — the shaft the honest gap said
+    // the port never had. A non-digger dropped the same way takes the original
+    // free-fall and lands on the COLUMN TOP (the control: the branch is gated by
+    // the digger flag, it never "always digs").
+    const mkColumn = () => {
+        const gr = new Uint8Array(sim.W * sim.H).fill(sim.AIR)
+        for (let y = 10; y <= 22; y++) gr[y * sim.W + 10] = sim.DIRT
+        gr[23 * sim.W + 10] = sim.STEEL
+        return gr
+    }
+    const { meta } = buildLevel(0)
+    const dropDigger = (skill) => {
+        const gr = mkColumn()
+        const g = sim.makeGame({ ...meta, spawnCount: 1, spawnEvery: 1, skills: { ...meta.skills, dig: 1 } }, gr)
+        for (let t = 0; t < 10; t++) sim.step(g)
+        const L = g.lemmings[0]
+        L.state = 'fall'; L.vy = 0; L.fallDist = 0; L.digger = !!skill
+        L.x = 10.5; L.y = 8
+        let digs = 0, splats = 0
+        for (let t = 0; t < 600 && L.live && L.state !== 'walk'; t++) {
+            sim.step(g)
+            digs += g.events.filter(e => e.type === 'dig').length
+            splats += g.events.filter(e => e.type === 'splat').length
+        }
+        return { g, L, digs, splats }
+    }
+    const d = dropDigger(true)
+    ok(d.digs > 5, `float-dig chewed nothing (${d.digs} dig events) — the descent is inert`)
+    ok(d.L.live && d.L.y >= 22.5, `the digger did not descend the column (y=${d.L.y.toFixed(1)}, alive=${d.L.live}) — it should reach the steel floor`)
+    ok(d.splats === 0, `the digger splatted while descending (${d.splats}) — chewing must cushion the drop, not count it as a fall`)
+    ok(d.g.grid[15 * sim.W + 10] === sim.AIR && d.g.grid[20 * sim.W + 10] === sim.AIR,
+        'the column still stands where the digger passed — the shaft was never carved')
+    ok(d.L.state === 'walk', `the digger never resumed walking on the steel floor (state=${d.L.state})`)
+    // control: a plain faller on the same column LANDS on top, proving the branch
+    // is digger-gated and does not turn every airborne lemming into a miner.
+    const c = dropDigger(false)
+    ok(c.digs === 0 && c.L.live && c.L.y < 12,
+        `control faller mined too (digs=${c.digs}, y=${c.L.y.toFixed(1)}) — float-dig is leaking to non-diggers`)
+    // steel is floor: dig straight down onto it and stop.
+    const sr = new Uint8Array(sim.W * sim.H).fill(sim.AIR)
+    sr[12 * sim.W + 10] = sim.DIRT
+    sr[13 * sim.W + 10] = sim.STEEL
+    {
+        const g = sim.makeGame({ ...meta, spawnCount: 1, spawnEvery: 1, skills: { ...meta.skills, dig: 1 } }, sr)
+        for (let t = 0; t < 10; t++) sim.step(g)
+        const L = g.lemmings[0]
+        L.state = 'fall'; L.vy = 0; L.fallDist = 0; L.digger = true; L.x = 10.5; L.y = 10
+        let digs = 0
+        for (let t = 0; t < 200 && L.live && L.state !== 'walk'; t++) { sim.step(g); digs += g.events.filter(e => e.type === 'dig').length }
+        ok(digs === 1 && L.live && L.y >= 13 && g.grid[12 * sim.W + 10] === sim.AIR,
+            `dirt-over-steel dig misbehaved (digs=${digs}, y=${L.y.toFixed(1)}) — must chew the one dirt cell then stand on the steel`)
+    }
 }
 
 console.log(`\nlemcheck: ${pass}/${pass + fails.length} checks passed${fails.length ? `  — ${fails.length} FAILED` : '  — OK'}`)
