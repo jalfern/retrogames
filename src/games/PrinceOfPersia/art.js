@@ -895,6 +895,43 @@ function palaceWall(ctx, c0, decos, tick) {
     }
 }
 
+// ---- dungeon back wall: masonry coursing behind the whole playfield ----------
+// The 1989 room is stone floor to ceiling — torchlight pools ON brick and the
+// dark reads as a shadowed wall, never a void. Painted under the solids and
+// over the base gradient so every pool, bounce and mote lands on a surface.
+// Kept a shade or two above the gradient and always under the vignette's final
+// veil: the room stays moody, but the eye gets a plane it can read as stone.
+// Running bond like the solid blocks (half-height bricks, alternating
+// perpends), each face chromatically jittered and grained. Deterministic —
+// hash-pinned, no flicker. Render only; the sim never sees it.
+function dungeonWall(ctx, c0) {
+    const BH = T / 2
+    for (let r = 0; r * BH < VH; r++) {
+        const y = r * BH
+        const off = (r & 1) ? T / 2 : 0
+        for (let c = c0 - 1; c <= c0 + RW; c++) {
+            const x = c * T + off - T
+            const seed = c * 61 + r * 17
+            const j = hash(seed), j2 = hash(seed + 1)
+            ctx.fillStyle = `rgba(${(21 + j * 8) | 0},${(21 + j2 * 6) | 0},${(40 + j * 10) | 0},0.55)`
+            ctx.fillRect(x, y, T - 1, BH - 1)
+            // a hair of key along each bed joint so the coursing reads even unlit;
+            // the joints themselves stay the darkest thing on the wall
+            ctx.fillStyle = 'rgba(160,160,200,0.06)'
+            ctx.fillRect(x, y, T - 1, 1)
+            ctx.fillStyle = 'rgba(5,5,12,0.55)'
+            ctx.fillRect(x, y + BH - 1, T, 1)
+            ctx.fillStyle = 'rgba(5,5,12,0.35)'
+            ctx.fillRect(x + T - 1, y, 1, BH)
+            // one seeded grain speck per brick — stone, not paint
+            const gx = x + 2 + ((hash(seed + 2) * (T - 4)) | 0)
+            const gy = y + 1 + ((hash(seed + 3) * (BH - 3)) | 0)
+            ctx.fillStyle = 'rgba(0,0,0,0.22)'
+            ctx.fillRect(gx, gy, 1, 1)
+        }
+    }
+}
+
 // a torch's warm bloom, added over the (already darkened) scene: a hot core and a
 // wide soft halo whose radius breathes with the flame — the source of the light
 // pools. Composited additively so stone under it glows rather than being veiled.
@@ -1442,6 +1479,7 @@ export function drawScene(ctx, g, opts = {}) {
     }
 
     if (lvl.theme === 'palace') palaceWall(ctx, g.room * RW, lvl.deco.slice(g.room, g.room + 1), tick)
+    else dungeonWall(ctx, g.room * RW)
 
     const c0 = g.room * RW, c1 = c0 + RW
     for (let r = 0; r < H; r++) for (let c = c0; c < c1; c++) {

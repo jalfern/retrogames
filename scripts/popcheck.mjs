@@ -1727,5 +1727,34 @@ const FLASK_KINDS = () => ({ r: 1, '+': 1, b: 1, f: 1, u: 1 })
         lightAt(100, 100, [], LIGHT_AMBIENT) === LIGHT_AMBIENT && coolAt(100, 100, []) === 0)
 }
 
+{
+    // #3934 art pass — the dungeon back wall. The void behind the playfield is
+    // now hash-pinned masonry: the room reads as stone at a glance and the
+    // torch pools land on a surface. Render-only — these pins watch that it
+    // stays a backdrop (painted under the solids), stays dark (translucent,
+    // never an opaque hex), and stays deterministic (no random, no clock).
+    const artSrc34 = readFileSync(join(dirname(fileURLToPath(import.meta.url)), '..', 'src', 'games', 'PrinceOfPersia', 'art.js'), 'utf8')
+    const dw34 = artSrc34.match(/function dungeonWall\(ctx, c0\) \{[\s\S]*?\n\}/)
+    ok('#3934 the back wall exists and paints in every non-palace room',
+        !!dw34 && /else dungeonWall\(ctx, g\.room \* RW\)/.test(artSrc34))
+    ok('#3934 it is a backdrop: called after the palace fork, before the solid-cell loop',
+        artSrc34.indexOf('else dungeonWall(ctx, g.room * RW)') > artSrc34.indexOf('palaceWall(ctx, g.room * RW')
+        && artSrc34.indexOf('else dungeonWall(ctx, g.room * RW)') < artSrc34.indexOf('for (let r = 0; r < H; r++) for (let c = c0; c < c1; c++)'))
+    if (dw34) {
+        const body = dw34[0]
+        ok('#3934 deterministic stone: hash-pinned jitter, no Math.random, no tick',
+            !/Math\.random/.test(body) && !/tick/.test(body) && /hash\(seed/.test(body))
+        ok('#3934 stays in the shadow band: translucent fills only, alpha ≤ 0.6, no opaque hex',
+            !/#[0-9a-fA-F]{3,6}/.test(body.replace(/\/\/[^\n]*/g, ''))
+            && [...body.matchAll(/rgba\([^)]*,\s*([0-9.]+)\)/g)].every((m) => parseFloat(m[1]) <= 0.6))
+        ok('#3934 coursing like the solids: half-height running bond with alternating perpends',
+            /const BH = T \/ 2/.test(body) && /\(r & 1\) \? T \/ 2 : 0/.test(body))
+    } else {
+        ok('#3934 body parses (dungeonWall found)', false)
+        ok('#3934 shadow band', false)
+        ok('#3934 coursing', false)
+    }
+}
+
 console.log(`\n${pass}/${pass + fail} ${fail ? 'FAILURES: ' + fail : 'PASS'}`)
 process.exit(fail ? 1 : 0)
