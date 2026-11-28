@@ -92,11 +92,15 @@ breakable — every pin here has survived a manual mutation.
 - Water is static: no level currently carries a second pond, nothing flows
   into one, and a bomb that punches a wall INTO a pond drains nothing — the
   original never flowed either, but it had ponds everywhere; THE SPIRE has one.
-- No OH-NO! — the original screams it over every death; deaths here are only
-  the per-cause synth stings, no shared death cry or oh-no text sprite.
 
 ## Closed
 
+- #3844 — OH NO! death cry: a shared two-syllable synth wail (worried "OH",
+  falling "NO!", sawtooth) answers EVERY death batch — fall, drown, bomb — under
+  the per-cause stings, and a hand-drawn 5×7 bitmap `OH NO!` sprite pops on the
+  corpse, rising and fading on the WORLD clock (FF-true, cap 4, oldest recycled).
+  Death events carry `x,y` for the sprite; `lemcheck`'s OH NO! section pins all
+  three causes plus the shell wiring. **CLOSED by #3844**
 - #3827 — FLOATER skill (parachute: capped descent, no fatal landings, canopy
   on show while walking, Digit5/L1, deploy swoosh). **CLOSED by #3827**
 - #3828 — water + drown rule, THE SPIRE's west-foot pond. **CLOSED by #3828**

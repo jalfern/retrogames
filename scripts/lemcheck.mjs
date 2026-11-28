@@ -373,6 +373,57 @@ for (let i = 0; i < LEVELS.length; i++) {
     ok(/splashes/.test(wsrc), 'no splash ring — nothing marks where the pond took a lemming (#3828)')
 }
 
+// --------------------------------------------------------- OH NO! (#3844) ----
+// The original answers EVERY death with its signature two-syllable wail, and
+// the cry lands on screen where the corpse fell. The load-bearing sim half:
+// every death event carries the spot (splat, drown AND boom). The renderer
+// half is pinned from source the way #3828 pins the pond: shared cry wired to
+// the death events, one cry per batch, and the OH NO! bitmap sprite lives.
+section('OH NO! (#3844: every death screams)')
+{
+    const { meta, grid } = buildLevel(0)
+    // splat: the #3827 drop geometry — bare lemming, ~16 tiles, guaranteed corpse
+    {
+        const g = sim.makeGame({ ...meta, spawnCount: 1 }, grid)
+        for (let t = 0; t < 60; t++) sim.step(g)
+        const X = g.lemmings[0]
+        X.state = 'fall'; X.vy = 0; X.fallDist = 0; X.x = 4.5; X.y = 8
+        let ev = null, n = 0
+        while (X.live && n++ < 900) { sim.step(g); ev = g.events.find(e => e.type === 'splat') || ev }
+        ok(ev && Number.isFinite(ev.x) && Number.isFinite(ev.y),
+            'the splat event carries no coordinates — the OH NO! sprite has nowhere to pop (#3844)')
+    }
+    // drown: walk into THE SPIRE's pond, collect the drown event
+    {
+        const g = sim.makeGame({ ...meta, spawnCount: 1 }, grid)
+        for (let t = 0; t < 70; t++) sim.step(g)
+        const L = g.lemmings[0]
+        L.state = 'walk'; L.x = 5.5; L.y = 23; L.dir = -1
+        let ev = null
+        for (let t = 0; t < 240; t++) { sim.step(g); ev = g.events.find(e => e.type === 'drown') || ev }
+        ok(ev && Number.isFinite(ev.x) && Number.isFinite(ev.y),
+            'the drown event carries no coordinates (#3844)')
+    }
+    // boom: a lone bomber past its fuse — the cause the shell never even stung
+    {
+        const g = sim.makeGame({ ...meta, spawnCount: 1, skills: { ...meta.skills, bomb: 1 } }, grid)
+        for (let t = 0; t < 60; t++) sim.step(g)
+        sim.assign(g, 0, 'bomb')
+        let ev = null
+        for (let t = 0; t < 140; t++) { sim.step(g); ev = g.events.find(e => e.type === 'boom') || ev }
+        ok(ev && Number.isFinite(ev.x) && Number.isFinite(ev.y),
+            'the boom event carries no coordinates — bomb deaths still die silently at a spot (#3844)')
+    }
+    // the shell wires cry + sprite to all three causes, one cry per batch
+    const osrc = readFileSync(new URL('../src/games/Lemmings/index.jsx', import.meta.url), 'utf8')
+    ok(/e\.type === 'splat'/.test(osrc) && /e\.type === 'boom'/.test(osrc) && /deaths\+\+/.test(osrc),
+        'death events reach no shared cry counter — causes are alone again (#3844)')
+    ok(/if \(deaths\) ohCry\(\)/.test(osrc),
+        'the cry fires per corpse, not per batch — a chain massacre should wail once (#3844)')
+    ok(/OHNO_GLYPHS/.test(osrc) && /cries/.test(osrc),
+        'the OH NO! sprite is gone — the wail is invisible (#3844)')
+}
+
 // ------------------------------------------------ first-run readability (#422) ---
 // Items 3-5 of the first-play pass: the skill bar must be docked off the
 // playfield, the HUD count must read as plain English, and the attract copy

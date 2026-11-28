@@ -47,6 +47,20 @@ const LEM_COLORS = {
     body: '#3fae4a', head: '#ffd9a0', hair: '#8a3b12', pants: '#2a5f9e',
 }
 
+// #3844 OH NO! — the original screams over every death; this is the cry made
+// visible. Hand-drawn 5×7 bitmap glyphs (white with a black outline reads on
+// any ground a corpse may lie on), popped at the death spot on the world clock.
+const OHNO_GLYPHS = {
+    O: ['.###.', '#...#', '#...#', '#...#', '#...#', '#...#', '.###.'],
+    H: ['#...#', '#...#', '#...#', '#####', '#...#', '#...#', '#...#'],
+    N: ['#...#', '##..#', '###.#', '#.###', '#..##', '#...#', '#...#'],
+    '!': ['..#..', '..#..', '..#..', '..#..', '..#..', '.....', '..#..'],
+    ' ': ['.....', '.....', '.....', '.....', '.....', '.....', '.....'],
+}
+const OHNO_WORD = ['O', 'H', ' ', 'N', 'O', '!'].map((ch, i) => ({ ch, x: i * 6 }))
+const OHNO_W = 31                                         // 5 px glyphs + 1 px tracking
+const OHNO_LIFE = 48                                      // world ticks a cry lingers
+
 const LemGame = () => {
     const stageRef = useRef(null)
     const [screen, setScreen] = useState('attract')
@@ -91,6 +105,7 @@ const LemGame = () => {
         let runCmds = []                          // player-command log of the live run
         let watchScript = null                    // #1637 the solver's commands for the WATCH seat
         const splashes = []                       // #3828 drown splashes: {x,y,t}
+        const cries = []                          // #3844 OH NO! sprites: {x,y,t}
         const cursor = { x: 8, y: 18 }
         let selected = 'climb'
         const keys = new Set()
@@ -122,6 +137,7 @@ const LemGame = () => {
             selected = (SKILLS.find(s => meta.skills[s] > 0)) || 'climb'
             watchScript = null                            // #1637 a new level starts in your hands
             splashes.length = 0                       // #3828 no ghost splashes across boards
+            cries.length = 0                          // #3844 nor ghost wails
             watchingRef.current = false; setWatching(false)
             abortGesture()                        // no press from the previous run survives into this one
         }
@@ -155,12 +171,28 @@ const LemGame = () => {
             ? audioController.playSweep(880, 392, 0.28, 'triangle', 0.08)
             : audioController.playTone(s === 'bomb' ? 180 : 520 + SKILLS.indexOf(s) * 90, 0.07, 'square', 0.07)
 
+        // #3844 OH NO! — the original screams over EVERY death. Two syllables:
+        // a short worried "OH" and a long, falling "NO!" — sawtooth for the
+        // human-voice rasp, per-cause stings still layering on top.
+        const ohCry = () => {
+            audioController.playSweep(430, 350, 0.16, 'sawtooth', 0.075, null, 0)
+            audioController.playSweep(340, 105, 0.42, 'sawtooth', 0.09, null, 0.15)
+        }
+
+        const pushCry = (x, y) => {
+            if (cries.length >= 4) cries.shift()   // under crowding the oldest recycles
+            cries.push({ x, y, t: 0 })
+        }
+
         const handleEvents = (evts) => {
+            let deaths = 0
             for (const e of evts) {
                 if (e.type === 'exit') { audioController.playSweep(660, 1320, 0.22, 'square', 0.08); audioController.playTone(1760, 0.1, 'square', 0.05) }
                 else if (e.type === 'assign') skillSfx(e.skill)
                 else if (e.type === 'blast') { audioController.playNoise(0.5, 0.16); audioController.playSweep(220, 50, 0.5, 'sawtooth', 0.1) }
-                else if (e.type === 'splat') audioController.playSweep(360, 60, 0.22, 'sawtooth', 0.09)
+                // #3844: every death (fall, drown, bomb) counts one scream and
+                // pops an OH NO! on the corpse. A batch dies = one cry.
+                else if (e.type === 'splat') { audioController.playSweep(360, 60, 0.22, 'sawtooth', 0.09); deaths++; pushCry(e.x, e.y) }
                 else if (e.type === 'drown') {
                     // #3828: the original's wet, descending "blub" — a soft
                     // splash followed by a sinking tone, not a harsh splat.
@@ -168,7 +200,9 @@ const LemGame = () => {
                     audioController.playSweep(300, 70, 0.4, 'sine', 0.07)
                     const L = gs.lemmings.find((l) => l.id === e.id)
                     if (L) splashes.push({ x: L.x, y: L.y, t: 0 })
+                    deaths++; pushCry(e.x, e.y)
                 }
+                else if (e.type === 'boom') { deaths++; pushCry(e.x, e.y) }
                 else if (e.type === 'dig') audioController.playNoise(0.06, 0.03)
                 else if (e.type === 'land') audioController.playTone(120, 0.05, 'triangle', 0.04)
                 else if (e.type === 'landsoft') audioController.playTone(200, 0.07, 'sine', 0.035)
@@ -179,6 +213,7 @@ const LemGame = () => {
                 else if (e.type === 'win') audioController.playSweep(392, 1568, 0.7, 'square', 0.1)
                 else if (e.type === 'lose' || e.type === 'time') audioController.playDeath()
             }
+            if (deaths) ohCry()
         }
 
         const finish = () => {
@@ -228,6 +263,7 @@ const LemGame = () => {
             // #3828 splash rings are cosmetic but ride the WORLD clock, so FF
             // and slow-mo animate them with the sim (never setTimeout — AGENTS).
             for (let i = splashes.length - 1; i >= 0; i--) { if (++splashes[i].t > 30) splashes.splice(i, 1) }
+            for (let i = cries.length - 1; i >= 0; i--) { if (++cries[i].t > OHNO_LIFE) cries.splice(i, 1) }
             if (screenRef.current === 'attract') {
                 // attract = the solver's proven script, replayed on screen
                 const c = plan.find(cc => cc.tick === gs.tick + 1)
@@ -443,6 +479,37 @@ const LemGame = () => {
                 ctx.beginPath(); ctx.arc(rx, ry, 3 + (1 - f) * 10, 0, Math.PI * 2); ctx.stroke()
                 ctx.fillStyle = `rgba(240,250,255,${(0.9 * f).toFixed(2)})`
                 ctx.fillRect(rx - 4, ry - 1, 2, 2); ctx.fillRect(rx + 3, ry - 2, 2, 2); ctx.fillRect(rx - 1, ry - 4, 2, 2)
+            }
+
+            // #3844 OH NO! sprites — the wail made visible. Pops at the death
+            // spot (event coords), rises a few pixels and fades on the WORLD
+            // clock, so FF animates it with the sim exactly like the splashes.
+            for (const c of cries) {
+                const k = c.t / OHNO_LIFE
+                const rise = Math.round(6 * k)
+                const a = k < 0.7 ? 1 : (1 - k) / 0.3
+                const bx = Math.max(1, Math.min(CW - OHNO_W - 1, Math.round(c.x * TS) - (OHNO_W >> 1)))
+                const by = Math.max(1, Math.round(c.y * TS) - 15 - rise)
+                ctx.globalAlpha = Math.max(0, Math.min(1, a))
+                for (let pass = 0; pass < 2; pass++) {            // outline, then face
+                    ctx.fillStyle = pass === 0 ? '#141019' : '#fff6de'
+                    for (const gl of OHNO_WORD) {
+                        const rows = OHNO_GLYPHS[gl.ch]
+                        for (let r = 0; r < 7; r++) {
+                            for (let q = 0; q < 5; q++) {
+                                if (rows[r][q] !== '#') continue
+                                if (pass === 1) ctx.fillRect(bx + gl.x + q, by + r, 1, 1)
+                                else {
+                                    ctx.fillRect(bx + gl.x + q - 1, by + r, 1, 1)
+                                    ctx.fillRect(bx + gl.x + q + 1, by + r, 1, 1)
+                                    ctx.fillRect(bx + gl.x + q, by + r - 1, 1, 1)
+                                    ctx.fillRect(bx + gl.x + q, by + r + 1, 1, 1)
+                                }
+                            }
+                        }
+                    }
+                }
+                ctx.globalAlpha = 1
             }
 
             // cursor (play) or autopilot ghost (attract): in attract the box
@@ -678,6 +745,7 @@ const LemGame = () => {
                     L.live = false; L.state = 'dead'; gs.dead++
                     return true
                 },
+                cries: () => cries.map(c => ({ x: c.x, y: c.y, t: c.t })),   // #3844 OH NO! sprites live on screen
             }
             exposeGame({
                 id: 'lemmings',
