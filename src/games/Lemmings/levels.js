@@ -50,7 +50,11 @@ export const LEVELS = [
         // #3879 WIND VENT: a ground grate east of the spire's foot blows the
         // descent east — floaters caught low on the stair ride the gust onto
         // the exit plinth (assist), and the ones carried past the door meet
-        // the bay (tax). Walkers never feel it; the solver never floats.
+        // the bay (tax). Since #3930 walkers feel it too: the tailwind drags
+        // the plank-road crowd toward the door (bodies cross the door cell at
+        // ~6 c/s but the exit test runs every tick — nobody can be blown past
+        // it), and pins the floor lane against the plinth wall. The solver
+        // never floats, and this stream only ever pushes toward the exit.
         vents: [{ x: 39, y: 23, dir: 1, reach: 8 }],
         build() {
             const c = new Carve()
@@ -121,7 +125,15 @@ export const LEVELS = [
         // back over the trench — a floater taken to skip the plank road gets
         // shoved off the plinth's doorstep and into the trench's mouth zone.
         // The road stays the answer; the parachute becomes the trap.
-        vents: [{ x: 40, y: 22, dir: -1, reach: 4 }],
+        // #3930 moved the mouth one row up the face (22 → 21): ground walkers
+        // now feel the stream, and at row 22 the gust blew straight down the
+        // plank road (road walkers carry feet row 23, chest row 22) — a
+        // 3.4-c/s headwind vs a 2.3-c/s walk would have erased the crossing
+        // the whole board is built on. At rows 20–21 the road (feet row 23)
+        // and the doorstep mount (lands at x≥41.48, outside the reach) ride
+        // wind-free, while anything PARACHUTING over the trench mouth still
+        // meets the shove and drops into the trap.
+        vents: [{ x: 41, y: 21, dir: -1, reach: 4 }],
         // #3879 TRAMPOLINES (terrain gadget 2 of 3): two mats on the trench
         // floor, where the one-way drop lands. They change the trap's TEMPER,
         // never its verdict: the apex (2.5 cells) cannot reach the plinth top

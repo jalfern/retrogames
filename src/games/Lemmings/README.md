@@ -39,15 +39,23 @@ supplies fails the build.
     shelves run out, and > `CFG.maxFall` still kills.
     **Wind vents** (#3879, terrain-variety family item 1): levels declare
     `vents: [{x, y, dir, reach}]` — a mouth cell blowing a two-row airstream
-    downwind. Wind moves CANOPIES ONLY: a FLOATER falling through a stream is
-    pushed at `CFG.windSp` (3.4 c/s, faster than a walk), clamped at walls
-    (never squeezed through). Walkers, diggers, climbers, blockers and bombers
-    hold their line, and `candidates()` never offers FLOATER (#3827 law) — so
-    every solve, replay, hash pin and proof rides vents byte-identical. THE
-    SPIRE's grate tails floaters onto the exit plinth (overshoot feeds the
-    bay); THE MASSIF's shoves them off the plinth doorstep back toward the
-    trench. The drift lands on the pre-landing test, so wind decides WHERE a
-    canopy lands, not just where it wobbles.
+    downwind. Since #3930 wind moves CANOPIES **AND FEET**: a FLOATER falling
+    through a stream is pushed at `CFG.windSp` (3.4 c/s, faster than a walk),
+    and a WALKER standing in the stream drags downwind at the same speed —
+    tailwind carries the crowd faster than walking, a headwind pushes caught
+    walkers backwards (3.4 > 2.3: you cannot walk out of a gust). The shove
+    asks the chest row ahead, so a wall at body height pins the walker and an
+    open lip blows them over it (into a real fall, into water a drown).
+    Diggers, climbers, blockers, bombers and bare fallers hold their line.
+    `candidates()` never offers FLOATER (#3827 law), and both streams sit off
+    the proof lines: THE SPIRE's flow is a tailwind (it can only push bodies
+    toward the door), THE MASSIF's sits rows 20–21, above the row-23 plank
+    road and inside the doorstep mount's start column — its solver line never
+    senses wind (lemcheck pins the touch-count at zero). THE SPIRE's grate
+    tails floaters onto the exit plinth (overshoot feeds the bay, walkers get
+    delivered to the door); THE MASSIF's shoves parachutes off the plinth
+    doorstep back toward the trench. Canopy drift lands on the pre-landing
+    test, so wind decides WHERE a body lands, not just where it wobbles.
     **Trampolines** (#3879, terrain-variety family item 2): levels declare
     `trampolines: [{x, y}]` — a sprung mat on the face of a cell. ANY body
     arriving on a mat (a faller's landing or a walker's footstep) is launched
@@ -143,10 +151,10 @@ breakable — every pin here has survived a manual mutation.
   on opposite ends of the board, opening shortcuts that re-shape the route —
   are unowned: they need a board designed around them, where the crossing the
   solver proves is genuinely decided by the warp rather than sealed under it.
-- Vent wind moves parachutes only (#3879): ground-bound walkers ignore the
-  stream, and vents blow forever (no on/off puzzle state). Ground-level drag
-  and switched gusts are Lemmings 2 territory and unowned until the family's
-  next PR; the wind you can feel today is the canopy's.
+- Vents blow forever (#3879): no on/off puzzle state — switched gusts are
+  Lemmings 2 territory and unowned until the family's next PR. (The other
+  half of the old vent gap — walkers ignoring the stream — shipped in #3930;
+  see Closed.)
 - **DISCLAIMER** (#3859): water NEVER flows and never will — the 1991
   original's water is static; draining ponds are a Lemmings 2 mechanic.
   What the original DID have, ponds everywhere, shipped in #3859; flowing
@@ -154,6 +162,28 @@ breakable — every pin here has survived a manual mutation.
 
 ## Closed
 
+- #3930 (POLISH never-dry stage) — **vent wind drags ground walkers**: the
+  stream now grabs feet as well as canopies. A walker standing in a vent's two
+  rows slides downwind at `CFG.windSp` — SPIRE's tailwind delivers the
+  plank-road crowd to the door (exit-test granularity makes the door
+  unmissable at any speed; the board now finishes 4/0 instead of 4/3), and a
+  headwind walks a caught walker backwards. The shove asks the chest row ahead
+  only: steel pins, open lips blow the body over them into a real fall, and
+  water still drowns (all three pinned in the lab). Diggers, climbers,
+  blockers, bombers and bare fallers keep holding the line — #3879's list,
+  minus the walker. THE MASSIF's mouth moved one row up the plinth face
+  (y 22 → 21): at row 22 the stream lay directly on the plank road, and the
+  plank road *is* the `proves: build` answer — a 3.4-c/s headwind would have
+  erased the crossing the level exists to teach. At rows 20–21 the solver line
+  never touches wind (lemcheck pins `windAt`-touch count at 0 over the whole
+  replay), while parachutists over the trench mouth still get shoved west into
+  the trap (pinned, dx < −0.5). No new player command, no solver search-space
+  change; all four boards still solve with their supplies and with one fewer
+  of every supply (the slack loop). Harness: the wind section renamed and
+  rebuilt (tailwind exit proof, both-directions lab, walker wall-pin,
+  lip-drown, proof-line wind-blindness, relocated-trap shove), with the old
+  "walkers hold" pin flipped to demand the drag; counts below. Proven red
+  5 ways (drag disabled), restored green.
 - #3879 (terrain gadget 3 of 3) — **teleports**: linked maws sunk into the
   trench floor (`teleports: [{x, y, pair}]`). A body STANDING on a mouth —
   a walker's footstep, a faller's landing — leaves the surface there and steps
@@ -168,10 +198,7 @@ breakable — every pin here has survived a manual mutation.
   AND warps, yet the plinth wall still towers two tiles over the floor — the
   tenant rides the pair, the verdict is the one the trench was carved with,
   and `proves: dig, build` ride the road byte-identical (lemcheck: the proven
-  script opens zero gates). lemcheck +20 pins (397: pairing law, footstep and
-  landing rides, absorbed lethal drop, cooldown cadence ≥ tpHold, own/mate/
-  plank sky guards, broken pair inert, trap law + determinism, painter);
-  mutant proof: dead `tpAt` reddens 5.
+  script opens zero gates).
 - #3925 (the dig shaft ports) — **float-while-digging**: an airborne digger that
   meets dirt no longer splats onto it; it chews straight DOWN, one cell per chew at
   the horizontal tunnel's own `digSp` rate, so the shaft follows it to the floor and
