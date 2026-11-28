@@ -267,11 +267,18 @@ r.check('pond: zero page errors on the water board', errors.length === 0, errors
     // fine — but A and B sit far apart so a release on one provably spares the
     // other. (Picking the two NEWEST was the old bug: they walk side by side and
     // the nearer one legitimately wins the 24px reach.)
+    // pickPair must exclude airborne lemmings AND head-on pairs: the
+    // expectation is recomputed ~350 ms after tDown (press + probe latency).
+    // A faller covers ~2 tiles in that window and a closing pair shrinks
+    // ~1.6 tiles — either lets the other body become the nearest to the press
+    // point while the preview is legitimately still on the pressed one.
+    // Same-direction walkers hold constant spacing, so the press is stable.
     const pickPair = (pro) => {
-        const live = (pro.lemmings || []).filter(l => l.live)
+        const live = (pro.lemmings || []).filter(l => l.live && l.state === 'walk')
         if (live.length < 2) return null
         let A = null, B = null, bd = -1
         for (let i = 0; i < live.length; i++) for (let j = i + 1; j < live.length; j++) {
+            if (live[i].dir !== live[j].dir) continue
             const d = Math.hypot(live[i].x - live[j].x, (live[i].y - 0.5) - (live[j].y - 0.5))
             if (d > bd) { bd = d; A = live[i]; B = live[j] }
         }
@@ -304,8 +311,12 @@ r.check('pond: zero page errors on the water board', errors.length === 0, errors
         const aF = (await tprobe()).lemmings.find(l => l.id === T.A.id) || T.A
         const sA = sp(R1, aF), wA = wp(R1, sA)
         await tDown(sA.x, sA.y)
-        await tpage.waitForTimeout(250)
-        const atPress = await tprobe()
+        // The preview lands synchronously with the pointerdown dispatch, so
+        // take the probe immediately (retry only until aim exists): every ms
+        // of extra hold widens the gap between the press point and the
+        // bodies it must still be nearest to.
+        let atPress = await tprobe()
+        for (let i = 0; i < 8 && !atPress.aim; i++) { await tpage.waitForTimeout(40); atPress = await tprobe() }
         const nPress = nearestLive(atPress, wA)
         r.check('press previews the lemming under the finger',
             atPress.aim && nPress && atPress.aim.id === nPress.id,
