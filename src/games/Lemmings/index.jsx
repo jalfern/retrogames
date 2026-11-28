@@ -136,6 +136,39 @@ const LemGame = () => {
         let watchScript = null                    // #1637 the solver's commands for the WATCH seat
         const splashes = []                       // #3828 drown splashes: {x,y,t}
         const cries = []                          // #3844 OH NO! sprites: {x,y,t}
+        const chips = []                          // #3879 splinters/nail-dust: {x,y,vx,vy,t,life,dark,big}
+        const squash = {}                         // #3879 landing squash: lemming id → world ticks left
+        const SQUASH_LIFE = 6
+        // #3879: wood one tick old — a blast's events arrive after the grid has
+        // already cleared, so splinters spawn exactly at the cells that WERE wood.
+        const woodMask = () => {
+            const m = new Uint8Array(W * H)
+            for (let i = 0; i < W * H; i++) m[i] = gs.grid[i] === PLANK ? 1 : 0
+            return m
+        }
+        const splinterBlast = (bx, by, wm) => {
+            if (!wm) return
+            const cx = Math.floor(bx), cy = Math.floor(by)
+            let cells = 0
+            for (let y = Math.max(0, cy - 2); y <= Math.min(H - 1, cy + 2); y++) {
+                for (let x = Math.max(0, cx - 2); x <= Math.min(W - 1, cx + 2); x++) {
+                    if (wm[y * W + x] !== 1 || gs.grid[y * W + x] === PLANK) continue   // splinter only cleared WOOD
+                    if (++cells > 9) return                                               // a big blast still reads calm
+                    for (let k = 0; k < 3; k++) {
+                        const r = speck(x + k, y + 3 * k)
+                        if (chips.length > 64) chips.shift()
+                        chips.push({ x: x + 0.15 + r * 0.7, y: y + 0.25, vx: (r - 0.5) * 1.1, vy: -0.18 - r * 0.38, t: 0, life: 13 + Math.floor(r * 8), dark: r < 0.5, big: k === 0 })
+                    }
+                }
+            }
+        }
+        const splinterLay = (ex, ey) => {
+            // nail-dust: two pale flecks shake loose where a plank lands
+            for (let k = 0; k < 2; k++) {
+                const r = speck(Math.floor(ex) + k, Math.floor(ey))
+                chips.push({ x: ex + (k ? 0.3 : -0.3), y: ey + 0.35 + r * 0.3, vx: k ? 0.1 : -0.1, vy: 0.04 + r * 0.05, t: 0, life: 8, dark: k === 1, big: false })
+            }
+        }
         const cursor = { x: 8, y: 18 }
         let selected = 'climb'
         const keys = new Set()
@@ -170,6 +203,8 @@ const LemGame = () => {
             watchScript = null                            // #1637 a new level starts in your hands
             splashes.length = 0                       // #3828 no ghost splashes across boards
             cries.length = 0                          // #3844 nor ghost wails
+            chips.length = 0                          // #3879 nor ghost splinters
+            for (const k of Object.keys(squash)) delete squash[k]   // #3879 nor stale squashes
             watchingRef.current = false; setWatching(false)
             abortGesture()                        // no press from the previous run survives into this one
         }
@@ -226,12 +261,15 @@ const LemGame = () => {
             cries.push({ x, y, t: 0 })
         }
 
-        const handleEvents = (evts) => {
+        const handleEvents = (evts, wm) => {
             let deaths = 0
             for (const e of evts) {
                 if (e.type === 'exit') { audioController.playSweep(660, 1320, 0.22, 'square', 0.08); audioController.playTone(1760, 0.1, 'square', 0.05) }
                 else if (e.type === 'assign') skillSfx(e.skill)
-                else if (e.type === 'blast') { audioController.playNoise(0.5, 0.16); audioController.playSweep(220, 50, 0.5, 'sawtooth', 0.1) }
+                else if (e.type === 'blast') {
+                    audioController.playNoise(0.5, 0.16); audioController.playSweep(220, 50, 0.5, 'sawtooth', 0.1)
+                    splinterBlast(e.x, e.y, wm)       // #3879: wood flashes into chips where the blast took planks
+                }
                 // #3844: every death (fall, drown, bomb) counts one scream and
                 // pops an OH NO! on the corpse. A batch dies = one cry.
                 else if (e.type === 'splat') { audioController.playSweep(360, 60, 0.22, 'sawtooth', 0.09); deaths++; pushCry(e.x, e.y) }
@@ -248,9 +286,9 @@ const LemGame = () => {
                 else if (e.type === 'dig') audioController.playNoise(0.06, 0.03)
                 // #3863: wood on wood — the plank's landing knock, a short hammer
                 // strike (mid square) layered over a grit tick, never a thud.
-                else if (e.type === 'plank') { audioController.playTone(190, 0.05, 'square', 0.06); audioController.playNoise(0.03, 0.02) }
-                else if (e.type === 'land') audioController.playTone(120, 0.05, 'triangle', 0.04)
-                else if (e.type === 'landsoft') audioController.playTone(200, 0.07, 'sine', 0.035)
+                else if (e.type === 'plank') { audioController.playTone(190, 0.05, 'square', 0.06); audioController.playNoise(0.03, 0.02); splinterLay(e.x, e.y) }
+                else if (e.type === 'land') { audioController.playTone(120, 0.05, 'triangle', 0.04); squash[e.id] = SQUASH_LIFE }   // #3879 knees bend on touchdown
+                else if (e.type === 'landsoft') { audioController.playTone(200, 0.07, 'sine', 0.035); squash[e.id] = SQUASH_LIFE }
                 else if (e.type === 'step') audioController.playTone(220, 0.03, 'triangle', 0.025)
                 else if (e.type === 'crest') audioController.playTone(880, 0.07, 'sine', 0.05)
                 else if (e.type === 'climbblock') audioController.playSweep(300, 620, 0.12, 'triangle', 0.05)
@@ -311,6 +349,11 @@ const LemGame = () => {
             // and slow-mo animate them with the sim (never setTimeout — AGENTS).
             for (let i = splashes.length - 1; i >= 0; i--) { if (++splashes[i].t > 30) splashes.splice(i, 1) }
             for (let i = cries.length - 1; i >= 0; i--) { if (++cries[i].t > OHNO_LIFE) cries.splice(i, 1) }
+            // #3879 chips arc on the WORLD clock like splashes (gravity, then gone);
+            // squashed landings hold a beat and relax.
+            for (let i = chips.length - 1; i >= 0; i--) { const c = chips[i]; c.t++; c.x += c.vx; c.y += c.vy; c.vy += 0.035; if (c.t > c.life) chips.splice(i, 1) }
+            for (const k of Object.keys(squash)) { if (--squash[k] <= 0) delete squash[k] }
+            const wm = woodMask()               // #3879 wood as it stands BEFORE this tick's step
             if (screenRef.current === 'attract') {
                 // attract = the solver's proven script, replayed on screen.
                 // #3892 PHASE: apply stamp T at g.tick===T — the same phase
@@ -342,7 +385,7 @@ const LemGame = () => {
                     if (assign(gs, floatPlan[demoFloats].id, 'float')) skillSfx('float')
                     demoFloats++
                 }
-                handleEvents(step(gs).events)
+                handleEvents(step(gs).events, wm)
                 if (gs.end) loadLevel((levelIdx + 1) % LEVELS.length, true)
             } else if (screenRef.current === 'play') {
                 const sp = 11 * FIXED_DT
@@ -357,7 +400,7 @@ const LemGame = () => {
                     const c = watchScript.find(cc => cc.tick === gs.tick)
                     if (c) assign(gs, c.id, c.skill)
                 }
-                handleEvents(step(gs, { x: cursor.x, y: cursor.y }).events)
+                handleEvents(step(gs, { x: cursor.x, y: cursor.y }).events, wm)
                 if (gs.end) finish()
             }
         }
@@ -468,19 +511,57 @@ const LemGame = () => {
                         continue
                     }
                     if (t === PLANK) {
-                        // #3863 BUILDER's wood: a horizontal plank, warmer and
-                        // paler than dirt so "placed" reads against geology at a
-                        // glance — board grain, a sunlit walking lip when open
-                        // sky sits above, iron nails at the ends.
-                        ctx.fillStyle = '#a8722f'; ctx.fillRect(px, py, TS, TS)
-                        ctx.fillStyle = '#c89050'
-                        ctx.fillRect(px, py + 1, TS, 2); ctx.fillRect(px, py + 5, TS, 2)
-                        ctx.fillStyle = '#7c4a18'
-                        ctx.fillRect(px, py + 4, TS, 1)
-                        ctx.fillStyle = '#4b2e0d'
-                        ctx.fillRect(px + 1, py + 3, 1, 1); ctx.fillRect(px + TS - 2, py + 3, 1, 1)
+                        // #3863 BUILDER's wood: warmer and paler than dirt so
+                        // "placed" reads against geology at a glance — board
+                        // grain, a sunlit walking lip when open sky sits above,
+                        // iron nails at the ends.
+                        // #3879 LOOK: the road LEANS into the descent. A plank
+                        // whose nearest downhill neighbour is within reach keeps
+                        // its flat tread (that is where feet land — the grid still
+                        // speaks whole cells) and drops a nose over its downhill
+                        // edge, nosing-to-nosing onto the next board like the
+                        // original's planks riding the stair. The road steps two
+                        // cells at a time on SPIRE's face, so the lean reaches
+                        // two columns. Overhang beyond the cell is tucked under
+                        // whatever the scan paints there afterwards (terrain or
+                        // the next board); a sky gap keeps the nose visible.
+                        const plankAt = (ix, iy) => ix >= 0 && ix < W && iy >= 0 && iy < H && gs.grid[iy * W + ix] === PLANK
+                        const leanR = plankAt(x + 1, y + 1) || plankAt(x + 2, y + 1) || plankAt(x + 2, y + 2)
+                        const leanL = plankAt(x - 1, y + 1) || plankAt(x - 2, y + 1) || plankAt(x - 2, y + 2)
+                        const lean = leanR && !leanL ? 1 : leanL && !leanR ? -1 : 0
+                        const NOSE = [0, 0, 0, 0, 0, 1, 2, 4]        // per-column drop at the downhill end
+                        const noseCols = 2                            // columns reaching past the downhill edge
+                        const N = TS + noseCols
+                        const topCol = (ox) => {
+                            const j = lean > 0 ? ox : N - 1 - ox
+                            return j < TS ? NOSE[j] : NOSE[TS - 1] + (j - (TS - 1))
+                        }
+                        if (lean === 0) {
+                            ctx.fillStyle = '#a8722f'; ctx.fillRect(px, py, TS, TS)
+                            ctx.fillStyle = '#c89050'
+                            ctx.fillRect(px, py + 1, TS, 2); ctx.fillRect(px, py + 5, TS, 2)
+                            ctx.fillStyle = '#7c4a18'
+                            ctx.fillRect(px, py + 4, TS, 1)
+                            ctx.fillStyle = '#4b2e0d'
+                            ctx.fillRect(px + 1, py + 3, 1, 1); ctx.fillRect(px + TS - 2, py + 3, 1, 1)
+                        } else {
+                            for (let ox = 0; ox < N; ox++) {
+                                const col = lean > 0 ? px + ox : px + (N - 1) - ox
+                                const t0 = topCol(ox)
+                                ctx.fillStyle = '#a8722f'; ctx.fillRect(col, py + t0, 1, TS)              // full board thickness follows the lean
+                                ctx.fillStyle = '#c89050'
+                                ctx.fillRect(col, py + t0 + 1, 1, 2); ctx.fillRect(col, py + t0 + 5, 1, 2)
+                                ctx.fillStyle = '#7c4a18'; ctx.fillRect(col, py + t0 + 4, 1, 1)
+                            }
+                            ctx.fillStyle = '#4b2e0d'
+                            ctx.fillRect(px + (lean > 0 ? 1 : N - 2), py + topCol(lean > 0 ? 1 : N - 2) + 3, 1, 1)
+                            ctx.fillStyle = '#59371a'                                                       // dark end line at the nose tip
+                            ctx.fillRect(px + (lean > 0 ? N - 1 : 0), py + NOSE[TS - 1] + noseCols, 1, TS - noseCols)
+                        }
                         if (y > 0 && gs.grid[(y - 1) * W + x] !== PLANK) {
-                            ctx.fillStyle = '#e6c17c'; ctx.fillRect(px, py, TS, 1)
+                            ctx.fillStyle = '#e6c17c'
+                            if (lean === 0) ctx.fillRect(px, py, TS, 1)
+                            else for (let ox = 0; ox < N; ox++) ctx.fillRect(px + (lean > 0 ? ox : N - 1 - ox), py + topCol(ox), 1, 1)   // lip rides the slope
                         }
                     } else if (t === DIRT) {
                         ctx.fillStyle = '#7a4a22'; ctx.fillRect(px, py, TS, TS)
@@ -532,19 +613,59 @@ const LemGame = () => {
                 }
                 if (L.state === 'bomb' && Math.floor(gs.tick / 6) % 2 === 0) {
                     ctx.fillStyle = '#e23b3b'; ctx.fillRect(px - 1, py - 1, 8, 9)
+                    ctx.fillStyle = Math.floor(gs.tick / 3) % 2 ? '#ffd83d' : '#ff8c42'   // #3879 fuse spark spits
+                    ctx.fillRect(px + 3, py - 2, 1, 1)
                 }
-                ctx.fillStyle = LEM_COLORS.head; ctx.fillRect(px + 1, py, 5, 3)
-                ctx.fillStyle = LEM_COLORS.hair; ctx.fillRect(px + 1, py, 5, 1)
+                // #3879 LOOK: the little brown figures — a hair cap (fringe, a
+                // side strand at the back, a flick that flutters mid-stride) and
+                // a four-frame walk: the body bobs a pixel off the ground while
+                // a foot swings. Landing squash flattens the whole figure for a
+                // beat (knees, then relax) on the WORLD clock.
+                const walking = L.state === 'walk'
+                const ph = Math.floor(gs.tick / 6 + L.id) % 4
+                const flat = (squash[L.id] || 0) > 0
+                const bob = walking && !flat && (ph === 1 || ph === 3) ? -1 : 0
+                const d = L.dir > 0 ? 1 : -1
+                const hy = py + bob + (flat ? 2 : 0)
+                ctx.fillStyle = LEM_COLORS.head; ctx.fillRect(px + 1, hy, 5, 3)
+                ctx.fillStyle = LEM_COLORS.hair
+                ctx.fillRect(px + 1, hy, 5, 1)                                             // fringe
+                ctx.fillRect(d > 0 ? px + 1 : px + 5, hy + 1, 1, 1)                      // strand at the back
+                ctx.fillRect(d > 0 ? px : px + 6, hy + 1 + (walking ? ph % 2 : 1), 1, 1)  // flick, flutters on the stride
                 ctx.fillStyle = '#1b2a3a'                     // two eyes, offset toward the facing
                 const eo = L.dir > 0 ? 1 : 0
-                ctx.fillRect(px + 2 + eo, py + 1, 1, 1); ctx.fillRect(px + 4 + eo, py + 1, 1, 1)
-                ctx.fillStyle = LEM_COLORS.body; ctx.fillRect(px + 1, py + 3, 5, 3)
+                ctx.fillRect(px + 2 + eo, hy + 1, 1, 1); ctx.fillRect(px + 4 + eo, hy + 1, 1, 1)
+                const crouch = L.state === 'dig' ? 1 : 0
+                ctx.fillStyle = LEM_COLORS.body
+                ctx.fillRect(px + 1, py + 3 + bob + (flat ? 1 : 0) + crouch, 5, flat ? 2 : 3 - crouch)
                 ctx.fillStyle = LEM_COLORS.pants
-                const leg = L.state === 'walk' ? (Math.floor(gs.tick / 8 + L.id) % 2) : 0
-                ctx.fillRect(px + 1, py + 6, 2, 2 - leg); ctx.fillRect(px + 4, py + 6, 2, 1 + leg)
+                if (flat) {
+                    ctx.fillRect(px, py + 6, 2, 1); ctx.fillRect(px + 5, py + 6, 2, 1)  // knees splayed on touchdown
+                } else if (walking) {
+                    const lead = d > 0 ? px + 4 : px + 1          // leading/trailing foot columns
+                    const trail = d > 0 ? px + 1 : px + 4
+                    if (ph === 1) { ctx.fillRect(lead + d, py + 6, 2, 1); ctx.fillRect(trail - d, py + 6, 2, 2) }    // stride: feet reach out past the body
+                    else if (ph === 3) { ctx.fillRect(lead - d, py + 6, 2, 2); ctx.fillRect(trail + d, py + 6, 2, 1) }   // recovery: feet pull in under it
+                    else { ctx.fillRect(px + 1, py + 6, 2, 2); ctx.fillRect(px + 4, py + 6, 2, 2) }
+                } else if (L.state === 'fall') {
+                    ctx.fillRect(px, py + 6, 1, 2); ctx.fillRect(px + 6, py + 6, 1, 2)  // legs dangle loose
+                } else if (L.state === 'dig') {
+                    ctx.fillRect(px + 1, py + 6, 2, 1); ctx.fillRect(px + 4, py + 6, 2, 1)  // braced short legs
+                } else {
+                    ctx.fillRect(px + 1, py + 6, 2, 2); ctx.fillRect(px + 4, py + 6, 2, 1)
+                }
                 if (L.state === 'block') { ctx.fillStyle = LEM_COLORS.body; ctx.fillRect(px - 3, py + 3, 3, 1); ctx.fillRect(px + 6, py + 3, 3, 1) }
-                if (L.state === 'climb') { ctx.fillStyle = LEM_COLORS.head; ctx.fillRect(px + (L.dir > 0 ? 5 : -1), py - 2, 2, 3) }
-                if (L.digger && L.state !== 'bomb') { ctx.fillStyle = LAYOUT.badge.digger; ctx.fillRect(px + (L.dir > 0 ? 6 : -3), py + 3, 3, 2) }
+                if (L.state === 'climb') {
+                    ctx.fillStyle = LEM_COLORS.head
+                    ctx.fillRect(px + (d > 0 ? 5 : -1), py - 2, 2, 3)                                        // leading arm up
+                    ctx.fillRect(px + (d > 0 ? -1 : 5), py + (Math.floor(gs.tick / 5 + L.id) % 2 ? 1 : 2), 2, 2)   // other arm pumps
+                }
+                if (L.state === 'dig') {
+                    // #3879 the dig pose: crouched body, shovel pumping into the
+                    // chewed row and back — a bite every four ticks.
+                    ctx.fillStyle = LAYOUT.badge.digger
+                    ctx.fillRect(px + (d > 0 ? 6 : -3), py + 4 + (Math.floor(gs.tick / 4 + L.id) % 2), 3, 2)
+                } else if (L.digger && L.state !== 'bomb') { ctx.fillStyle = LAYOUT.badge.digger; ctx.fillRect(px + (d > 0 ? 6 : -3), py + 3, 3, 2) }
                 // #422 item 4: a life-badge on flagged lemmings, so a climber is
                 // still recognisable after it crests and goes back to walking.
                 // #470: two pixels thick — at 1 px the gold hairline vanished
@@ -565,8 +686,11 @@ const LemGame = () => {
                 // walking — you always know who carries one. Striped canopy,
                 // 2-frame sway, shroud lines to the shoulders.
                 if (L.floater && L.state !== 'bomb') {
-                    const cy = py - 8
-                    const sway = Math.floor(gs.tick / 7 + L.id) % 2
+                    // #3879: the canopy rocks on a three-step drift (−1,0,+1)
+                    // instead of a hard two-frame jitter, and dips with a landing
+                    // squash before springing back.
+                    const cy = py - 8 + (flat ? 2 : 0)
+                    const sway = [0, 1, 0, -1][Math.floor(gs.tick / 5 + L.id) % 4]
                     ctx.fillStyle = '#efe9d8'
                     ctx.fillRect(px - 3 + sway, cy, 12, 2)
                     ctx.fillStyle = '#d83a3a'
@@ -632,6 +756,16 @@ const LemGame = () => {
                 }
                 ctx.globalAlpha = 1
             }
+
+            // #3879 splinters & nail-dust: two-tone tan chips arcing out of
+            // wood the blast cleared, pale flecks where a plank lands.
+            for (const c of chips) {
+                const a = 1 - c.t / c.life
+                ctx.globalAlpha = Math.max(0, Math.min(1, a))
+                ctx.fillStyle = c.dark ? '#7c4a18' : '#c89050'
+                ctx.fillRect(Math.round(c.x * TS), Math.round(c.y * TS), c.big ? 2 : 1, c.big ? 2 : 1)
+            }
+            ctx.globalAlpha = 1
 
             // cursor (play) or autopilot ghost (attract): in attract the box
             // sits on the live body the solver script is about to command
@@ -884,6 +1018,11 @@ const LemGame = () => {
                     return true
                 },
                 cries: () => cries.map(c => ({ x: c.x, y: c.y, t: c.t })),   // #3844 OH NO! sprites live on screen
+                // #3879: wood cells (for the slope-nose pixel probes) and the
+                // live splinter buffer, same DEV-cheat family as stamp/kill.
+                woods: () => { const out = []; for (let i = 0; i < W * H; i++) if (gs.grid[i] === PLANK) out.push([i % W, (i - (i % W)) / W]); return out },
+                chipsN: () => chips.length,
+                squashIds: () => Object.keys(squash).map(Number),
                 // #3879: the harness hears the bed through the shared
                 // verification hook (the __popTest.musicState precedent).
                 musicState: () => audioController._musicState(),
@@ -905,7 +1044,8 @@ const LemGame = () => {
                     // shared press-preview-release gesture the touch path runs,
                     // so a tap (down this tick, up the next) previews, then assigns.
                     stepGesture(pad.pointer)
-                    handleEvents(step(gs, { x: cursor.x, y: cursor.y }).events)
+                    const wm = woodMask()       // #3879 same before-the-step wood mask as doSim
+                    handleEvents(step(gs, { x: cursor.x, y: cursor.y }).events, wm)
                 },
                 state: () => ({
                     tick: gs.tick, score: gs.score, done: !!gs.end,

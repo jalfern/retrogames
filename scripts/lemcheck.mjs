@@ -1130,6 +1130,49 @@ section('SOUND (#3879: graveyard bed, per-skill voices, mute)')
     ok(/M mutes the sound/.test(rsrc), '#3879: the registry controls never mention the mute')
 }
 
+section('LOOK (#3879: sloped planks, animated sprites, splintering wood)')
+{
+    const wsrc = readFileSync(new URL('../src/games/Lemmings/index.jsx', import.meta.url), 'utf8')
+    // sloped planks: the road leans toward the nearest downhill board, read
+    // from the wood grid in both directions and at the two-cell reach SPIRE's
+    // stair uses; the flat run keeps the plain board untouched.
+    ok(/plankAt\(x \+ 1, y \+ 1\)/.test(wsrc) && /plankAt\(x \+ 2, y \+ 2\)/.test(wsrc),
+        '#3879: the painter no longer reads diagonal boards — planks sit flat again')
+    ok(/plankAt\(x - 1, y \+ 1\)/.test(wsrc) && /plankAt\(x - 2, y \+ 2\)/.test(wsrc),
+        '#3879: westward leans lost — left-descent roads would sit flat')
+    ok(/const NOSE = \[0, 0, 0, 0, 0, 1, 2, 4\]/.test(wsrc),
+        '#3879: the nose profile is gone — boards cannot lean into the descent')
+    ok(/if \(lean === 0\) \{/.test(wsrc),
+        '#3879: the flat-plank branch is gone — bridges and flat roads would tilt off the shelf')
+    // sprites: hair cap with a flick, a real 4-frame stride, landing squash.
+    ok(/\/\/ fringe[\s\S]{0,400}flick/.test(wsrc),
+        '#3879: the hair cap lost its strand/flick — lemmings are bald walkers again')
+    ok(/Math\.floor\(gs\.tick \/ 6 \+ L\.id\) % 4/.test(wsrc),
+        '#3879: the walk phase clock is gone — the walk cycle collapsed to a slide')
+    ok(/lead \+ d/.test(wsrc) && /trail \+ d/.test(wsrc),
+        '#3879: stride/recovery foot offsets gone — legs no longer reach past the body')
+    ok(/legs dangle loose/.test(wsrc), '#3879: fallers lost their dangling legs')
+    ok(/a bite every four ticks/.test(wsrc) && /Math\.floor\(gs\.tick \/ 4 \+ L\.id\) % 2/.test(wsrc),
+        '#3879: the digger shovel stopped pumping')
+    ok(/other arm pumps/.test(wsrc), '#3879: climbers stopped alternating arms')
+    ok(/fuse spark spits/.test(wsrc), '#3879: the bomber lost its fuse spark')
+    const squashes = (wsrc.match(/squash\[e\.id\] = SQUASH_LIFE/g) || []).length
+    ok(squashes === 2, `#3879: land/landsoft squash wiring incomplete (${squashes}/2) — parachute or fall landings would not squash`)
+    ok(/\(squash\[L\.id\] \|\| 0\) > 0/.test(wsrc), '#3879: the painter never reads the squash map')
+    // canopy: three-step rock + landing dip
+    ok(/\[0, 1, 0, -1\]/.test(wsrc), '#3879: the canopy sway collapsed back to a two-frame jitter')
+    // splintering wood: mask before the step, splinters where the blast cleared
+    // planks, dust where a plank lands — all on the WORLD clock.
+    ok(/const wm = woodMask\(\)/.test(wsrc), '#3879: no wood mask taken before the step — blast splinters cannot know what was wood')
+    ok(/e\.type === 'blast'[\s\S]{0,240}splinterBlast\(e\.x, e\.y, wm\)/.test(wsrc),
+        '#3879: the blast event no longer throws splinters')
+    ok(/splinterBlast[\s\S]{0,600}wm\[y \* W \+ x\] !== 1 \|\| gs\.grid\[y \* W \+ x\] === PLANK/.test(wsrc),
+        '#3879: splinters stopped checking cleared wood — chips would fly from dirt')
+    ok(/e\.type === 'plank'[\s\S]{0,240}splinterLay\(e\.x, e\.y\)/.test(wsrc),
+        '#3879: plank laying lost its nail-dust')
+    ok(/c\.vy \+= 0\.035/.test(wsrc), '#3879: chips fell out of the world clock — splinters would freeze in the air on FF')
+}
+
 console.log(`\nlemcheck: ${pass}/${pass + fails.length} checks passed${fails.length ? `  — ${fails.length} FAILED` : '  — OK'}`)
 fails.forEach(f => console.log(`  FAIL  ${f}`))
 process.exit(fails.length ? 1 : 0)
