@@ -22,7 +22,7 @@ import { currentPad, setPointer, pointerGesture } from '../../utils/onePad'
 import { makeFitCanvas } from '../../utils/fitCanvas'
 import { LEVELS, buildLevel } from './levels.js'
 import { LAYOUT } from './layout.js'
-import { PRESS, MESSAGES } from './attract.js'
+import { PRESS, MESSAGES, demoFloatPick } from './attract.js'
 import { makeGame, step, solve, assign, nearestLemming, stateHash, SKILLS, SKILL_NAME, SKILL_KEY, CFG, W, H, DIRT, STEEL, WATER, FIXED_DT } from './sim.js'
 import WatchButton, { WatchToast, AttractWatchButton } from '../../components/WatchButton'
 import { isWatchKey, isTakeoverKey, playWatchStart, playWatchStop, watchSfxLog, WATCH_ATTRACT_HINT } from '../../utils/watch'
@@ -60,6 +60,7 @@ const OHNO_GLYPHS = {
 const OHNO_WORD = ['O', 'H', ' ', 'N', 'O', '!'].map((ch, i) => ({ ch, x: i * 6 }))
 const OHNO_W = 31                                         // 5 px glyphs + 1 px tracking
 const OHNO_LIFE = 48                                      // world ticks a cry lingers
+const DEMO_FLOATS = 2                                     // #3853 canopies the attract demo spends per level cycle
 
 const LemGame = () => {
     const stageRef = useRef(null)
@@ -101,6 +102,7 @@ const LemGame = () => {
         let levelIdx = 0
         let meta = null, grid = null, gs = null
         let plan = [], planI = 0
+        let demoFloats = 0                            // #3853 canopies spent by the attract demo this cycle
         let raf = 0, last = 0, acc = 0
         let runCmds = []                          // player-command log of the live run
         let watchScript = null                    // #1637 the solver's commands for the WATCH seat
@@ -132,6 +134,7 @@ const LemGame = () => {
             gs = makeGame(meta, grid)
             if (freshScore) gs.score = 0
             plan = planFor(levelIdx); planI = 0
+            demoFloats = 0                            // #3853 each demo cycle may show its own parachute
             runCmds = []
             cursor.x = meta.spawn.x; cursor.y = meta.spawn.y - 1
             selected = (SKILLS.find(s => meta.skills[s] > 0)) || 'climb'
@@ -268,6 +271,19 @@ const LemGame = () => {
                 // attract = the solver's proven script, replayed on screen
                 const c = plan.find(cc => cc.tick === gs.tick + 1)
                 if (c) assign(gs, c.id, c.skill)
+                // #3853 attract-parachute: the solver never needs floaters, so the
+                // replay showed four skills while the game offers five. Once per
+                // level cycle the demo spends one of the level's OWN float charges
+                // on an unsripted faller — the canopy catches air (deploy swoosh,
+                // soft landing), so the player sees all five skills before ever
+                // touching the game. Script lines stay exactly as proven: the picker
+                // excludes script targets, and a rescued life can only ever help the
+                // quota. startPlay() rebuilds the level fresh, so demo floats never
+                // eat into the player's supply.
+                if (demoFloats < DEMO_FLOATS) {
+                    const fid = demoFloatPick(gs, plan)
+                    if (fid != null && assign(gs, fid, 'float')) { demoFloats++; skillSfx('float') }
+                }
                 handleEvents(step(gs).events)
                 if (gs.end) loadLevel((levelIdx + 1) % LEVELS.length, true)
             } else if (screenRef.current === 'play') {

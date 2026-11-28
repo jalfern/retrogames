@@ -21,7 +21,7 @@
 
 import { LEVELS, buildLevel } from '../src/games/Lemmings/levels.js'
 import { LAYOUT } from '../src/games/Lemmings/layout.js'
-import { PRESS, MESSAGES } from '../src/games/Lemmings/attract.js'
+import { PRESS, MESSAGES, demoFloatPick } from '../src/games/Lemmings/attract.js'
 import * as sim from '../src/games/Lemmings/sim.js'
 import { readFileSync } from 'node:fs'
 
@@ -557,6 +557,56 @@ if (MUT) {
     tryMutL('a 60-char attract message (wraps the pane again)', () => { MESSAGES.push('hold, release, tap, arrows, space and everything else a wall of text says') }, linesFit)
     tryMutL('a harness leak back into visible attract copy', () => { MESSAGES.push('this demo replays a proven solution on screen') }, () => MESSAGES.every(l => !/scripts\/|\.mjs|audit|autopilot|proven/i.test(l)))
     tryMutL('HUD back to the cryptic 9+0', () => { LAYOUT.hud.pre = ''; LAYOUT.hud.mid = '+' }, hudPlain)
+}
+
+section('ATTRACT PARACHUTE (#3853: the demo shows all five skills)')
+{
+    // The picker is pure — pin it against fabricated boards, then replay every
+    // level's demo the way the shell does and demand: win, a canopy in every
+    // cycle, never more than the level's own supply, and at least one canopy
+    // that actually OPENS (its carrier is caught mid-fall).
+    const fakeL = (id, over = {}) => ({ id, live: true, floater: false, state: 'walk', fallDist: 0, x: 5, y: 10, dir: 1, ...over })
+    const dryBoard = (lemmings, tick = 0) => ({ tick, lemmings, grid: new Uint8Array(sim.W * sim.H).fill(sim.DIRT) })
+
+    ok(demoFloatPick(dryBoard([fakeL(0)], 299), []) === null, '#3853 grace broken: walker got a canopy before the crowd has been walking')
+    ok(demoFloatPick(dryBoard([fakeL(0)], 300), []) === 0, '#3853 grace fallback dead: an idle crowd never shows the parachute')
+    ok(demoFloatPick(dryBoard([fakeL(0), fakeL(1, { state: 'fall' })]), []) === 1, '#3853 faller priority lost: canopy waits for grace while a lemming is airborne')
+    ok(demoFloatPick(dryBoard([fakeL(0), fakeL(1, { state: 'fall' })]), [{ tick: 5, id: 1, skill: 'bomb' }]) === null, '#3853 target exclusion gone: the demo would re-time a scripted faller')
+    ok(demoFloatPick(dryBoard([fakeL(0)], 300), [{ tick: 5, id: 0, skill: 'dig' }]) === null, '#3853 target exclusion gone (walker too): demo spends its canopy on a scripted line')
+    ok(demoFloatPick(dryBoard([fakeL(0, { floater: true })], 300), []) === null, '#3853 double-grant guard gone: demo burns supply on a lemming that already carries')
+    {
+        const gb = dryBoard([fakeL(0, { state: 'fall' }), fakeL(1)], 300)
+        gb.grid[11 * sim.W + 5] = sim.WATER          // pond directly under the faller
+        ok(demoFloatPick(gb, []) === 1, '#3853 water skip gone: the demo parachutes a lemming straight into the pond')
+    }
+
+    let demoCanopies = 0, demoAir = 0
+    for (let i = 0; i < LEVELS.length; i++) {
+        const { meta, grid } = buildLevel(i)
+        let g = sim.makeGame(meta, grid)
+        const plan = sim.solve(g).cmds
+        g = sim.makeGame(meta, grid)
+        let grants = 0, air = 0, tick = 0
+        while (!g.end && tick < meta.time * 60 + 60) {
+            const c = plan.find(cc => cc.tick === g.tick + 1)
+            if (c) sim.assign(g, c.id, c.skill)
+            if (grants < 2) {                          // DEMO_FLOATS, mirrored from index.jsx
+                const fid = demoFloatPick(g, plan)
+                if (fid != null && sim.assign(g, fid, 'float')) { grants++; air |= g.lemmings[fid].state === 'fall' ? 1 : 0 }
+            }
+            // a canopy rides on show and auto-opens on the next fall: a granted
+            // carrier that later falls IS the parachute opening
+            for (const L of g.lemmings) if (L.live && L.floater && L.state === 'fall' && !plan.some(cc => cc.id === L.id)) air = 1
+            sim.step(g)
+            tick++
+        }
+        demoCanopies += grants
+        demoAir |= air
+        ok(g.win === true, `#3853 ${meta.name}: the demo float broke the solver's win`)
+        ok(grants >= 1, `#3853 ${meta.name}: attract cycle shows no parachute — the five-skills gap is back`)
+        ok(grants <= meta.skills.float, `#3853 ${meta.name}: demo spent more float than the level carries`)
+    }
+    ok(demoAir === 1, '#3853 no level demo opens a canopy in the air — the parachute never deploys on screen')
 }
 
 console.log(`\nlemcheck: ${pass}/${pass + fails.length} checks passed${fails.length ? `  — ${fails.length} FAILED` : '  — OK'}`)

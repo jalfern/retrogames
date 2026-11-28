@@ -58,8 +58,8 @@ supplies fails the build.
 ```bash
 npm run lemcheck            # ~2 s, no browser: solve all levels, rule pins
                            # (water rules, float immunity / slow descent /
-                           # supply discipline), slack, determinism,
-                           # readability, #470
+                           # supply discipline, #3853 attract parachute), slack,
+                           # determinism, readability, #470
 npm run lemcheck -- --mutate  # planted load-bearing CFG bugs, each must go red
 npm run lemcheck -- --map 2 # ASCII view of a level
 npm run dev -- --port 5178 --strictPort   # then:
@@ -84,14 +84,23 @@ breakable — every pin here has survived a manual mutation.
 - Float-while-digging (the original's floating lemming chews straight down
   through dirt while descending) does not port to the horizontal-tunnel digger;
   it needs either a second dig mode or a rethink of the dig model.
-- The attract demo never opens a parachute — the solver doesn't need floaters,
-  so the demo shows four skills while the game offers five.
 - Water is static: no level currently carries a second pond, nothing flows
   into one, and a bomb that punches a wall INTO a pond drains nothing — the
   original never flowed either, but it had ponds everywhere; THE SPIRE has one.
 
 ## Closed
 
+- #3853 — attract-parachute: the demo now spends its OWN float charges showing
+  the fifth skill. `attract.js` exports a pure picker (`demoFloatPick`): an
+  unsripted lemming caught airborne gets the canopy first (DOOR opens one
+  mid-air at the step-off); after a 5 s grace the first unsripted walker wears
+  one, and the canopy auto-opens on its next fall by the sim's own law. Two
+  canopies per level cycle, never over the pond (floaters drown — mockery, not
+  rescue), never a script target (proven lines are never re-timed), and the
+  player's supply is untouched because `startPlay` rebuilds the level.
+  lemcheck pins the picker, the per-level demo replays (win + canopy + supply
+  cap) and a live Chrome run paints the striped canopy (16 cream + 8 red px).
+  **CLOSED by #3853**
 - #3849 — fatal fall distance: `CFG.maxFall` was 7, the original kills past ~3.
   Now 3 — falls off the spire kill, floaters become precious. THE SPIRE's east
   stair dropped its last step ~6 tiles to the floor (the old lax value hid it);
