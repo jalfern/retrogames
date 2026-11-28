@@ -136,16 +136,22 @@ const bodyRow = (y) => Math.floor(y - 0.5)
 // #3879 WIND VENTS — the original's mid-game difficulty engine, first gadget
 // of the terrain-variety family. A level declares `vents: [{x, y, dir, reach}]`:
 // the mouth cell (x,y) blows horizontally `dir` for `reach` cells, an airstream
-// two rows tall (rows y−1 and y). Wind moves CANOPIES ONLY: a FLOATER in the
-// stream is pushed at CFG.windSp while airborne. Walkers, diggers, climbers,
-// blockers and bombers hold their line — the original's wind is the parachute's
-// problem, and this keeps every solver proof riding unchanged: candidates()
-// never offers FLOATER (#3827 law), so no recorded script, hash pin or level
-// proof ever crosses a gust. For the player it cuts both ways: THE SPIRE's
-// vent tails floaters onto the exit plinth (and into the bay if you overshoot),
-// THE MASSIF's shoves them back off the plinth into the trench's mouth.
-// The stream never pushes through matter: a body whose chest or feet column
-// ahead is solid stays put — gusts carry you to a wall, never into one.
+// two rows tall (rows y−1 and y). #3930 widened the law: wind moves CANOPIES
+// AND FEET — a FLOATER in the stream is pushed at CFG.windSp while airborne
+// (unchanged), and a WALKER standing in the stream now drags downwind at the
+// same speed (see `walker`'s ground-drag block). Diggers, climbers, blockers
+// and bombers hold their line, and so does a bare faller: the gust is a
+// canopy-and-walker rule. The stream never pushes through matter: a body whose
+// chest or feet column ahead is solid stays put — gusts carry you to a wall,
+// never into one. Solver proofs still ride unchanged: candidates() never offers
+// FLOATER (#3827 law) and both streams are placed off every proof line —
+// THE SPIRE's gust pushes its plank-road walkers toward the door (a tailwind
+// cannot strand a board), and THE MASSIF's stream sits two rows above the
+// plank road (the road is the proof and stays wind-free; floaters crossing the
+// trench mouth still get shoved into the trap). Tailwind vs headwind cuts both
+// ways for the player: SPIRE's gust tails crowds onto the plinth (and pins the
+// floor lane against the plinth wall), MASSIF's shoves parachutes off the
+// doorstep into the trench.
 export function windAt(g, L) {
     const vents = g.level.vents
     if (!vents) return 0
@@ -445,6 +451,26 @@ function walker(g, L) {
     // direction he faced when he blocked (often straight into the hazard he
     // was guarding, exactly as in the game).
     if (L.state === 'block') { wakeCheck(g, L); return }
+
+    // #3930 GROUND DRAG — the stream now grabs feet as well as canopies: a
+    // walker standing in a vent's rows slides downwind at CFG.windSp, asked
+    // the same two-column question the canopy asks (never squeezed through a
+    // wall) and felt even on the tick traffic turns the body — gusts carry you
+    // while you argue with the crowd. Diggers, climbers, blockers and bombers
+    // keep holding their line (#3879's list, minus the walker), and a bare
+    // faller still slips between the gusts — wind is a feet-and-canopy law.
+    // A walker blown off a lip takes the standing check below in the same
+    // step: into the air, fallDist from zero; into water, the drown above.
+    const wg = windAt(g, L)
+    if (wg) {
+        const wx = L.x + wg * CFG.windSp * FIXED_DT
+        // A walker's feet row is its ground — the canopy's two-row wall test
+        // would block every shove — so the gust asks the chest row ahead only:
+        // a wall at body height pins the walker, an open lip blows them over it
+        // (the standing check below turns that into a real fall, and water
+        // above drowns it).
+        if (!solid(g, Math.floor(wx + wg * 0.5), bodyRow(L.y))) L.x = wx
+    }
 
     const sp = CFG.walkSp * FIXED_DT
     const wasDir = L.dir

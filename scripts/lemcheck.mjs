@@ -1305,16 +1305,21 @@ section('LOOK (#3879: sloped planks, animated sprites, splintering wood)')
 
 // ------------------------------------------------------ wind vents (#3879) ----
 {
-    section('WIND VENTS (#3879: canopies drift, walkers hold, proofs ride)')
-    // The invariant the whole gadget leans on: wind moves floaters ONLY, and
-    // the solver never takes FLOATER (#3827 law) — so no proof, replay or
-    // hash pin ever crosses a gust. Both claims are pinned below.
+    section('WIND VENTS (#3879/#3930: canopies drift, walkers drag, proofs ride)')
+    // The gadget's law after #3930: wind moves CANOPIES AND WALKERS at
+    // CFG.windSp — diggers, climbers, blockers, bombers and bare fallers hold
+    // their line. Solver proofs still ride unchanged because candidates() never
+    // offers FLOATER (#3827 law) AND both streams sit off the proof lines:
+    // SPIRE's gust is a tailwind (pushes toward the door), MASSIF's stream
+    // blows two rows above the plank road. All of it pinned below.
     const v0 = buildLevel(0).meta.vents
     const v1 = buildLevel(1).meta.vents
     ok(Array.isArray(v0) && v0.length === 1 && v0[0].dir === 1 && v0[0].reach > 0,
         '#3879: THE SPIRE lost its tailwind vent — the exit-approach gust is gone')
     ok(Array.isArray(v1) && v1.length === 1 && v1[0].dir === -1,
         '#3879: THE MASSIF lost its headwind vent — the trench-mouth shove is gone')
+    ok(v1 && v1[0].y === 21,
+        '#3930: THE MASSIF stream dropped back to road height — a 3.4-c/s headwind on row 22 erases the plank-road proof')
     ok(!buildLevel(2).meta.vents && !buildLevel(3).meta.vents,
         '#3879: vents multiplied onto the solver-tight levels — keep the gadget off THE DOOR/THE LEDGE')
 
@@ -1333,7 +1338,7 @@ section('LOOK (#3879: sloped planks, animated sprites, splintering wood)')
         }
         const gust = drop(true), calm = drop(false)
         ok(gust.dx > 0.5, `#3879: a floater through THE SPIRE's stream drifted ${gust.dx.toFixed(2)} — the gust is dead`)
-        ok(Math.abs(calm.dx) < 1e-9, `#3879: a non-floater in the stream moved ${calm.dx.toFixed(3)} — wind is pushing walkers`)
+        ok(Math.abs(calm.dx) < 1e-9, `#3879: a bare faller in the stream moved ${calm.dx.toFixed(3)} — wind now pushes fallers, the law is canopy+walker only`)
         // stripped vents: the drift must come from the level, not a stray push
         const m0x = { ...meta, vents: undefined }
         const g0x = sim.makeGame(m0x, grid)
@@ -1346,8 +1351,53 @@ section('LOOK (#3879: sloped planks, animated sprites, splintering wood)')
         ok(gust.landed, '#3879: the tailed floater never reached the plinth — the tailwind misses its stage')
     }
 
-    // a gust carries you TO a wall, never through one (synthetic: mouth, then steel)
+    // #3930 GROUND DRAG — a walker in the stream slides at windSpeed. SPIRE's
+    // tailwind carries a road body to the door in half the walking time; the
+    // windless twin never gets there.
     {
+        const { meta, grid } = buildLevel(0)
+        const walk = (strip) => {
+            const m = strip ? { ...meta, vents: undefined } : meta
+            const g = sim.makeGame(m, grid)
+            sim.spawnLemming(g)
+            const L = g.lemmings[0]
+            L.state = 'walk'; L.dir = 1; L.x = 40.0; L.y = 23.0   // plinth surface, facing the door
+            const x0 = L.x
+            for (let t = 0; t < 30 && L.live && L.state === 'walk'; t++) sim.step(g)
+            return { dx: +(L.x - x0).toFixed(2), exited: g.exited }
+        }
+        const tail = walk(false), calm = walk(true)
+        ok(tail.exited === 1 && calm.exited === 0,
+            `#3930: tailwind exit ${tail.exited}/1, windless ${calm.exited}/0 — the gust no longer drags walkers toward the door`)
+        ok(tail.dx > calm.dx + 0.5, `#3930: tailwind walked ${tail.dx} vs windless ${calm.dx} — ground drag lost its push`)
+        // stripped vents must be calm for walkers too
+        ok(Math.abs(calm.dx - 30 * 2.3 / 60) < 0.05, `#3930: windless SPIRE walked ${calm.dx} off the pure walkSp line — stray push on the vents-stripped twin`)
+    }
+
+    // both directions, and the wall: a headwind outruns a walk; the stream
+    // carries a body TO a wall, never through one (synthetic lab)
+    {
+        const lab = (dir, x0, dir0) => {
+            const grid = new Uint8Array(sim.W * sim.H).fill(sim.AIR)
+            for (let x = 0; x < sim.W; x++) grid[10 * sim.W + x] = sim.STEEL
+            const meta = {
+                name: 'DRAG LAB', time: 60, spawn: { x: 2.5, y: 9 }, exit: { x: 99, y: 9 },
+                spawnCount: 0, spawnEvery: 999, need: 1,
+                skills: { block: 0, bomb: 0, climb: 0, dig: 0, float: 0, build: 0 },
+                vents: dir ? [{ x: dir > 0 ? 5 : 25, y: 9, dir, reach: 20 }] : undefined,
+            }
+            const g = sim.makeGame(meta, grid)
+            sim.spawnLemming(g)
+            const L = g.lemmings[0]
+            L.state = 'walk'; L.dir = dir0; L.x = x0; L.y = 10
+            const x0m = L.x
+            for (let t = 0; t < 60 && L.live && L.state === 'walk'; t++) sim.step(g)
+            return +(L.x - x0m).toFixed(2)
+        }
+        ok(lab(1, 20, 1) > 5, '#3930: a walker with the wind outran walk+wind (the drag is gone)')
+        ok(lab(-1, 20, 1) < 0, '#3930: a headwind did not push an eastbound walker backwards (drag speed <= walkSp?)')
+        ok(Math.abs(lab(0, 20, 1) - 2.3) < 0.05, '#3930: the windless lab drifted off walkSp — the lab lies')
+        // wind carries you to a wall, never through one: face away, get pinned
         const grid = new Uint8Array(sim.W * sim.H).fill(sim.AIR)
         for (let x = 0; x < sim.W; x++) grid[10 * sim.W + x] = sim.STEEL
         for (let y = 3; y <= 9; y++) grid[y * sim.W + 5] = sim.STEEL      // a wall in the wind's face
@@ -1363,6 +1413,30 @@ section('LOOK (#3879: sloped planks, animated sprites, splintering wood)')
         for (let t = 0; t < 120 && L.live && L.state === 'fall'; t++) sim.step(g)
         ok(L.x < 4.51, `#3879: the gust pushed a canopy to x=${L.x.toFixed(2)} — it squeezed toward/through the steel wall`)
         ok(L.x > 3.9, `#3879: the wall lab drifted only ${(L.x - 3).toFixed(2)} before the wall — clamp kills the gust entirely`)
+        const g2 = sim.makeGame(meta, grid)
+        sim.spawnLemming(g2)
+        const W2 = g2.lemmings[0]
+        W2.state = 'walk'; W2.dir = -1; W2.x = 3.0; W2.y = 10              // face west, east gust pins at the wall
+        let crossed = false
+        for (let t = 0; t < 120 && W2.live; t++) { sim.step(g2); if (W2.x > 4.51) crossed = true }
+        ok(!crossed, '#3930: ground drag pushed a walker through the steel wall')
+        // blown off a lip: the gust drops the body over the edge and water takes it
+        const grid2 = new Uint8Array(sim.W * sim.H).fill(sim.AIR)
+        for (let x = 0; x <= 20; x++) grid2[10 * sim.W + x] = sim.STEEL
+        for (let x = 21; x <= 30; x++) { grid2[10 * sim.W + x] = sim.WATER; grid2[11 * sim.W + x] = sim.WATER }
+        const meta2 = {
+            name: 'LIP LAB', time: 60, spawn: { x: 2.5, y: 9 }, exit: { x: 99, y: 9 },
+            spawnCount: 0, spawnEvery: 999, need: 1,
+            skills: { block: 0, bomb: 0, climb: 0, dig: 0, float: 0, build: 0 },
+            vents: [{ x: 12, y: 9, dir: 1, reach: 15 }],
+        }
+        const g3 = sim.makeGame(meta2, grid2)
+        sim.spawnLemming(g3)
+        const L3 = g3.lemmings[0]
+        L3.state = 'walk'; L3.dir = -1; L3.x = 18; L3.y = 10               // facing away; the east gust still shoves it into the pond
+        let drown = 0
+        for (let t = 0; t < 180 && L3.live; t++) { sim.step(g3); drown += g3.events.filter((e) => e.type === 'drown').length }
+        ok(drown === 1, '#3930: a walker blown off a lip over water did not drown — the pond law stops at the gust')
     }
 
     // no level without vents may sense wind; the solver never offers FLOATER,
@@ -1374,6 +1448,25 @@ section('LOOK (#3879: sloped planks, animated sprites, splintering wood)')
         const r = sim.solve(sim.makeGame(s.meta, s.grid))
         ok(r.cmds.every(c => c.skill !== 'float'),
             `#3879: the solver offered FLOATER on ${s.meta.name} — wind-proof independence of the proof lines is gone`)
+    }
+    // #3930's harder half: THE MASSIF's proof line never touches the stream —
+    // not a canopy, not a walker (rows 20–21 vs road row 23/doorstep mount).
+    {
+        const s = buildLevel(1)
+        const r = sim.solve(sim.makeGame(s.meta, s.grid))
+        let touches = 0
+        sim.replay(s.meta, s.grid, r.cmds, { onTick: (g) => { for (const L of g.lemmings) if (L.live && sim.windAt(g, L)) touches++ } })
+        ok(touches === 0, `#3930: THE MASSIF's solver line crossed the gust ${touches}× — the plank-road proof now feels the wind`)
+        // and the threat survives the move: a parachutist at the doorstep gets
+        // shoved west, off the plinth, toward the trench mouth.
+        const g = sim.makeGame(s.meta, s.grid)
+        sim.spawnLemming(g)
+        const L = g.lemmings[0]
+        L.state = 'fall'; L.vy = 0; L.fallDist = 0; L.floater = true
+        L.x = 40.5; L.y = 20.0                     // over the trench mouth, in the stream's columns 37–41
+        const x0 = L.x
+        for (let t = 0; t < 90 && L.live && L.state === 'fall'; t++) sim.step(g)
+        ok(L.x < x0 - 0.5, `#3930: the relocated MASSIF vent stopped shoving parachutes west (dx ${(L.x - x0).toFixed(2)}) — the trap is defanged`)
     }
 
     // the stream is on screen: grate + dashes on the WORLD clock
