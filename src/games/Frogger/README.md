@@ -2,7 +2,8 @@
 
 Five homes, four river lanes, five roads and a rest lane: hop, ride, dive
 turtles, beat the clock. Fly house = +200, level clear = +1000, lanes speed up
-12% per level (cap 1.8×).
+12% per level to a 1.8× cap — with the arcade's breath: past level 5 the ramp
+eases one notch and re-climbs (#3854, §Gameplay).
 
 ## Engine notes
 - **b25 (#1637): the whole rule set lives in `sim.js`** — `makeRun`,
@@ -91,3 +92,11 @@ byte-equal, every seed banks ≥1 level, 36/40 zero-death, ≥20 homes per seed,
   danger. This is an autopilot limit on the harness side, not a player-visible
   rule — a decided state, no longer an open gap (#3788; slot a adjudicated
   non-buildable 2026-11-27).
+- ~~Difficulty only climbs: `speedMult` ramped +12%/level into a permanent
+  1.8× pin — §Gameplay's "After five levels, the difficulty briefly eases and
+  yet again progressively increases after each level" was absent~~ **CLOSED by
+  #3854** (never-dry audit): past level 5 the ramp steps back one notch
+  (1.48 → 1.36 at L6), then re-climbs +12%/level; levels 1–5 byte-equal to
+  the shipped curve, the cap lands at level 10. Pure level math — no dice,
+  seed replays unchanged. Pinned by the #3854 block (constant + tick proof)
+  and a `--mutate` mutant (ease removed must die).
