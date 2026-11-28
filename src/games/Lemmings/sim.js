@@ -254,7 +254,9 @@ function kill(g, L, cause) {
     L.live = false; L.state = 'dead'
     g.dead++
     if (cause === 'drown') g.drowned = (g.drowned | 0) + 1
-    g.events.push({ type: cause === 'fall' ? 'splat' : cause === 'drown' ? 'drown' : 'boom', id: L.id })
+    // #3844: the death event carries WHERE the lemming died (the shape `blast`
+    // already carries), so the shell can pop its OH NO! sprite on the corpse.
+    g.events.push({ type: cause === 'fall' ? 'splat' : cause === 'drown' ? 'drown' : 'boom', id: L.id, x: L.x, y: L.y })
 }
 
 // chest or feet in a water cell = drowned (#3828). Out-of-bounds reads as
