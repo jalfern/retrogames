@@ -257,6 +257,17 @@ if (MUT) {
     ok(/tier\.material = uv \? tier\.mats\.uv : tier\.mats\.day/.test(src), 'paintUv swaps the hive to its UV skin')
 }
 
+// #3916 (HUD collision, layout-only): the chrome stack owns the top band —
+// ARCADE y12-38 + FEEDBACK y44-70 (left), PAUSE y12-38 + PADS y44-70 +
+// WATCH y56-100 (right). The sun row sat at top-3, writing SUN under ARCADE
+// and the score under PAUSE. Pin the row below the tallest stack (100px +
+// gap = 6.5rem), honoring the safe-area inset, and forbid the old top-N.
+{
+    const src = readFileSync(new URL('../src/games/Beezee/index.jsx', import.meta.url), 'utf8')
+    ok(/left-4 right-4 flex[\s\S]{0,120}calc\(6\.[2-9]rem \+ var\(--sat, 0px\)\)/.test(src), 'the SUN/score HUD row hangs below the chrome stack (top ≥ 6.2rem + safe area — #3916)')
+    ok(!/top-[1-5] left-4 right-4 flex/.test(src), 'the HUD row never climbs back under ARCADE/PAUSE (#3916)')
+}
+
 console.log(`\nbeecheck: ${pass}/${pass + fails.length} checks passed${fails.length ? `  — ${fails.length} FAILED` : '  — OK'}`)
 fails.forEach(f => console.log(`  FAIL  ${f}`))
 process.exit(fails.length ? 1 : 0)

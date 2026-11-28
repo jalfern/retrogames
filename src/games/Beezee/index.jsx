@@ -807,7 +807,12 @@ const BeeGame = () => {
             <div ref={stageRef} className="absolute inset-0" />
 
             <div className={`absolute inset-0 pointer-events-none transition-opacity duration-300 ${play ? 'opacity-100' : 'opacity-0'}`}>
-                <div className="absolute top-3 left-4 right-4 flex items-center gap-3 text-amber-50 font-mono">
+                {/* #3916: chrome (GameChrome #437 + WATCH #1637) owns the top band —
+                    ARCADE y12-38, FEEDBACK y44-70 (left); PAUSE y12-38, PADS y44-70,
+                    WATCH y56-100 (right). The old top-3 wrote SUN under ARCADE and the
+                    score under PAUSE. Drop the row below the tallest stack (Sonar's
+                    #3688 doctrine, extended past the WATCH pill). Layout-only. */}
+                <div className="absolute left-4 right-4 flex items-center gap-3 text-amber-50 font-mono" style={{ top: 'calc(6.5rem + var(--sat, 0px))' }}>
                     <span className="text-sm font-bold tracking-widest">SUN</span>
                     <div className="w-36 h-3 bg-black/40 rounded-full overflow-hidden border border-black/40">
                         <div id="bee-sun" ref={setHud('sun')} className="h-full rounded-full" style={{ background: 'linear-gradient(90deg,#ffd873,#ff5a2a)', width: '100%' }} />
