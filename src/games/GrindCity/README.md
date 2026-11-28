@@ -23,10 +23,13 @@ identity legs, the #3381 saved/shared-run laws (codec round-trip through the
 sim, total-junk decode, `beatsLine`, `validBank`), the #3394 thinking-bot
 laws (clone purity, search determinism, proven air, searched-line wins five
 seeds), the #3474 waiting-line laws (restore-then-continue hashes, double
-restore, `validRun` junk table) and 27 mutants: letters, gap, replay, bed,
-gems, shade, grab, stall, tell, variety, nearmiss, bestline, bankline, codec,
-beats, store, sharewire, sfxduck, clone, need, sched, searchwire, restore,
-unpackclone, valid, runwire). Deep-drive the cabinet with
+restore, `validRun` junk table), the #3941 big-air laws (tier formula total,
+lazy ollie never pays, pump pays, chain bank, short-flip forfeit, both bot
+lines byte-identical to pre-feature scores) and 30 mutants: letters, gap,
+replay, bed, gems, shade, grab, stall, tell, variety, nearmiss, bestline,
+bankline, codec, beats, store, sharewire, sfxduck, clone, need, sched,
+searchwire, restore, unpackclone, valid, runwire, runage, bankcap, ampl).
+Deep-drive the cabinet with
 `DEV_PORT=5178 node scripts/lib/gcdrive.mjs` (also proves the REPLAY screen,
 the skip and the action-cam cut-in, the #3374 near-miss replay + badge, the
 attract best-line loop, and #3381: the store landing, a reload that still
@@ -121,6 +124,36 @@ on the existing rail maths, no new physics surfaces:
   (`grindcheck`'s honesty counter). `stateOf` grows additively
   (`railGrab/stall/stallT/stallBal`); `__grindTest.teleport` (DEV) lets the
   live drive reach a lip without burning ten seconds of skating.
+
+## Big air (#3941 slice 1): momentum pays
+
+The genre's oldest loop was missing a payday: speed. **Big air** closes it. A
+launch's *amplitude* is its apex height above its own launch point (`launchY`
+is stamped at every liftoff — ollie, drop-away crest, stall pop, grind pop —
+and `airTop` tracks the peak). A clean landing converts amplitude to score:
+
+- **BIG AIR** at ≥1.30 m above launch: `150 + 220 × (rise − 1.30)` pts.
+  A cruise-floor ollie rises ~0.9 m and pays nothing; a pumped ollie at
+  ~8 m/s clears the gate and ~10 m/s banks ~170+.
+- **MEGA AIR** at ≥1.90 m: same ramp, louder voice. In this park that's
+  crest launches off the roof deck (the second line) — the fast road pays
+  the biggest checks.
+- The payout enters the chain as its own trick (Big and Mega Air are
+  distinct uniques), so it grows the multiplier exactly like a grab or a
+  manual. Bails forfeit it with everything else; a flip landed short never
+  pays.
+- Honesty: `grindcheck` pins that BOTH autopilot lines — witness and
+  searched — score exactly what they scored before this feature existed
+  (18910 / 20702) with zero paid airs. The threshold sits deliberately
+  above what the bots' own launch points produce, so attract is untouched
+  and the human pump line owns the payday. `stateOf` carries live
+  `airRise`/`airBig` and the last paid `lastAir` — and the pay uses the
+  same 2-decimal rise the HUD shows (#3233 chip law: read = commit).
+- Cabinet: a paid air cuts the fisheye action cam and gets its own rising
+  chirp (`bigair`) / three-note fanfare (`megair`).
+
+`RUN_V` is 3: the amplitude fields joined the sim, so waiting lines saved by
+the old shape retire instead of resuming a foreign engine.
 
 ## Cameras and the run replay (#3225)
 

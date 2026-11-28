@@ -331,6 +331,8 @@ const GrindCityGame = () => {
             else if (e.startsWith('grind:end')) AC.playTone(900, 0.07, 'square', 0.05 * vs)
             else if (e.startsWith('manual:start')) AC.playTone(420, 0.04, 'triangle', 0.06 * vs)
             else if (e === 'manual180') AC.playSweep(560, 940, 0.12, 'triangle', 0.09 * vs)   // the 180 upgrade has its own voice (#3233 tail)
+            else if (e === 'bigair') { AC.playSweep(500, 1050, 0.22, 'triangle', 0.11 * vs); AC.playTone(1046, 0.16, 'sine', 0.09 * vs, 0.14) }   // amplitude pays (#3941)
+            else if (e === 'megair') { [784, 1046, 1318].forEach((f, i) => AC.playTone(f, 0.14, 'square', 0.1 * vs, i * 0.08)); AC.playSweep(600, 1400, 0.3, 'triangle', 0.1 * vs) }
             else if (e.startsWith('trick:Manual')) AC.playTone(620, 0.07, 'triangle', 0.08 * vs)
             else if (e.startsWith('trick:')) { AC.playTone(760, 0.06, 'square', 0.07 * vs); AC.playTone(980, 0.08, 'square', 0.06 * vs, 0.05) }
             else if (e.startsWith('land:')) {
@@ -696,7 +698,8 @@ const GrindCityGame = () => {
             // Smoothing lives INSIDE a cam mode; crossing modes is a hard cut
             // (snap + white flash + FOV punch), the Tony Hawk transition grammar.
             const grabAir = actor.air && actor.airTrick && actor.airTrick.grab
-            const wantAction = screenRef.current === 'play' && (vst.grinding || vst.manual || grabAir || vst.stall || !!vst.railGrab)
+            // big airs earn the fisheye too (#3941): when amplitude pays, sell the air in the wide lens
+            const wantAction = screenRef.current === 'play' && (vst.grinding || vst.manual || grabAir || vst.stall || !!vst.railGrab || vst.airBig)
             const wantMode = replayMode ? 'replay' : wantAction ? 'action' : 'chase'
             if (wantMode !== camMode) { camMode = wantMode; camCut = 1 }
             camCut = Math.max(0, camCut - DT * 5)

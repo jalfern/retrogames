@@ -35,6 +35,22 @@ export const TRICK_PTS = {
     Grab: 60, Spin: 40, Flip: 80, Boardslide: 100, '50-50': 90,
     Manual: 30, Gap: 500, Manual180: 120,
     Feeble: 70, Crooked: 70, Stall: 40,
+    'Big Air': 150, 'Mega Air': 150,
+}
+
+// BIG AIR (#3941 slice 1 — momentum pays): a launch's amplitude is its apex
+// height above its own launch point. A lazy ollie at the cruise floor rises
+// ~0.9 m (vy ≈ 4.9) and pays nothing — the tiers need pump-assisted launches:
+// an ollie at speed (vy grows with speed) or a fast crest launch where the
+// ground drops away. Clean landings only: a bail returns from land() before
+// this pays, and a chain forfeit forfeits it with everything else.
+export const BIG_RISE = 1.30   // m above launch → BIG AIR
+export const MEGA_RISE = 1.90  // m above launch → MEGA AIR
+export const BIG_PER_M = 220   // pts per metre past the threshold
+export function bigAir(rise) {
+    if (!Number.isFinite(rise) || rise < BIG_RISE) return null
+    const tier = rise >= MEGA_RISE ? 'Mega Air' : 'Big Air'
+    return { tier, pts: TRICK_PTS[tier] + Math.round(BIG_PER_M * (rise - BIG_RISE)) }
 }
 
 // deterministic mulberry32 stored as an integer counter in state
@@ -61,6 +77,9 @@ export function makeGame(seed = 1, mode = 'run') {
         manualT: 0,
         grindCd: 0,
         airVXZ: 0,             // scratch: speed at the last launch (read falsy-safe; declared so the #3470 snapshot schema sees every field step() can carry)
+        launchY: 0,            // y at the moment of launch — #3941 amplitude base
+        airTop: 0,             // apex y so far this air — #3941 amplitude peak
+        lastAir: null,         // last paid big air {tier, pts, rise} — the HUD can't over-promise
         gapArmed: false, overHole: false,
         chain: [],               // trick names this chain (uniques drive mult)
         chainPts: 0, chainClean: 0,
@@ -226,6 +245,17 @@ function land(s) {
         }
     }
     s.overHole = false
+    // BIG AIR (#3941 slice 1): the launch's amplitude cashes out on a clean
+    // touchdown — pump speed pays, rides the chain like any other trick.
+    // The pay uses the same 2-decimal rise the HUD chip shows (manual-chip
+    // law #3233): what the player reads is exactly what the sim commits.
+    const amp = bigAir(Math.round((s.airTop - s.launchY) * 100) / 100)
+    if (amp) {
+        addTrick(s, amp.tier, amp.pts)
+        s.lastAir = { tier: amp.tier, pts: amp.pts, rise: Math.round((s.airTop - s.launchY) * 100) / 100 }
+        say(s, `${amp.tier.toUpperCase()} +${amp.pts}`)
+        ev(s, amp.tier === 'Mega Air' ? 'megair' : 'bigair')
+    }
     s.manualT = MANUAL_GRACE   // grace window counted down in grounded step
     ev(s, `land:${Math.min(9, Math.abs(s.vy)).toFixed(1)}`)
     s.vy = 0
@@ -328,6 +358,7 @@ export function step(s, input, dt = 1 / 60) {
             s.stall = null
             s.grindCd = 0.3
             s.air = true; s.vy = 2.8; s.speed = 1.2
+            s.launchY = s.y; s.airTop = s.y   // amplitude base (#3941)
             s.airTrick = { t: 0, grab: null, flip: 0, flipRot: 0, rot: 0, spin: 0 }
             s.chainClean = 0
             ev(s, 'ollie')
@@ -366,6 +397,7 @@ export function step(s, input, dt = 1 / 60) {
             s.grind = null
             s.grindCd = 0.3
             s.air = true; s.vy = OLLIE_VY * 0.9
+            s.launchY = s.y; s.airTop = s.y   // amplitude base (#3941)
             s.airTrick = { t: 0, grab: null, flip: 0, flipRot: 0, spin: 0, spinDir: 0, rot: 0 }
             s.chainClean = 0
             ev(s, 'ollie')
@@ -374,6 +406,7 @@ export function step(s, input, dt = 1 / 60) {
             s.grind = null
             s.grindCd = 0.4
             s.air = true; s.vy = 1.2
+            s.launchY = s.y; s.airTop = s.y   // amplitude base (#3941)
             s.airTrick = null
             ev(s, 'grind:end')
         }
@@ -404,6 +437,7 @@ export function step(s, input, dt = 1 / 60) {
         s.z += Math.sin(s.heading) * s.speed * dt
         s.vy -= G * dt
         s.y += s.vy * dt
+        if (s.y > s.airTop) s.airTop = s.y   // amplitude peak (#3941)
         s.x = Math.max(-BOUND, Math.min(BOUND, s.x))
         s.z = Math.max(-BOUND, Math.min(BOUND, s.z))
         // gap sensing (the trench runs along +z)
@@ -501,6 +535,7 @@ export function step(s, input, dt = 1 / 60) {
     if (aEdge && !manualStarted) {   // ollie
         s.air = true
         s.vy = OLLIE_VY + s.speed * 0.16
+        s.launchY = s.y; s.airTop = s.y   // amplitude base (#3941)
         s.airTrick = { t: 0, grab: null, flip: 0, flipRot: 0, rot: 0, spin: steer * 180 }
         s.chainClean = 0
         s.chainPts += 10
@@ -517,6 +552,7 @@ export function step(s, input, dt = 1 / 60) {
         if (drop < -(0.06 + 0.55 * s.speed * dt) && s.speed > 3) {
             s.air = true
             s.vy = Math.max(0.4, s.speed * Math.max(0, s.lastSlope) * 0.8)
+            s.launchY = s.y; s.airTop = s.y   // amplitude base (#3941)
             s.airTrick = { t: 0, grab: null, flip: 0, flipRot: 0, rot: 0, spin: 0 }
             s.airVXZ = s.speed
             ev(s, 'launch')
@@ -570,6 +606,12 @@ export function stateOf(s) {
         stall: !!s.stall,
         stallT: s.stall ? Math.round(s.stall.t * 100) / 100 : 0,
         stallBal: s.stall ? Math.round(s.stall.bal * 1000) / 1000 : 0,
+        // big air (#3941): live amplitude above the launch point + whether THIS
+        // air has crossed the pay threshold, and the last paid air (HUD truth —
+        // same law the payout in land() uses, so the chip can't over-promise).
+        airRise: s.air ? Math.round((s.airTop - s.launchY) * 100) / 100 : 0,
+        airBig: s.air && bigAir(s.airTop - s.launchY) !== null,
+        lastAir: s.lastAir,
         chain: s.chain.length, chainPts: Math.round(s.chainPts), mult: mult(s),
         letters: s.letters, gapDone: s.gapDone, goalsDone: s.goalsDone,
         gems: gemCount(s.gemBits), gemTotal: GEMS.length, gemsAll: s.gemsAll, secret: s.secretFound,
@@ -702,7 +744,9 @@ export function hashState(s) {
 // #3476: packs carry the wall clock (`ms`) and a line older than a day
 // retires — yesterday's grind is stale concrete, not a waiting friend.
 // A missing stamp is junk (strict), so a hand-made pack can't dodge the age law.
-export const RUN_V = 2
+// #3941 slice 1: sim state grows launchY/airTop/lastAir (big-air amplitude) —
+// waiting lines saved by the old shape retire rather than resume a foreign sim.
+export const RUN_V = 3
 export const RUN_MAX = FREE_TIME * 60 + 600   // the 5:00 free clock + settle headroom
 export const RUN_MAX_AGE_MS = 24 * 60 * 60 * 1000
 
