@@ -59,6 +59,19 @@ export const LEVELS = [
             // the original's descents are always stepped.
             for (let x = 18; x <= 22; x++) c.column(x, 6 + Math.abs(x - 19), 23, DIRT)
             for (let x = 23; x <= 38; x++) c.column(x, x - 15, 23, DIRT)
+            // #3908 the shoulder: since descents became walked (step-down), an
+            // all-one-row face has no air left anywhere and #3853's parachute
+            // lost its stage. Carve ONE cell: col 24's top step drops two rows
+            // for a single tick of the road — every eastbound body takes a real
+            // ~0.2 s fall and lands on the same surface row the stair resumes
+            // at (col 25 is still k10), so arrivals along the single-file
+            // descent shift alike and the plinth choreography rides untouched.
+            // The span proves itself here too: the lower shelf is in reach, so
+            // a carrying builder lays a plank ACROSS the shoulder and the crowd
+            // walks the lean — wood over air, exactly the original's board.
+            // (A west hummock and a cut pit were tried and reverted: they wall
+            // the bounce lane off the pond — the tutorial's pinned teeth.)
+            c.set(24, 9, AIR)
             // exit plinth
             c.rect(40, 23, 44, 23, DIRT)
             // #3828 the pond: the original's first level had one, and the

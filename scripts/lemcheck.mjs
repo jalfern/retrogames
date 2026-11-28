@@ -740,7 +740,13 @@ section('BUILDER (#3863: placed planks — wood is ground, dirt-only rules hold)
             '#3863: a plank was laid (or held) over open water — ponds drown builders too')
     }
 
-    // B2: hole deeper than one tile — out of the plank's reach; the drop is taken.
+    // B2: hole two tiles deep — #3908 rewrote this pin (was: "out of the
+    // plank's reach; the drop is taken"). The SLOPED SPAN now bridges it at
+    // the LOWER level: wood lands one row down on the deeper shelf, the
+    // builder steps onto its own board and the drop becomes a walked stair.
+    // A carpet still costs one wood per laying, so the descent drains cargo —
+    // that economy is #3863's and still holds; what changed is that the crowd
+    // now crosses above the hole floor instead of dropping into it.
     {
         const grid = mk((x, y) => (x < 10 ? (y >= 10 && y <= 13 ? sim.DIRT : 0) : (y >= 12 && y <= 13 ? sim.DIRT : 0)))
         const g = sim.makeGame(bmeta({ spawn: { x: 3, y: 10, dir: 1 }, skills: { build: 3 } }), grid)
@@ -748,8 +754,8 @@ section('BUILDER (#3863: placed planks — wood is ground, dirt-only rules hold)
         sim.assign(g, 0, 'build')
         runFor(g, 400)
         const L = g.lemmings[0]
-        ok(g.grid[10 * sim.W + 10] === sim.AIR && g.skills.build === 3 && L.live && L.y === 12,
-            `#3863: a 2-tile descent was planked (fall reach broken) or the drop killed (${L.state} y=${L.y})`)
+        ok(g.grid[11 * sim.W + 10] === sim.PLANK && g.skills.build === 0 && L.live && L.y === 12,
+            `#3908: the two-tile descent was not spanned (${L.state} y=${L.y} cargo=${g.skills.build}) — wood must reach the lower shelf and carry the walker`)
     }
 
     // C: staircase — the road follows the steps down, and 12 wood is 12 planks.
@@ -910,13 +916,137 @@ section('BUILDER (#3863: placed planks — wood is ground, dirt-only rules hold)
         const gh = sim.makeGame(bmeta({ time: 14, spawnCount: 1, spawnEvery: 1,
             spawn: { x: 4.5, y: 23, dir: 1 }, exit: { x: 46, y: 22 }, skills: { block: 1, build: 12 } }), hg)
         sim.step(gh); const holeC = offerAt(gh, 7.36, 7.52)
-        ok(Array.isArray(holeC) && holeC.some(c => c.skill === 'block') && holeC.every(c => c.skill !== 'build'),
-            `#3866: the deep-hole offer is broken — got ${JSON.stringify(holeC)} (a 2-tile hole has no shelf; wood must not be even considered there)`)
+        // #3908 rewrote this pin (was: "a 2-tile hole has no shelf; wood must
+        // not be even considered there"). The span reaches the LOWER shelf: at
+        // a two-row hole with solid under the lower row, the bridge becomes a
+        // real proposal — the block idea rides with it, and the offer still
+        // must not invent wood over a three-row void (hg3 below: reach stops
+        // where the original's planks stop — at ground).
+        ok(Array.isArray(holeC) && holeC.some(c => c.skill === 'block') && holeC.some(c => c.skill === 'build'),
+            `#3908: the two-row hole offer is broken — got ${JSON.stringify(holeC)} (want block AND build: the span reaches the lower shelf)`)
+        const hg3 = new Uint8Array(sim.W * sim.H).fill(sim.AIR)
+        for (let x = 0; x < sim.W; x++) { hg3[23 * sim.W + x] = sim.DIRT; hg3[26 * sim.W + x] = sim.STEEL }
+        for (let x = 8; x <= 10; x++) hg3[23 * sim.W + x] = sim.AIR
+        const gh3 = sim.makeGame(bmeta({ time: 14, spawnCount: 1, spawnEvery: 1,
+            spawn: { x: 4.5, y: 23, dir: 1 }, exit: { x: 46, y: 22 }, skills: { block: 1, build: 12 } }), hg3)
+        sim.step(gh3); const voidC = offerAt(gh3, 7.36, 7.52)
+        ok(Array.isArray(voidC) && voidC.some(c => c.skill === 'block') && voidC.every(c => c.skill !== 'build'),
+            `#3908: wood was offered into a three-row void — got ${JSON.stringify(voidC)} (the span stops at two; planks need ground)`)
     }
     {
         for (let i = 0; i < LEVELS.length; i++) {
             ok((LEVELS[i].skills.build | 0) >= 12, `#3863: level ${i} (${LEVELS[i].name}) ships less than the original's 12-plank cargo`)
         }
+    }
+}
+
+// ---------------------------------------------------------------- slope road ---
+// #3908 — the stair is walked, not fallen. Step-down mirrors the one-tile
+// mount: a floor-end whose shelf sits one row below is descended at walking
+// pace, no fall state, no fallDist. The span lays wood on the LOWER shelf of
+// a two-row drop, so the road follows the stair at the angle the LOOK
+// (#3879/#3904) already draws. Reach stops where the original's planks stop:
+// three rows is void — and void still falls, and still kills past maxFall.
+section('SLOPE ROAD (#3908: step-down mirrors mount, planks span the stair)')
+{
+    const mk = (f) => {
+        const g = new Uint8Array(sim.W * sim.H).fill(sim.AIR)
+        for (let y = 0; y < sim.H; y++) for (let x = 0; x < sim.W; x++) { const t = f(x, y); if (t) g[y * sim.W + x] = t }
+        return g
+    }
+    const sm = (over) => ({
+        name: 'S', time: 60, spawnCount: 1, spawnEvery: 1, need: 99, exit: { x: 46, y: 0 },
+        ...over, skills: { block: 0, bomb: 0, climb: 0, dig: 0, float: 0, build: 0, ...(over.skills || {}) },
+    })
+    const runFor = (g, n, stop) => { for (let t = 0; t < n && !(stop && g.lemmings.length && stop(g)); t++) sim.step(g) }
+
+    // 1: three steps down, one plain walker — it never leaves the ground.
+    // Three stepdown events, zero fall, zero fallDist: the original's descent,
+    // where only DROPS are falls and stairs are ground at an angle.
+    {
+        const grid = mk((x, y) => { const s = x < 5 ? 10 : x < 10 ? 11 : x < 15 ? 12 : 13; return y >= s && y <= 16 ? sim.DIRT : 0 })
+        const g = sim.makeGame(sm({ spawn: { x: 3, y: 10, dir: 1 } }), grid)
+        let steps = 0, fell = false, maxFd = 0
+        for (let t = 0; t < 700; t++) {
+            sim.step(g)
+            const L = g.lemmings[0]
+            if (!L) continue
+            if (L.state === 'fall') fell = true
+            maxFd = Math.max(maxFd, L.fallDist)
+            if (g.events.some(e => e.type === 'stepdown' && e.id === 0)) steps++
+            if (L.x > 15.4) break
+        }
+        const L = g.lemmings[0]
+        ok(!fell && maxFd < 0.01 && steps === 3 && L.live && L.y === 13 && L.x > 15.4,
+            `#3908: the staircase was not walked (fell=${fell} fallDist=${maxFd} stepdowns=${steps} y=${L.y} x=${L.x.toFixed(1)}) — descents must step, not fall (the <0.01 allowance is the spawn tick's gravity blip)`)
+    }
+
+    // 2: a leaned road carries the crowd — boards pre-laid one row lower at
+    // each reach (the span's own output) read as a continuous slope: the
+    // walker rides them without ever falling, foot by foot, to the floor.
+    {
+        const grid = mk((x, y) => (x < 10 ? (y >= 10 && y <= 16 ? sim.DIRT : 0) : x >= 12 ? (y >= 13 && y <= 16 ? sim.DIRT : 0) : 0))
+        grid[11 * sim.W + 10] = sim.PLANK
+        grid[12 * sim.W + 11] = sim.PLANK
+        const g = sim.makeGame(sm({ spawn: { x: 3, y: 10, dir: 1 } }), grid)
+        let steps = 0, fell = false
+        for (let t = 0; t < 700; t++) {
+            sim.step(g)
+            const L = g.lemmings[0]
+            if (!L) continue
+            if (L.state === 'fall') fell = true
+            if (g.events.some(e => e.type === 'stepdown' && e.id === 0)) steps++
+            if (L.x > 12.4) break
+        }
+        const L = g.lemmings[0]
+        ok(!fell && steps === 3 && L.live && L.y === 13 && L.x > 12.4,
+            `#3908: the leaned boards did not carry the walker over the drop (fell=${fell} stepdowns=${steps} y=${L.y} x=${L.x.toFixed(1)}) — a spanned road must be walkable`)
+    }
+
+    // 3: fall honesty — the step is a LEG rule for one-row descents only.
+    // Two rows with no shelf within a step still FALL (survivable), and the
+    // four-row drop still kills past maxFall: #3849 rides past the new rule.
+    {
+        const grid2 = mk((x, y) => (x < 10 ? (y >= 10 && y <= 13 ? sim.DIRT : 0) : (y >= 12 && y <= 13 ? sim.DIRT : 0)))
+        const g = sim.makeGame(sm({ spawn: { x: 3, y: 10, dir: 1 } }), grid2)   // no builder, no wood
+        let fell = false
+        for (let t = 0; t < 500; t++) {
+            sim.step(g)
+            const L = g.lemmings[0]
+            if (L.state === 'fall') fell = true
+        }
+        ok(fell && g.lemmings[0].live && g.lemmings[0].state === 'walk' && g.lemmings[0].y === 12,
+            `#3908: a two-row drop without wood stopped being a fall (fell=${fell} ${g.lemmings[0].state} y=${g.lemmings[0].y}) — legs may not span what only planks could`)
+        const grid4 = mk((x, y) => (x < 10 ? (y >= 10 && y <= 13 ? sim.DIRT : 0) : y === 14 ? sim.DIRT : 0))
+        const g4 = sim.makeGame(sm({ spawn: { x: 3, y: 10, dir: 1 } }), grid4)
+        runFor(g4, 500, () => !g4.lemmings[0].live)
+        ok(g4.dead === 1, `#3908: the four-row drop stopped killing (dead=${g4.dead}) — maxFall must ride past the step rule`)
+    }
+
+    // 4: the span still refuses water — deeper pond, two rows of it. Wood
+    // needs ground at its landing row, and a lake bed is not ground.
+    {
+        const grid = mk((x, y) => (x < 10 ? (y >= 10 && y <= 13 ? sim.DIRT : 0) : y >= 13 ? sim.DIRT : y >= 11 ? sim.WATER : 0))
+        const g = sim.makeGame(sm({ spawn: { x: 3, y: 10, dir: 1 }, skills: { build: 3 } }), grid)
+        runFor(g, 10)
+        sim.assign(g, 0, 'build')
+        runFor(g, 400, () => g.dead >= 1)
+        ok(g.skills.build === 3 && g.drowned === 1 && g.grid[11 * sim.W + 10] === sim.WATER,
+            `#3908: wood reached into a deep pond (cargo=${g.skills.build}) — water is not ground at either reach`)
+    }
+
+    // 5: determinism rides the sloped road — the span script replays to one
+    // world, and a world without it hashes differently (the audit can SEE
+    // the road; a desync in step-down or span cannot hide).
+    {
+        const grid = mk((x, y) => (x < 10 ? (y >= 10 && y <= 13 ? sim.DIRT : 0) : (y >= 12 && y <= 13 ? sim.DIRT : 0)))
+        const meta = sm({ spawn: { x: 3, y: 10, dir: 1 }, skills: { build: 12 } })
+        const cmds = [{ tick: 40, id: 0, skill: 'build' }]
+        const a = sim.replay(meta, grid, cmds, { maxTicks: 400 })
+        const b = sim.replay(meta, grid, cmds, { maxTicks: 400 })
+        const c = sim.replay(meta, grid, [], { maxTicks: 400 })
+        ok(sim.stateHash(a) === sim.stateHash(b) && sim.stateHash(a) !== sim.stateHash(c) && a.grid[11 * sim.W + 10] === sim.PLANK,
+            '#3908: the sloped road replayed unstable or hash-blind — step-down/span desyncs must be visible to the audit')
     }
 }
 

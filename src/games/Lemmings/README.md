@@ -33,6 +33,10 @@ supplies fails the build.
     whole plank-road, climbers refuse their face (no dirt handhold), blasts
     clear them; the digger never chews wood because the mount/turn checks read
     the same row the chest would — wood faces arrive as walls first.
+    **Step-down** (#3908): a floor-end with a shelf exactly one row below is
+    *walked*, not fallen — the mirror of the one-tile mount. Feet land on the
+    shelf at walking pace and no fallDist accumulates; falls begin where the
+    shelves run out, and > `CFG.maxFall` still kills.
   - Skills: BLOCKER, BOMBER, CLIMBER, DIGGER, **FLOATER** (#3827),
     **BUILDER** (#3863). Climber, digger and floater are flags for life —
     re-granting any of them refuses rather than burning supply (#422). The
@@ -42,7 +46,8 @@ supplies fails the build.
     four original mechanics; the two floaters per level are pure player-side
     slack. BUILDER joined the search space in stage 2 (#3866): `candidates()`
     offers it at exactly the cells walker() lays wood (one-tile descent + solid
-    shelf — so the solver can never ask for a plank the world would refuse),
+    shelf, plus #3908's span: a two-row drop whose LOWER row is solid — so the
+    solver can never ask for a plank the world would refuse),
     `scoreState` counts standing planks as progress, and THE MASSIF's trench
     makes wood load-bearing there (see Builder below).
 - `levels.js` — levels CARVED from solid rock in code (IronKeep lesson), each
@@ -108,10 +113,6 @@ breakable — every pin here has survived a manual mutation.
 
 ## Honest gaps
 
-- Planks speak one cell per step: the original's boards span their stair at an
-  angle — the LOOK (#3879) renders that lean (tread + nose toward the downhill
-  neighbour), but the grid stays whole cells, so the road tracks a staircase
-  plank-per-step and a plank cannot span a gap wider than its shelf.
 - Float-while-digging (the original's floating lemming chews straight down
   through dirt while descending) does not port to the horizontal-tunnel digger;
   it needs either a second dig mode or a rethink of the dig model.
@@ -122,6 +123,26 @@ breakable — every pin here has survived a manual mutation.
 
 ## Closed
 
+- #3908 (the sim walks the stair) — descents are now the original's, at both
+  ends of the plank: **step-down** mirrors the one-tile mount in `walker()`
+  (floor ends, shelf one row below → feet land, walk continues, no `fall`,
+  no fallDist — a staircase can be paced forever; two rows with nothing to
+  step onto still fall, and >3 still kills, #3849 rides untouched); **the span**
+  reaches the lower shelf of a two-row drop, laying wood one row down — the
+  board spans the stair at the angle the LOOK already draws, and the crowd
+  steps onto it. Three rows stays out of reach; water is not ground at either
+  reach. SPIRE got a two-row notch mid-stair (the all-stepped face had no air
+  left once steps were free — the notch keeps a survivable fall in the game,
+  and #3853's parachute has its stage again). Feel: the `stepdown` event
+  plays a heel-plant under the mount chirp. `stateHash` format unchanged —
+  no new state fields; solver scripts shift (descents are faster), every hash
+  re-derives. Harness: lemcheck 333 → **338** — new SLOPE ROAD section
+  (staircase walked: zero fall, zero fallDist, exact step count; leaned boards
+  carry the crowd; two-row drop without wood still falls, four-row still kills;
+  span refuses deep ponds; sloped road replays to one world and the audit can
+  see it), B2 rewritten under this issue's warrant (the two-tile descent IS
+  spanned now), and the deep-hole OFFER pin rewritten — wood is now a proposal
+  at a two-row hole and still forbidden over a three-row void.
 - #3879 (LOOK slice) — the game moves like the original now: boards LEAN into
   descents (render-only: flat tread where feet land, nose toward the nearest
   downhill board at reach 2, overhang tucked under the row-first scan — the
