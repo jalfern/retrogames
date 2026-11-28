@@ -37,7 +37,15 @@ export const LEVELS = [
         // by the perfect solver, and Jon watched one climber die and a
         // "winnable" level become mathematically lost. A tutorial must be
         // losable-ly winnable: six climbers, four needed, two to burn.
-        skills: { block: 0, bomb: 0, climb: 6, dig: 0, float: 2 },
+        // #3864 one blocker, the original's answer at a pond edge: the spawn
+        // lane bounces off the spire back toward the west water, and holding
+        // the bounce short of the drown is a tool the player now has. The
+        // block is one-shot like the original — climb over your own blocker
+        // and the line opens (see sim wakeCheck). Unused supply still scores.
+        // defaultSkill: the tutorial arm stays CLIMB even though BLOCKER now
+        // outscores it in SKILLS order (see sim defaultSkill).
+        defaultSkill: 'climb',
+        skills: { block: 1, bomb: 0, climb: 6, dig: 0, float: 2 },
         proves: ['climb'],
         build() {
             const c = new Carve()

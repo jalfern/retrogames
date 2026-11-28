@@ -78,9 +78,6 @@ breakable — every pin here has survived a manual mutation.
   turns a crowd into a ladder). It is the one skill this engine has no
   plank-platform concept for; adding it means placed-cell geometry the solver
   must learn to reason about (and a re-solve of every level).
-- Blockers never wake: the original turns a blocker back into a walker once
-  another lemming climbs over him; here the block is permanent. Levels are
-  designed for permanent blocks, so the fix must land with a re-solve.
 - Float-while-digging (the original's floating lemming chews straight down
   through dirt while descending) does not port to the horizontal-tunnel digger;
   it needs either a second dig mode or a rethink of the dig model.
@@ -90,6 +87,21 @@ breakable — every pin here has survived a manual mutation.
   water is out of scope by fidelity, not an open gap.
 
 ## Closed
+
+- #3864 — blocker-wake: the block is one-shot like the original. A CLIMBER
+  treats a blocker ahead as a handhold — mounts his head, lands on the far
+  side (ground if ground, the pond if that's what the far side is) — and any
+  live body crossing the head line spends the block: `releaseBlocker` puts the
+  blocker back to `walk` in the direction he faced when he blocked (at a pond
+  rim that walks him under — the original judges the player's shoreline).
+  `traffic` keeps turning non-climbers; corpse-blocking untouched. THE SPIRE
+  ships `block: 1` so the law is live on the marquee board: the solver spends
+  it at the west pond rim (attract shows the line) and SPIRE carries block +
+  climb together, so a player can open their own line — climb over your own
+  blocker, watch it wake. Re-solve: all four levels win with slack,
+  load-bearing proofs and determinism unchanged; three new pins (climb-over +
+  release, head-line landing, uncrossed-line-holds) with the release neutered
+  as the red drift. **CLOSED by #3864**
 
 - #3859 — ponds everywhere: three of four boards were drought-dead and the
   solver could not even SEE a pond rim (its edge test was AIR-only, so no

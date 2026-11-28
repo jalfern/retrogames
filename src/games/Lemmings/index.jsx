@@ -23,7 +23,7 @@ import { makeFitCanvas } from '../../utils/fitCanvas'
 import { LEVELS, buildLevel } from './levels.js'
 import { LAYOUT } from './layout.js'
 import { PRESS, MESSAGES, demoFloatPick } from './attract.js'
-import { makeGame, step, solve, assign, nearestLemming, stateHash, SKILLS, SKILL_NAME, SKILL_KEY, CFG, W, H, DIRT, STEEL, WATER, FIXED_DT } from './sim.js'
+import { makeGame, step, solve, assign, nearestLemming, stateHash, SKILLS, SKILL_NAME, SKILL_KEY, CFG, W, H, DIRT, STEEL, WATER, FIXED_DT, defaultSkill } from './sim.js'
 import WatchButton, { WatchToast, AttractWatchButton } from '../../components/WatchButton'
 import { isWatchKey, isTakeoverKey, playWatchStart, playWatchStop, watchSfxLog, WATCH_ATTRACT_HINT } from '../../utils/watch'
 
@@ -137,7 +137,7 @@ const LemGame = () => {
             demoFloats = 0                            // #3853 each demo cycle may show its own parachute
             runCmds = []
             cursor.x = meta.spawn.x; cursor.y = meta.spawn.y - 1
-            selected = (SKILLS.find(s => meta.skills[s] > 0)) || 'climb'
+            selected = defaultSkill(meta)
             watchScript = null                            // #1637 a new level starts in your hands
             splashes.length = 0                       // #3828 no ghost splashes across boards
             cries.length = 0                          // #3844 nor ghost wails
@@ -211,6 +211,8 @@ const LemGame = () => {
                 else if (e.type === 'landsoft') audioController.playTone(200, 0.07, 'sine', 0.035)
                 else if (e.type === 'step') audioController.playTone(220, 0.03, 'triangle', 0.025)
                 else if (e.type === 'crest') audioController.playTone(880, 0.07, 'sine', 0.05)
+                else if (e.type === 'climbblock') audioController.playSweep(300, 620, 0.12, 'triangle', 0.05)
+                else if (e.type === 'wake') audioController.playSweep(620, 300, 0.14, 'square', 0.05)
                 else if (e.type === 'turn') audioController.playTone(90, 0.02, 'triangle', 0.015)
                 else if (e.type === 'spawn') audioController.playTone(330, 0.05, 'square', 0.04)
                 else if (e.type === 'win') audioController.playSweep(392, 1568, 0.7, 'square', 0.1)

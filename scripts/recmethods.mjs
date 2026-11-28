@@ -39,7 +39,7 @@ import { press, release, rawPad, clearAllSlots, setPointer, currentPad, pointerG
 import { makeGame as makeBob, step as bobStep, stateHash as bobHash } from '../src/games/BubbleBobble/sim.js'
 import { decide } from '../src/games/BubbleBobble/planner.js'
 import { LEVELS, buildLevel } from '../src/games/Lemmings/levels.js'
-import { makeGame as makeLem, step as lemStep, stateHash as lemHash, assign as lemAssign, solve, SKILLS, W as LW, H as LH } from '../src/games/Lemmings/sim.js'
+import { makeGame as makeLem, step as lemStep, stateHash as lemHash, assign as lemAssign, solve, W as LW, H as LH, defaultSkill } from '../src/games/Lemmings/sim.js'
 
 const here = dirname(fileURLToPath(import.meta.url))
 const REPLAYS = join(here, '..', 'public', 'replays')
@@ -265,7 +265,7 @@ const pickPoint = (target, cands) => {
 const recordLem = () => {
     const { meta, grid } = buildLevel(LEM_SEED % LEVELS.length)
     const g = makeLem(meta, grid)
-    const selected = SKILLS.find((s) => meta.skills[s] > 0) || 'climb'
+    const selected = defaultSkill(meta)   // the level's declared tutorial arm (#3864), single source with the game
     const cursor = { x: meta.spawn.x, y: meta.spawn.y - 1 }
     const sol = solve(makeLem(meta, grid))
     const cmds = acceptedCmds(sol.cmds, selected)
@@ -379,7 +379,7 @@ const replayLem = (rec2) => {
             gest = { pd: false, aim: null }
             cursor.x = meta.spawn.x
             cursor.y = meta.spawn.y - 1
-            selected.v = SKILLS.find((s) => meta.skills[s] > 0) || 'climb'
+            selected.v = defaultSkill(meta)
             counts.assigned = 0
         },
         step: (pads) => {

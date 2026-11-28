@@ -219,6 +219,88 @@ await wait(600)
 }
 r.check('pond: zero page errors on the water board', errors.length === 0, errors.slice(0, 4).join(' | '))
 
+// ---- #3864 BLOCKER-WAKE: the one-shot law found by a player, real keys ----
+// lemcheck pins the mechanics; this proves the PLAYER can stage the original's
+// combo on the marquee board: a westbound walker is stopped mid-lane by a
+// line (block), a walker sent up behind it is made a CLIMBER — and instead of
+// turning like every body before it, it crosses the head. The block is spent:
+// the blocker resumes walking (wakes), the climber lands on the far side.
+// Staged mid-ground on dry ground, deliberately away from the spawn/pond
+// conveyor, so the wake observation cannot be masked by drown-shuffle noise.
+await page.goto(URL, { waitUntil: 'load' })
+await page.waitForFunction(() => !!window.__lemTest, null, { timeout: 20000 })
+await key('KeyJ')
+await wait(600)
+{
+    // aim helper with a lead: the walker covers ~0.5 tile per poll, so aim
+    // where the body is about to be, press on cursor-match, confirm by the
+    // supply actually spent (the ledger never lies about a charge).
+    const aimAt = async (wx, wy) => {
+        const pt = at(wx, wy)
+        for (let k = 0; k < 6; k++) {
+            await page.mouse.move(pt.x, pt.y)
+            const c = (await probe()).cursor
+            if (Math.abs(c.x - wx) < 0.9 && Math.abs(c.y - (wy - 1)) < 0.9) return true
+            await wait(100)
+        }
+        return false
+    }
+    const assignLead = async (skill, skillKey, pick) => {
+        await key(skillKey)
+        for (let t = 0; t < 200; t++) {
+            const p = await probe()
+            if (p.screen !== 'play') break
+            const cand = pick(p)
+            if (cand && await aimAt(cand.x - 0.5, cand.y)) {
+                const before = (await probe()).skills[skill]
+                await key('Space')
+                await wait(120)
+                const q = await probe()
+                if (q.skills[skill] < before) {
+                    const L = q.lemmings.find(l => l.id === cand.id)
+                    const got = skill === 'block' ? (L && L.state === 'block') : (L && L.climber)
+                    if (got) return { id: cand.id, x: cand.x, y: cand.y }
+                    // the charge went to a nearer body — keep watching for the next candidate
+                }
+            }
+            await wait(100)
+        }
+        return null
+    }
+    // (1) stop a westbound bouncer mid-lane (dry ground, clear of the pond)
+    const blk = await assignLead('block', 'Digit1', p =>
+        p.lemmings.find(L => L.live && L.state === 'walk' && L.dir === -1 && L.x > 6.5 && L.x < 9.5 && Math.abs(L.y - 23) < 0.6))
+    r.check('wake: a BLOCKER holds a walker mid-lane (aim + Space)', !!blk, blk ? `#${blk.id}@${blk.x.toFixed(1)}` : 'no block landed')
+    // (2) send the next westbound walker at the line, made a climber
+    const cl = blk && await assignLead('climb', 'Digit3', p =>
+        p.lemmings.find(L => L.live && L.state === 'walk' && L.dir === -1 && !L.climber && L.x > blk.x + 1.0 && L.x < blk.x + 3.0 && Math.abs(L.y - 23) < 0.6))
+    r.check('wake: a CLIMBER was sent at the line (climb flag on the probe)', !!cl, cl ? `#${cl.id}@${cl.x.toFixed(1)}` : 'no climber assigned')
+    if (blk && cl) {
+        // sample the live probe on the page's own frames: the wake and the
+        // landing happen within a second of the crossing.
+        const trace = await page.evaluate(async ({ blkId, clId, blkX }) => {
+            let walked = false, passed = false
+            const raf = () => new Promise(res => requestAnimationFrame(res))
+            for (let f = 0; f < 1500; f++) {
+                const p = window.__lemTest.probe()
+                const B = p.lemmings.find(l => l.id === blkId)
+                const C = p.lemmings.find(l => l.id === clId)
+                if (B && B.state === 'walk') walked = true
+                if (C && C.x < blkX - 0.4) passed = true
+                if (walked && passed) break
+                await raf()
+            }
+            return { walked, passed }
+        }, { blkId: blk.id, clId: cl.id, blkX: blk.x })
+        r.check('wake: the line BROKE — the blocker resumed walking after the crossing', trace.walked)
+        r.check('wake: the climber crossed where walkers must turn — over the line', trace.passed)
+    } else {
+        r.check('wake: the line BROKE — the blocker resumed walking after the crossing', false, 'setup incomplete')
+        r.check('wake: the climber crossed where walkers must turn — over the line', false, 'setup incomplete')
+    }
+    r.check('wake: zero page errors on the blocker-wake drive', errors.length === 0, errors.slice(0, 4).join(' | '))
+}
+
 // ---- Touch: the issue's core, driven by REAL touch input ------------------
 //
 // CDP touchStart / touchMove / touchEnd are the browser's own input pipeline

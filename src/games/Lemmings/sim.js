@@ -32,6 +32,9 @@
 // - Bombs clear dirt and bodies, never steel; a bomb chains other bombers;
 //   corpses block walkers (the classic body-pile). Dirt is the only
 //   destructible matter.
+// - #3864 the block is ONE-SHOT, like the original: a climber treats a blocker
+//   as a handhold and crosses his head, and any body that crosses the head line
+//   spends the block — the blocker wakes and resumes walking where he faced.
 // - The FLOATER carries a parachute: descent is capped at floatSp and no
 //   landing height is fatal. Like climber/digger it is a flag for life — every
 //   later fall auto-opens the canopy, which is why re-granting refuses (#422).
@@ -69,6 +72,15 @@ export const CFG = {
 }
 
 export const SKILLS = ['block', 'bomb', 'climb', 'dig', 'float']
+// The skill a level opens SELECTED (the tutorial reach of the board). Levels
+// may declare it explicitly (#3864: THE SPIRE ships one BLOCKER, but its
+// tutorial arm is still CLIMB); otherwise it is the first skill in SKILLS
+// order with supply. The mount path AND `recmethods` read this single source —
+// a derivation duplicated in the harness silently drifts when a supply dict
+// changes (the SPIRE block:1 collapsed the pointer replay to one tap).
+export const defaultSkill = (level) => (level.defaultSkill && (level.skills[level.defaultSkill] | 0) > 0)
+    ? level.defaultSkill
+    : (SKILLS.find((s) => (level.skills[s] | 0) > 0) || 'climb')
 export const SKILL_KEY = { Digit1: 'block', Digit2: 'bomb', Digit3: 'climb', Digit4: 'dig', Digit5: 'float' }
 export const SKILL_NAME = { block: 'BLOCKER', bomb: 'BOMBER', climb: 'CLIMBER', dig: 'DIGGER', float: 'FLOATER' }
 
@@ -114,7 +126,7 @@ export function makeGame(level, grid) {
         dead: 0,
         drowned: 0,                       // #3828 deaths by water, for HUD/harness honesty
         cursor: { x: 6.5, y: 18 },
-        selected: 'climb',
+        selected: defaultSkill(level),
         skills: { ...level.skills },
         lemmings: [],
         cmds: [],                         // command log: {tick,id,skill} — replay fuel
@@ -173,8 +185,9 @@ export function assign(g, id, skill) {
     // A floater carries its parachute for life (same law as climber/digger,
     // #422): a second grant would only burn supply. Assigning while standing
     // is fine — the canopy rides on show and auto-opens on the next fall.
-    // A blocker stays a blocker (the line depends on it standing) and a
-    // bomb's fuse does not un-light.
+    // A blocker mid-block cannot reach for a parachute (the line depends on it
+    // standing) and a bomb's fuse does not un-light. A WOKEN blocker (#3864)
+    // is just a walker again and may take either.
     if (skill === 'float' && (L.floater || st === 'block' || st === 'bomb')) return false
     g.skills[skill]--
     g.cmds.push({ tick: g.tick, id, skill })
@@ -273,7 +286,11 @@ function walker(g, L) {
         L.fuseT += FIXED_DT
         if (L.fuseT >= CFG.fuse) { blast(g, L); return }
     }
-    if (L.state === 'block') return
+    // #3864 the original's one-shot law: a block is SPENT once another lemming
+    // crosses his head — wakeCheck releases him and he resumes walking the
+    // direction he faced when he blocked (often straight into the hazard he
+    // was guarding, exactly as in the game).
+    if (L.state === 'block') { wakeCheck(g, L); return }
 
     const sp = CFG.walkSp * FIXED_DT
     const wasDir = L.dir
@@ -317,6 +334,11 @@ function walker(g, L) {
 // vibrates without moving is the deadlock this rule exists to prevent).
 // A blocker that can be shoved past is not a blocker, so static bodies turn
 // walkers even during that cooldown.
+// #3864, the original's first-rung combo: a CLIMBER does not turn at a blocker,
+// it climbs him. The blocker's body is the first handhold of whatever is behind
+// (or beside) him; the climber crosses his head and lands on the far side —
+// ground if there is ground, the pond if that is what the far side is. Crossing
+// spends the block: the blocker wakes (the wakeCheck side of the same law).
 function traffic(g, L) {
     if (L.state !== 'walk') return
     for (const o of g.lemmings) {
@@ -327,11 +349,44 @@ function traffic(g, L) {
         const staticBody = o.state === 'block' || o.state === 'dead'
         const oncoming = o.state === 'walk' && o.dir === -L.dir
         if (!staticBody && !oncoming) continue
+        if (staticBody && o.state === 'block' && L.climber) {
+            // mount the blocker: feet one row up, body past his far edge. The
+            // standing check in step() drops him from there — onto the far
+            // side's ground, or into whatever hazard waits there.
+            L.x = o.x + L.dir * 1.05
+            L.y = groundRow(L.y) - 1
+            g.events.push({ type: 'climbblock', id: L.id })
+            releaseBlocker(g, o)
+            return
+        }
         if (!staticBody && L.turnCd > g.tick) continue
         L.dir = -L.dir
         L.turnCd = g.tick + 14
         g.events.push({ type: 'turn', id: L.id })
         return
+    }
+}
+
+// #3864 release: the blocker is furniture no longer. He resumes walking in the
+// direction he faced when he blocked — into the crowd, or off the edge he was
+// holding the line at; the original judges that the player's problem.
+function releaseBlocker(g, B) {
+    if (B.state !== 'block' || !B.live) return
+    B.state = 'walk'
+    B.flashT = CFG.flash
+    g.events.push({ type: 'wake', id: B.id })
+}
+
+// The other side of the wake law: any live body whose feet are at or above a
+// blocker's head line, over his column, has crossed him — a climber mounting
+// (traffic releases directly), a body landing on his shoulders, a floater
+// drifting off his canopy. The block is spent either way.
+function wakeCheck(g, L) {
+    const k = groundRow(L.y)
+    for (const o of g.lemmings) {
+        if (o === L || !o.live) continue
+        if (Math.abs(o.x - L.x) > 0.7) continue
+        if (groundRow(o.y) <= k - 1) { releaseBlocker(g, L); return }
     }
 }
 
