@@ -162,6 +162,19 @@ breakable — every pin here has survived a manual mutation.
 
 ## Closed
 
+- #3932 (board ladder 1/4) — **THE SHELF, the plank-shelf climb-over**: the
+  fifth board makes the road do the original's second trick — wood lifts the
+  crowd onto terrain feet can't reach. A two-row moat (the sloped span's own
+  laying site) traps everything that falls in: both rims are two-tile walls
+  from the steel floor, so the pit is one-way dry. The plank road at row 24
+  bridges it, climbing out onto the ground strip is the mount the wood
+  enables, and the shelf top (row 22) is a doorstep from that strip and a
+  wall from anywhere else. The same cargo law then paves the far-side descent
+  at row 23 to the door, and the bay eats overshoots. Cargo is twice
+  load-bearing (`proves: build`; zero build strands the quota at 0 — pinned
+  sharper than the proves loop, plus road-in-world and replay pins).
+  Lemcheck 425 → 436; hand mutant (moat 1-row) reddened depth + road pins.
+
 - #3930 (POLISH never-dry stage) — **vent wind drags ground walkers**: the
   stream now grabs feet as well as canopies. A walker standing in a vent's two
   rows slides downwind at `CFG.windSp` — SPIRE's tailwind delivers the

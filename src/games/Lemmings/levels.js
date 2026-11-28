@@ -250,6 +250,58 @@ export const LEVELS = [
             return c.g
         },
     },
+    {
+        name: 'THE SHELF', time: 170,
+        spawn: { x: 4.5, y: 23 }, exit: { x: 41, y: 22 },
+        spawnCount: 10, spawnEvery: 55, need: 6,
+        // #3932 board ladder 1/4 — the PLANK-SHELF CLIMB-OVER. The original's
+        // boards let a road do more than bridge: the wood lifted a crowd onto
+        // terrain it could never reach on foot. Here the moat is two rows deep
+        // (the #3908 sloped span's own laying site), so its floor sits BELOW
+        // anything the far side offers: both rims are two-tile walls from the
+        // steel floor row 25, and what falls in paces cols 20–27 forever —
+        // dry, silent, one-way. The only crossing is the road the builder
+        // lays inside the moat at row 24; climbing out onto the ground strip
+        // at col 24 is the same one-tile mount the road enables, and the
+        // shelf beyond (top row 22) is a doorstep from that strip — a wall
+        // from anywhere else. Past the shelf the far side drops two rows and
+        // the SAME cargo law lays the descent: planks at row 23 down to the
+        // exit at body-row 22. Wood is thus twice load-bearing — cross AND
+        // climb-over — and zero build leaves the quota stranded in a dry pit
+        // (`proves: build`; lemcheck pins the trap empty).
+        // Ponds tax the dawdle at both ends: the west pond takes any body
+        // pushed back past col 2, and the bay past the door takes overshoots
+        // where the far-side road runs out (water is not a shelf — the chain
+        // refuses col 44, and bodies walk off the last plank into the drown).
+        defaultSkill: 'build',
+        skills: { block: 0, bomb: 0, climb: 0, dig: 0, float: 2, build: 12 },
+        proves: ['build'],
+        build() {
+            const c = new Carve()
+            c.sky(); c.floor(25)
+            // west pond (spawn stands east of it — the tutorial lane walks
+            // east; turning back early pays with the drown)
+            for (let x = 0; x <= 1; x++) c.rect(x, 23, x, 24, WATER)
+            // the moat: cols 20–23, two rows open, steel floor at row 25.
+            // Four wide so mounting a rim could never carry you across, and
+            // deep so neither rim is a one-tile step from its floor.
+            c.rect(20, 23, 23, 24, AIR)
+            // the shelf: its top row 22 makes it a two-tile wall from the
+            // moat floor and from the bay side, and a one-tile mount from
+            // the ground strip the plank road lands on (cols 24–27, surface
+            // row 23). DIRT is honest here: the board ships dig:0, and the
+            // trap's verdict never depends on the face refusing a chew.
+            c.rect(28, 22, 37, 24, DIRT)
+            // far side: row 23 carved cols 38–47 — the shelf's descent is a
+            // two-row drop the sloped span bridges at row 23, the exit's own
+            // body row. The chain stops at the bay (no shelf under water).
+            c.rect(38, 23, 47, 23, AIR)
+            // the bay: rows 24–25 east of col 43. Overshoots walk off the
+            // last plank straight into the drown.
+            for (let x = 44; x <= 47; x++) c.rect(x, 24, x, 25, WATER)
+            return c.g
+        },
+    },
 ]
 
 export function buildLevel(idx) {
