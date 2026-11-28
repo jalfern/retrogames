@@ -605,6 +605,11 @@ const roll = (g0, act, horizon) => {
 }
 
 export function solve(g, horizon = 1500) {
+    // #3876: hygiene replays run from the board the solve started on, and only
+    // certify a script this solve wrote. A mid-game clone (DebugKit PROGNOSIS
+    // hands one) has a mutated grid and a command log already riding in it —
+    // replaying that history onto the mutated board would verify a fiction.
+    const pristine = g.tick === 0 && g.cmds.length === 0 ? Uint8Array.from(g.grid) : null
     let cooldown = 0
     while (!g.end && g.tick < g.level.time * 60) {
         if (cooldown <= 0) {
@@ -622,7 +627,7 @@ export function solve(g, horizon = 1500) {
         } else cooldown--
         step(g)
     }
-    return { cmds: g.cmds.map(c => ({ ...c })), exited: g.exited, dead: g.dead, win: g.win, end: g.end, score: g.score }
+    return { cmds: pristine ? stripPhantomBuilds(g.level, pristine, g.cmds) : g.cmds.map(c => ({ ...c })), exited: g.exited, dead: g.dead, win: g.win, end: g.end, score: g.score }
 }
 
 /** Apply a recorded script to a fresh game. Used by attract mode (a replay of
@@ -642,4 +647,32 @@ export function replay(level, grid, cmds, opts = {}) {
         if (opts.onTick) opts.onTick(g)
     }
     return g
+}
+
+/** #3876 — script hygiene: the autopilot must never flash a skill it never uses.
+ *  A recorded BUILDER commit is real only if the flagged walker actually lays
+ *  wood IN THE REPLAY WORLD — the truth attract mode shows the player. The
+ *  rollout can commit a build for the wrong reasons (the cooldown reset is
+ *  itself a move worth scoring, and the pre-existing one-tick stamp offset can
+ *  put the walker in a different place when its descent arrives — the README's
+ *  planner-tuning gap): either way no plank ever appears, and the demo spends a
+ *  visible skill-grant on scenery. Stripping is provably world-neutral:
+ *  assign('build') decrements no supply, moves no body, and the builder flag
+ *  lays wood only at descents this walker demonstrably never reached. But the
+ *  proof is demanded, not assumed — the stripped script must replay with quota
+ *  intact and no extra deaths, else the full script stands. Honesty never
+ *  breaks a board. Exported so lemcheck can plant a phantom and watch this
+ *  remove it. */
+export function stripPhantomBuilds(level, grid0, cmds) {
+    const base = cmds.map(c => ({ ...c }))
+    const builds = base.filter(c => c.skill === 'build')
+    if (!builds.length) return base
+    const laid = new Set()                       // ids that laid wood in replay
+    const full = replay(level, grid0, base, {
+        onTick: (g) => { for (const e of g.events) if (e.type === 'plank') laid.add(e.id) },
+    })
+    if (builds.every(c => laid.has(c.id))) return base
+    const stripped = base.filter(c => c.skill !== 'build' || laid.has(c.id))
+    const s = replay(level, grid0, stripped)
+    return (s.win && s.exited >= full.exited && s.dead <= full.dead) ? stripped : base
 }
