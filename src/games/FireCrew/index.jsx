@@ -795,7 +795,7 @@ export default function FireCrew() {
             <canvas
                 ref={canvasRef}
                 className="max-w-full max-h-[var(--shell-h)]"
-                style={{ imageRendering: 'pixelated', aspectRatio: `${VW} / ${VH}`, width: 'min(100vw, calc(var(--shell-h) * 3 / 2))' }}
+                style={{ imageRendering: 'pixelated', aspectRatio: `${VW} / ${VH}`, width: 'min(100vw, calc((var(--shell-h) - 140px) * 3 / 2))' }}
             />
 
             {screen === 'attract' && !rotHint && (
