@@ -10,7 +10,7 @@ import { typesFor, currentPadType, setPadType, PAD_TYPE_LABELS } from './padType
 // packed into pages with packPages — desktop keeps the old single column;
 // short screens flip pages with thumb-sized ‹ › buttons, swipe, or the
 // arrow keys. The RESUME button stays pinned on every page.
-const PauseOverlay = ({ game, badge, ledger, onResume }) => {
+const PauseOverlay = ({ game, badge, ledger, mute, onResume }) => {
     const bodyRef = useRef(null)
     const mirrorRef = useRef(null)
     const touchRef = useRef(null)
@@ -282,6 +282,19 @@ const PauseOverlay = ({ game, badge, ledger, onResume }) => {
                         </button>
                     </div>
                 </div>
+            )}
+
+            {/* #3879 — an optional SOUND row: games that own a mute pass one
+                ({ on, toggle }); games that don't render byte-identical help.
+                Pinned with RESUME (outside the paged body), thumb-height. */}
+            {mute && (
+                <button
+                    data-mute={mute.on ? 'muted' : 'audible'}
+                    onClick={mute.toggle}
+                    className="mt-2 min-h-[44px] px-6 py-2 rounded-full border-2 border-white bg-gray-800 text-gray-100 font-bold text-base tracking-wider"
+                >
+                    SOUND: {mute.on ? 'OFF' : 'ON'}
+                </button>
             )}
 
             <button

@@ -23,6 +23,7 @@ import { LEVELS, buildLevel } from '../src/games/Lemmings/levels.js'
 import { LAYOUT } from '../src/games/Lemmings/layout.js'
 import { PRESS, MESSAGES, demoFloatPick } from '../src/games/Lemmings/attract.js'
 import * as sim from '../src/games/Lemmings/sim.js'
+import { MUSIC } from '../src/utils/AudioController.js'
 import { readFileSync } from 'node:fs'
 
 const args = process.argv.slice(2)
@@ -1037,6 +1038,38 @@ section('PHANTOM HYGIENE (#3876: the autopilot never flashes a skill it never us
         ok(s.win && s.exited === full.exited && s.dead === full.dead && sim.stateHash(s) === sim.stateHash(full),
             '#3876 stripping a dead grant moved the world — removal was not provably neutral')
     }
+}
+
+section('SOUND (#3879: graveyard bed, per-skill voices, mute)')
+{
+    const T = MUSIC.lemmings
+    ok(!!T, '#3879: MUSIC.lemmings missing — the game would ship silent')
+    if (T) {
+        ok(Number.isFinite(T.step) && T.step > 0.08 && T.step < 0.3, `#3879: bed step ${T.step} outside a musical march range`)
+        ok(T.lead.length >= 24 && T.lead.length % 8 === 0, `#3879: lead ${T.lead.length} is not a phrase multiple`)
+        ok(T.bass && T.bass.length === T.lead.length, '#3879: bass and lead lengths disagree — the loop would shear')
+        ok(T.perc && T.perc.length === T.lead.length, '#3879: perc and lead lengths disagree')
+        const bad = [...T.lead, ...T.bass, ...T.perc].filter(n => !Number.isInteger(n) || n < 0 || n > 108)
+        ok(bad.length === 0, `#3879: non-integer/out-of-range note entries: ${bad.join(',')}`)
+        ok(T.lead.filter(n => n > 0).length >= 8, '#3879: the lead is nearly silent — a bed with no melody')
+        ok(T.bass.filter(n => n > 0).length >= 4, '#3879: the lament bass has no pulse')
+        ok(T.lead.every(n => n === 0 || (n >= 60 && n <= 96)), '#3879: a lead note left the organ register (60–96)')
+        ok(T.perc.filter(n => n > 0).length <= T.lead.length / 8 + 4, '#3879: perc too busy — the bed would fight the footsteps')
+    }
+    const wsrc = readFileSync(new URL('../src/games/Lemmings/index.jsx', import.meta.url), 'utf8')
+    ok(/startMusic\('lemmings'\)/.test(wsrc), '#3879: index.jsx never starts the bed')
+    ok(/syncMusic/.test(wsrc), '#3879: the bed is not driven by the state machine')
+    ok(/setMuted\(/.test(wsrc) && /KeyM/.test(wsrc), '#3879: M/mute wiring missing')
+    ok(/stopMusic\(\)/.test(wsrc), '#3879: unmount would leave the bed running into the next title')
+    ok(/mute=\{\{/.test(wsrc), '#3879: the pause screen lost its SOUND row')
+    const psrc = readFileSync(new URL('../src/components/PauseOverlay.jsx', import.meta.url), 'utf8')
+    ok(/data-mute=/.test(psrc) && /\bmute\b/.test(psrc), '#3879: PauseOverlay mute prop missing')
+    // per-skill voices (#3879): every skill the panel offers must own a branch
+    for (const s of ['float', 'block', 'bomb', 'climb', 'dig', 'build']) {
+        ok(new RegExp(`s === '${s}'`).test(wsrc), `#3879: skillSfx has no voice for ${s}`)
+    }
+    const rsrc = readFileSync(new URL('../src/config/games.js', import.meta.url), 'utf8')
+    ok(/M mutes the sound/.test(rsrc), '#3879: the registry controls never mention the mute')
 }
 
 console.log(`\nlemcheck: ${pass}/${pass + fails.length} checks passed${fails.length ? `  — ${fails.length} FAILED` : '  — OK'}`)
