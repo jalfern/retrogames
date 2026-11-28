@@ -243,6 +243,30 @@ for (const vp of VPS) {
 rep.check(`MarioKart place keeps ≥4px off the pill everywhere (worst ${mkWorst.toFixed(1)}px)`, mkWorst >= 4)
 rep.info('landscape note', 'LL/Kart margins are 4–14px in landscape by this model — the "looks nice" capture stays a QA job on a healthy node (#1650 lineage)')
 
+// ---- SimCity-MIN #3882 — in-play HUD docks clear of the pill column ----------
+// The HUD row painted at top-2 straight through the ARCADE/FEEDBACK column (the
+// pop readout — the game's primary stat — was half-hidden; QA #3882). It must
+// ride --sat below the FEEDBACK row with its insets, and the registry must keep
+// footer:'none' so the tool strip owns the canvas bottom band (#3436 lineage).
+const scIdx = read('../src/games/SimCityMin/index.jsx')
+const scCfg = read('../src/config/games.js')
+const scHud = scIdx.split('\n').find((l) => l.includes('text-white font-mono text-xs') && l.includes('style={{')) || ''
+const scTop = OFF(scHud, 'top')
+rep.check('pin: SimCity HUD wrapper rides --sat/--sal/--sar (#3882)',
+    Boolean(scTop) && scTop.has === 'sat' && scHud.includes('var(--sal, 0px)') && scHud.includes('var(--sar, 0px)'),
+    scHud.trim().slice(0, 110))
+let scWorst = Infinity
+for (const vp of VPS) {
+    const y = (scTop ? scTop.base : 0) + vp.sat
+    const fb = feedbackRect(vp)
+    scWorst = Math.min(scWorst, y - (fb.y + fb.h))
+    if (y < fb.y + fb.h) rep.check(`SimCity HUD clears FEEDBACK on ${vp.name}`, false, `hud y ${y.toFixed(1)} vs feedback bottom ${(fb.y + fb.h).toFixed(1)}`)
+}
+rep.check(`SimCity HUD clears the FEEDBACK row on every viewport (worst gap ${scWorst.toFixed(1)}px)`, scWorst >= 0)
+const scEntry = scCfg.slice(scCfg.indexOf("path: '/simcity-min'"), scCfg.indexOf("path: '/", scCfg.indexOf("path: '/simcity-min'") + 10))
+rep.check("pin: /simcity-min keeps footer:'none' — the tool strip owns the bottom band (#3882)",
+    /path: '\/simcity-min',[\s\S]{0,200}footer: 'none'/.test(scCfg), scEntry.slice(0, 80))
+
 // ---- registration audit ---------------------------------------------------------
 for (const [f, why] of [['../package.json', 'npm alias'], ['./checks.mjs', 'CORE table'], ['../.github/workflows/ci.yml', 'static job']]) {
     rep.check(`registration: watchpillcheck in ${why}`, read(f).includes('watchpillcheck'))

@@ -447,7 +447,8 @@ const SimCityMinGame = () => {
             <div ref={stageRef} className="absolute inset-0 flex items-center justify-center" />
 
             <div className={`absolute inset-0 pointer-events-none transition-opacity duration-300 ${play ? 'opacity-100' : 'opacity-0'}`}>
-                <div className="absolute top-2 left-3 right-3 flex items-center gap-3 text-white font-mono text-xs">
+                {/* #3882 — dock clear of the #437 corner pills (ARCADE/FEEDBACK, PAUSE/PADS): the pop readout painted straight through the pill column at top-2. IceClimber #3857 precedent. */}
+                <div className="absolute flex items-center gap-3 text-white font-mono text-xs" style={{ top: 'calc(4.9rem + var(--sat, 0px))', left: 'calc(0.75rem + var(--sal, 0px))', right: 'calc(0.75rem + var(--sar, 0px))' }}>
                     <span ref={setHud('pop')} className="border border-green-300/60 text-green-200 px-2 py-0.5 rounded bg-black/40">0/420</span>
                     <span ref={setHud('funds')} className="text-yellow-200">$1200</span>
                     <span ref={setHud('year')} className="text-cyan-200">Y0/45</span>
@@ -482,7 +483,7 @@ const SimCityMinGame = () => {
             {paused && <PauseOverlay game={GAMES.find(g => g.label === 'SIMCITY-MIN')} onResume={handleResume} />}
             {/* #1637 WATCH — the proven plan runs the city where the receipt matches. */}
             {play && watching && (
-                <WatchToast className="z-50" />
+                <WatchToast className="z-50" style={{ top: 'calc(10.75rem + var(--sat, 0px))' }} />
             )}
             {/* #1656 — the forgotten-how-to-play tap: start AND watch, one button. */}
             {screen === 'attract' && (
@@ -491,7 +492,7 @@ const SimCityMinGame = () => {
                 </div>
             )}
             {play && !paused && (
-                <div className="absolute z-50 pointer-events-auto" style={{ top: 'calc(3.5rem + var(--sat, 0px))', right: 'calc(0.75rem + var(--sar, 0px))' }}>
+                <div className="absolute z-50 pointer-events-auto" style={{ top: 'calc(7.4rem + var(--sat, 0px))', right: 'calc(0.75rem + var(--sar, 0px))' }}>
                     <WatchButton on={watching} />
                 </div>
             )}
