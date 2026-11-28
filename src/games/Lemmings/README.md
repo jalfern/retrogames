@@ -48,6 +48,19 @@ supplies fails the build.
     bay); THE MASSIF's shoves them off the plinth doorstep back toward the
     trench. The drift lands on the pre-landing test, so wind decides WHERE a
     canopy lands, not just where it wobbles.
+    **Trampolines** (#3879, terrain-variety family item 2): levels declare
+    `trampolines: [{x, y}]` — a sprung mat on the face of a cell. ANY body
+    arriving on a mat (a faller's landing or a walker's footstep) is launched
+    at the FIXED `CFG.padJump` (apex 2.5 cells, fast or slow arrival alike)
+    with its fallDist wiped — the mat absorbs the drop, so even a lethal
+    landing survives. A body may not re-bounce within `CFG.padHold` ticks
+    (flight + crossing a two-cell mat + margin): mats ping once per arrival,
+    never ping-pong. A mat whose two rows of sky are not clear is dead steel.
+    THE MASSIF lays two mats on its trench floor: what falls in still cannot
+    get out (the apex cannot reach the plinth top), so `proves: build` and
+    the plank road ride byte-identical — lemcheck pins that the proven script
+    never touches a mat — but the trap gains a spring, and vent-shoveled
+    canopies land on cloth instead of steel.
   - Skills: BLOCKER, BOMBER, CLIMBER, DIGGER, **FLOATER** (#3827),
     **BUILDER** (#3863). Climber, digger and floater are flags for life —
     re-granting any of them refuses rather than burning supply (#422). The

@@ -122,6 +122,16 @@ export const LEVELS = [
         // shoved off the plinth's doorstep and into the trench's mouth zone.
         // The road stays the answer; the parachute becomes the trap.
         vents: [{ x: 40, y: 22, dir: -1, reach: 4 }],
+        // #3879 TRAMPOLINES (terrain gadget 2 of 3): two mats on the trench
+        // floor, where the one-way drop lands. They change the trap's TEMPER,
+        // never its verdict: the apex (2.5 cells) cannot reach the plinth top
+        // (a full 2-tile wall), so what falls in still cannot walk out — the
+        // plank road stays the only crossing, and `proves: build` rides it
+        // byte-identical (the solver's own line runs the wood at row 23 and
+        // never sets foot on rock row 24). But a body dropped in gets one
+        // theatrical toss before the trench resumes its claim, and the vent's
+        // shoveled canopies land on spring instead of steel.
+        trampolines: [{ x: 38, y: 24 }, { x: 39, y: 24 }],
         build() {
             const c = new Carve()
             c.sky(); c.floor(24)

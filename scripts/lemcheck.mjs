@@ -1383,6 +1383,116 @@ section('LOOK (#3879: sloped planks, animated sprites, splintering wood)')
     ok(/gs\.tick \* 2 \+ j \* \(L0 \/ 6\)/.test(wsrc), '#3879: the airstream froze — dashes no longer travel on the WORLD clock')
 }
 
+// ---------------------------------------------------- trampolines (#3879) ----
+{
+    section('TRAMPOLINES (#3879: fixed bounce, absorbed fall, proofs stay mat-free)')
+    const t1 = buildLevel(1).meta.trampolines
+    ok(Array.isArray(t1) && t1.length === 2 && t1.every(p => p.y === 24),
+        '#3879: THE MASSIF lost its trench mats — the trap is silent steel again')
+    ok(!buildLevel(0).meta.trampolines && !buildLevel(2).meta.trampolines && !buildLevel(3).meta.trampolines,
+        '#3879: trampolines multiplied off the trench — keep the gadget off SPIRE/DOOR/LEDGE')
+    ok(sim.padAt(sim.makeGame(buildLevel(2).meta, buildLevel(2).grid), { x: 24.5, y: 23 }) === null,
+        '#3879: padAt answers on a padless level — the gadget leaks into THE DOOR')
+
+    // sandbox: one flat floor, one mat, one ceiling of sky
+    const lab = (extra) => {
+        const grid = new Uint8Array(sim.W * sim.H).fill(sim.AIR)
+        for (let x = 0; x < sim.W; x++) grid[10 * sim.W + x] = sim.STEEL
+        const meta = {
+            name: 'PAD LAB', time: 60, spawn: { x: 2.5, y: 9 }, exit: { x: 40, y: 9 },
+            spawnCount: 0, spawnEvery: 999, need: 1,
+            skills: { block: 0, bomb: 0, climb: 0, dig: 0, float: 0, build: 0 },
+            trampolines: [{ x: 8, y: 10 }], ...extra,
+        }
+        const g = sim.makeGame(meta, grid)
+        sim.spawnLemming(g)
+        const L = g.lemmings[0]
+        return { g, L }
+    }
+
+    // fixed height: dropped softly or slammed in fast, the apex is the same.
+    // The fast arrival starts just above the mat (not higher than the apex —
+    // a 12 vy drop from up top would measure its own fall, not the bounce).
+    const apexOf = (vy0) => {
+        const { g, L } = lab()
+        L.state = 'fall'; L.vy = vy0; L.fallDist = 0; L.x = 8.5; L.y = vy0 > 5 ? 8.9 : 8.5
+        let apex = L.y, bounced = 0
+        for (let t = 0; t < 240 && L.live; t++) {
+            sim.step(g)
+            bounced += g.events.filter(e => e.type === 'pad').length
+            if (L.live) apex = Math.min(apex, L.y)
+        }
+        return { apex, bounced }
+    }
+    const soft = apexOf(0), hard = apexOf(12)
+    ok(soft.bounced === 1 && hard.bounced === 1, `#3879: mats miscounted launches (soft=${soft.bounced}, hard=${hard.bounced})`)
+    ok(Math.abs((10 - soft.apex) - 2.5) < 0.2 && Math.abs(soft.apex - hard.apex) < 0.2,
+        `#3879: apex soft=${soft.apex.toFixed(2)} hard=${hard.apex.toFixed(2)} — the bounce must be FIXED at ~2.5 cells`)
+    ok(hard.bounced === 1 && hard.apex < 8.4,
+        '#3879: a fast arrival was NOT absorbed — the mat must wipe the fall, not amplify it')
+
+    // a lethal drop is caught: 8 cells onto the mat (maxFall is 3) survives
+    {
+        const { g, L } = lab()
+        L.state = 'fall'; L.vy = 12; L.fallDist = 8; L.x = 8.5; L.y = 2
+        for (let t = 0; t < 240 && L.live; t++) sim.step(g)
+        ok(L.live, '#3879: the mat let an 8-cell fall splat — padLaunch must run BEFORE the kill test')
+    }
+
+    // walkers bounce too: footsteps on a mat take the launch
+    {
+        const { g, L } = lab()
+        L.state = 'walk'; L.x = 6.5; L.y = 10; L.dir = 1
+        let bounced = 0
+        for (let t = 0; t < 120 && L.live; t++) { sim.step(g); bounced += g.events.filter(e => e.type === 'pad').length }
+        ok(bounced === 1, `#3879: a walker crossed the mat with ${bounced} launches — the step-on hook is dead`)
+    }
+
+    // cooldown: the flight home lands ON the mat and stands, no ping-pong;
+    // and the ceiling guard: a walled mat must not shove a head through rock
+    {
+        const { g, L } = lab()
+        L.state = 'fall'; L.vy = 0; L.fallDist = 0; L.x = 8.5; L.y = 8.5
+        // count only what the loop sees: drop (~8 ticks) + launch + flight
+        // home (~57) + standing cooldown + walking away, under padHold+40.
+        let bounces = 0
+        for (let t = 0; t < sim.CFG.padHold + 40; t++) { sim.step(g); bounces += g.events.filter(e => e.type === 'pad').length; if (!L.live) break }
+        ok(bounces === 1, `#3879: ${bounces} bounces inside one cooldown — the mat ping-pongs`)
+        const walled = lab({ trampolines: [{ x: 8, y: 10 }], })
+        // seal both sky rows over the mat
+        for (const y of [8, 9]) walled.g.grid[y * sim.W + 8] = sim.STEEL
+        walled.L.state = 'fall'; walled.L.vy = 0; walled.L.fallDist = 0; walled.L.x = 8.5; walled.L.y = 8.5
+        let wb = 0
+        for (let t = 0; t < 60 && walled.L.live; t++) { sim.step(walled.g); wb += walled.g.events.filter(e => e.type === 'pad').length }
+        ok(wb === 0 && walled.L.state === 'walk', `#3879: a walled mat launched ${wb} times — the two-row sky guard is gone`)
+    }
+
+    // THE MASSIF verdict: what falls into the trench still cannot get out —
+    // the mats change the trap's temper, not its law (exit is beyond a 2-tile
+    // wall; the apex cannot reach it). And the PROVEN script never touches a
+    // mat at all: every existing proof rides the plank road byte-identical.
+    {
+        const { meta, grid } = buildLevel(1)
+        const r = sim.solve(sim.makeGame(meta, grid))
+        let padHits = 0
+        sim.replay(meta, grid, r.cmds, { onTick: (g) => { padHits += g.events.filter(e => e.type === 'pad').length } })
+        ok(padHits === 0, `#3879: the proven line bounced ${padHits} times — the solver crossed a mat, proofs no longer ride the road`)
+        const trap = sim.makeGame({ ...meta, spawnCount: 0 }, grid)
+        sim.spawnLemming(trap)
+        const L = trap.lemmings[0]
+        L.state = 'fall'; L.vy = 0; L.fallDist = 0; L.x = 38.5; L.y = 22
+        for (let t = 0; t < meta.time * 60 && L.live && !trap.end; t++) sim.step(trap)
+        ok(trap.exited === 0, '#3879: a trench drop exited the level — the mats handed out an escape route')
+    }
+
+    // the gadget is on screen: mats drawn, and their ring rides the WORLD clock
+    const wsrc2 = readFileSync(new URL('../src/games/Lemmings/index.jsx', import.meta.url), 'utf8')
+    ok(/meta\.trampolines \|\| \[\]/.test(wsrc2), '#3879: the painter stopped drawing mats — the trench floors blind again')
+    ok(/#c8323c/.test(wsrc2), '#3879: the deck lost its red — the mat reads as plain steel')
+    ok(/padPing\[Math\.floor\(e\.x\)/.test(wsrc2) && /--padPing\[k\]/.test(wsrc2),
+        '#3879: the mat ring froze or never rings — pad launches would be silent scenery')
+}
+
 console.log(`\nlemcheck: ${pass}/${pass + fails.length} checks passed${fails.length ? `  — ${fails.length} FAILED` : '  — OK'}`)
 fails.forEach(f => console.log(`  FAIL  ${f}`))
 process.exit(fails.length ? 1 : 0)
