@@ -188,6 +188,59 @@ for (let i = 0; i < LEVELS.length; i++) {
         for (let t = 0; t < 90; t++) sim.step(g)
         ok(B.dir === -1 || B.x < A.x, 'a corpse no longer blocks — the classic body-pile rule died')
     }
+    // #3864 BLOCKER-WAKE — the original's one-shot law, pinned three ways: the
+    // climb-over combo releases the line, a body crossing the head line spends
+    // it, and an uncrossed blocker holds for the whole level like the four
+    // shipped boards were designed to.
+    {
+        // (1) THE SPIRE's pond rim: a climber mounts the blocker, crosses his
+        // head, and lands west of him — in the pond, which takes him. The
+        // block released mid-cross; the blocker resumes west and follows him
+        // under (the original judges the player's choice of shoreline).
+        const g = mk()
+        for (let t = 0; t < 120; t++) sim.step(g)
+        const A = g.lemmings[0], B = g.lemmings[1]
+        A.state = 'walk'; A.x = 4.5; A.y = 23; A.dir = -1
+        ok(sim.assign(g, A.id, 'block'), 'setup: THE SPIRE ships one BLOCKER (#3864) — the supply is missing')
+        B.state = 'walk'; B.x = 5.6; B.y = 23; B.dir = -1; B.climber = true
+        const wakes = [], crosses = []
+        for (let t = 0; t < 240; t++) {
+            sim.step(g)
+            for (const e of g.events) {
+                if (e.type === 'wake') wakes.push(e.id)
+                if (e.type === 'climbblock') crosses.push(e.id)
+            }
+        }
+        ok(crosses.includes(B.id), 'a climber walked past or around the blocker instead of climbing him — the first-rung combo is dead')
+        ok(wakes.includes(A.id), 'the blocker was never released by the lemming who crossed his head — the one-shot law is missing')
+        ok(g.drowned >= 1, 'the climber crossed the line unharmed — the far side of a pond rim is still the pond')
+    }
+    {
+        // (2) wakeCheck, the non-climber half: any body that ends up over the
+        // head line spends the block — here a faller landing on his shoulders.
+        const g = mk()
+        for (let t = 0; t < 120; t++) sim.step(g)
+        const A = g.lemmings[0]
+        A.state = 'walk'; A.x = 10.5; A.y = 23; A.dir = 1
+        sim.assign(g, A.id, 'block')
+        const B = g.lemmings[1]
+        B.state = 'fall'; B.x = 10.5; B.y = 21.8; B.vy = 0; B.fallDist = 0
+        let woke = false
+        for (let t = 0; t < 120; t++) { sim.step(g); if (g.events.some(e => e.type === 'wake' && e.id === A.id)) woke = true }
+        ok(woke, 'a lemming landing on a blocker\u2019s head did not spend the block — wakeCheck is dead')
+        ok(B.live && B.state !== 'dead', 'a body crossing the head line was killed by the line itself — traffic must tolerate the crosser')
+    }
+    {
+        // (3) an unclimbed line holds forever — the four shipped boards lean on
+        // this (THE LEDGE drains without it), so wake must not leak on its own.
+        const g = mk()
+        for (let t = 0; t < 120; t++) sim.step(g)
+        const A = g.lemmings[0]
+        A.state = 'walk'; A.x = 12.5; A.y = 23; A.dir = 1
+        sim.assign(g, A.id, 'block')
+        for (let t = 0; t < 600; t++) sim.step(g)
+        ok(A.state === 'block', 'a blocker woke though nobody ever crossed him — the lines the levels are designed around would open by themselves')
+    }
     // the digger tunnels dirt and stops at steel
     {
         const { meta: m2, grid: g2 } = buildLevel(1)

@@ -211,6 +211,8 @@ const LemGame = () => {
                 else if (e.type === 'landsoft') audioController.playTone(200, 0.07, 'sine', 0.035)
                 else if (e.type === 'step') audioController.playTone(220, 0.03, 'triangle', 0.025)
                 else if (e.type === 'crest') audioController.playTone(880, 0.07, 'sine', 0.05)
+                else if (e.type === 'climbblock') audioController.playSweep(300, 620, 0.12, 'triangle', 0.05)
+                else if (e.type === 'wake') audioController.playSweep(620, 300, 0.14, 'square', 0.05)
                 else if (e.type === 'turn') audioController.playTone(90, 0.02, 'triangle', 0.015)
                 else if (e.type === 'spawn') audioController.playTone(330, 0.05, 'square', 0.04)
                 else if (e.type === 'win') audioController.playSweep(392, 1568, 0.7, 'square', 0.1)
