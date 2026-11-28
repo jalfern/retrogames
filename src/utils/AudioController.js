@@ -647,6 +647,42 @@ export const MUSIC = {
             0, 0, 0, 2, 0, 0, 0, 2, 0, 0, 0, 2, 0, 2, 0, 2,
         ],
     },
+    // LEMMINGS-LITE (#3879): an ORIGINAL homage to the era's dark baroque organ
+    // march — the Amiga graveyard mood, not a transcription. A-minor lament
+    // bass (A–Ab–G–Gb–F–E chromatic groan under the phrases), a dotted lead
+    // that climbs the tonic then walks a full chromatic descent back, and an
+    // E7 hang (G#–B–C#–E, the baroque dominant) whose resolution IS the loop
+    // restarting on A. Two heartbeat kicks, two dry hats — the silences carry
+    // the menace; a crowded bed would fight the swarm's footsteps.
+    lemmings: {
+        step: 0.16,
+        lead: [
+            69, 0, 76, 0, 72, 0, 76, 0,
+            71, 70, 68, 0, 69, 0, 0, 0,
+            81, 0, 76, 0, 72, 0, 76, 0,
+            80, 79, 78, 0, 76, 0, 0, 0,
+            77, 0, 76, 0, 75, 0, 74, 0,
+            73, 0, 72, 0, 71, 0, 0, 0,
+            68, 0, 71, 0, 73, 0, 76, 0,
+            72, 0, 0, 0, 69, 0, 0, 0,
+        ],
+        bass: [
+            45, 0, 0, 0, 52, 0, 0, 0,
+            45, 0, 0, 0, 44, 0, 0, 0,
+            45, 0, 0, 0, 52, 0, 0, 0,
+            44, 0, 0, 0, 41, 0, 0, 0,
+            45, 0, 0, 0, 52, 0, 0, 0,
+            43, 0, 0, 0, 42, 0, 0, 0,
+            41, 0, 0, 0, 40, 0, 0, 0,
+            40, 0, 0, 0, 40, 0, 0, 0,
+        ],
+        perc: [
+            1, 0, 0, 0, 0, 0, 0, 2, 0, 0, 0, 0, 0, 0, 2, 0,
+            1, 0, 0, 0, 0, 0, 0, 2, 0, 0, 0, 0, 0, 0, 2, 0,
+            1, 0, 0, 0, 0, 0, 0, 2, 0, 0, 0, 0, 0, 0, 2, 0,
+            1, 0, 0, 0, 0, 0, 2, 0, 0, 0, 0, 0, 0, 2, 0, 0,
+        ],
+    },
 }
 
 class AudioController {

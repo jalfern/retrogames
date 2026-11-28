@@ -73,6 +73,22 @@ const LemGame = () => {
     const pausedRef = useRef(false)
     const overAtRef = useRef(0)
 
+    // #3879 SOUND: mute lives here, per-game — persisted so the player's choice
+    // survives a revisit, and REMOVED on exit (unmount restores unmuted) so a
+    // quiet LemmingsSession never leaks silence onto the next title.
+    const [muted, setMutedState] = useState(() => {
+        try { return localStorage.getItem('lemmings.muted') === '1' } catch { return false }
+    })
+    const mutedRef = useRef(false)
+    const toggleMuted = useCallback(() => {
+        const on = !mutedRef.current
+        mutedRef.current = on
+        setMutedState(on)
+        audioController.setMuted(on)
+        try { localStorage.setItem('lemmings.muted', on ? '1' : '0') } catch { /* private mode: the choice just doesn't persist */ }
+        if (!on) audioController.playTone(660, 0.05, 'square', 0.06) // the click that says you're audible again
+    }, [])
+
     const setMode = useCallback((m) => { screenRef.current = m; setScreen(m) }, [])
     const hudRef = useRef({})
     const setHud = (k) => (el) => { hudRef.current[k] = el }
@@ -169,10 +185,20 @@ const LemGame = () => {
         }
 
         // #3827 FLOATER: deploying a parachute is a swoosh — a falling pitch,
-        // the canopy catching air. Other grants keep the per-skill blip ladder.
-        const skillSfx = (s) => s === 'float'
-            ? audioController.playSweep(880, 392, 0.28, 'triangle', 0.08)
-            : audioController.playTone(s === 'bomb' ? 180 : 520 + SKILLS.indexOf(s) * 90, 0.07, 'square', 0.07)
+        // the canopy catching air.
+        // #3879: the original gives every skill its own voice; five of the six
+        // used to share one rising ladder blip. One texture per skill — the
+        // block plants, the bomb hisses, the climber grunts, the digger rumbles,
+        // the builder knocks wood — all quiet enough to sit under the swarm.
+        const skillSfx = (s) => {
+            if (s === 'float') audioController.playSweep(880, 392, 0.28, 'triangle', 0.08)
+            else if (s === 'block') { audioController.playTone(150, 0.09, 'triangle', 0.09); audioController.playNoise(0.04, 0.02) }
+            else if (s === 'bomb') { audioController.playNoise(0.22, 0.018); audioController.playSweep(500, 320, 0.2, 'sine', 0.045) }
+            else if (s === 'climb') audioController.playSweep(300, 560, 0.14, 'sawtooth', 0.05)
+            else if (s === 'dig') { audioController.playNoise(0.12, 0.05); audioController.playTone(110, 0.06, 'square', 0.05) }
+            else if (s === 'build') { audioController.playTone(260, 0.05, 'square', 0.06); audioController.playNoise(0.03, 0.02) }
+            else audioController.playTone(520, 0.07, 'square', 0.07)
+        }
 
         // #3844 OH NO! — the original screams over EVERY death. Two syllables:
         // a short worried "OH" and a long, falling "NO!" — sawtooth for the
@@ -308,8 +334,28 @@ const LemGame = () => {
             }
         }
 
+        // #3879 SOUND: the bed follows the game, transitions only (no per-frame
+        // bus spam — the controller's own law). Attract rides it low (the
+        // original's attract had its soundtrack on), play takes it to full,
+        // pause and the over screen take it out — the win sweep / death
+        // fanfare own the end beats. Desired level is memoized, so steady
+        // states pay nothing; stopMusic on the event side (win/lose) does NOT
+        // re-arm, because no transition happened — the fanfare stays clean.
+        let musicWanted = null
+        const syncMusic = () => {
+            const sc = screenRef.current
+            const want = sc === 'attract' ? 0.45
+                : sc === 'play' && !pausedRef.current ? 1
+                    : null
+            if (want === musicWanted) return
+            musicWanted = want
+            if (want == null) audioController.stopMusic()
+            else { audioController.startMusic('lemmings'); audioController.setMusicLevel(want) }
+        }
+
         const frame = (ts) => {
             raf = requestAnimationFrame(frame)
+            syncMusic() // #3879: runs even while paused — the pause IS a transition
             if (!last) last = ts
             const ft = Math.min(ts - last, 250)
             last = ts
@@ -657,6 +703,9 @@ const LemGame = () => {
                 togglePause()
                 return
             }
+            // #3879: M mutes/unmutes on every screen — it works while paused,
+            // which is exactly when the player reaches for it.
+            if (code === 'KeyM') { toggleMuted(); return }
             if (['ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown', 'Space'].includes(e.code)) e.preventDefault()
             const sc = screenRef.current
             if (sc === 'attract') { startPlay(); return }
@@ -735,6 +784,11 @@ const LemGame = () => {
             pressId = null
             setPointer(0, 0, false)
         }
+        // #3879: honour the persisted choice before the first note — setMuted
+        // is safe with no AudioContext yet (it only sets the flag; init picks
+        // the bus up muted). Read storage directly, not the render's state.
+        try { if (localStorage.getItem('lemmings.muted') === '1') { mutedRef.current = true; audioController.setMuted(true) } } catch { /* private mode: start audible */ }
+
         window.addEventListener('keydown', onDown)
         window.addEventListener('keyup', onUp)
         window.addEventListener('blur', onBlur)
@@ -802,6 +856,10 @@ const LemGame = () => {
                     return true
                 },
                 cries: () => cries.map(c => ({ x: c.x, y: c.y, t: c.t })),   // #3844 OH NO! sprites live on screen
+                // #3879: the harness hears the bed through the shared
+                // verification hook (the __popTest.musicState precedent).
+                musicState: () => audioController._musicState(),
+                muteState: () => ({ game: mutedRef.current, global: audioController.muted }),
             }
             exposeGame({
                 id: 'lemmings',
@@ -881,6 +939,8 @@ const LemGame = () => {
 
         return () => {
             unexposeFeedbackState()
+            audioController.stopMusic() // #3879: the bed belongs to this title only
+            audioController.setMuted(false) // …and so does its mute — leave no silence behind
             if (import.meta.env.DEV && window.__lemTest) delete window.__lemTest
             if (import.meta.env.DEV) { unmountDbg(); unexposeGame() }
             window.removeEventListener('keydown', onDown)
@@ -898,7 +958,7 @@ const LemGame = () => {
             cancelAnimationFrame(raf)
             canvas.remove()
         }
-    }, [setMode])
+    }, [setMode, toggleMuted])
 
     const handleResume = useCallback(() => {
         setPaused(false)
@@ -971,7 +1031,7 @@ const LemGame = () => {
                 </div>
             )}
 
-            {paused && <PauseOverlay game={GAMES.find(g => g.label === 'LEMMINGS-LITE')} onResume={handleResume} />}
+            {paused && <PauseOverlay game={GAMES.find(g => g.label === 'LEMMINGS-LITE')} onResume={handleResume} mute={{ on: muted, toggle: toggleMuted }} />}
             <VirtualControls visible={play && !paused} />
 
             {/* #432 / #3132: the original's skill panel — counts + PAUSE/FF —

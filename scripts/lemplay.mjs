@@ -570,4 +570,43 @@ await wait(600)
     await tpage.close()
 }
 
+// #3879 SOUND — the graveyard bed follows the game and M mutes. Fresh page
+// so attract→play→pause→resume→mute is a clean lifecycle. Driven through
+// real keys only; the proof arrives via __lemTest.musicState (the
+// __popTest.musicState precedent).
+{
+    await page.goto(URL, { waitUntil: 'load' })
+    await page.waitForFunction(() => !!window.__lemTest, null, { timeout: 20000 })
+    const mus = () => page.evaluate(() => window.__lemTest.musicState())
+    const mute = () => page.evaluate(() => window.__lemTest.muteState())
+    let s = await mus()
+    r.check('sound: attract rides the bed low', !!s.playing && s.track === 'lemmings' && Math.abs(s.level - 0.45) < 0.01, JSON.stringify(s))
+    await key('KeyC'); await wait(300)
+    s = await mus()
+    r.check('sound: play takes the bed to full', !!s.playing && s.track === 'lemmings' && s.level === 1, JSON.stringify(s))
+    await key('Question'); await wait(300)
+    s = await mus()
+    r.check('sound: pause takes the bed out', !s.playing, JSON.stringify(s))
+    await key('Question'); await wait(300)
+    s = await mus()
+    r.check('sound: resume brings it back', !!s.playing && s.track === 'lemmings' && s.level === 1, JSON.stringify(s))
+    await key('KeyM'); await wait(150)
+    let m = await mute()
+    r.check('sound: M mutes (game and controller agree)', m.game === true && m.global === true, JSON.stringify(m))
+    await key('KeyM'); await wait(150)
+    m = await mute()
+    r.check('sound: M unmutes', m.game === false && m.global === false, JSON.stringify(m))
+    // the choice outlives the visit: mute, leave the title (SPA route), come
+    // back — the mount honours the persisted choice without any key press.
+    await key('KeyM'); await wait(150)
+    await page.goto(`${URL.replace(/\/retrogames\/.*$/, '')}/retrogames/`, { waitUntil: 'load' })
+    await wait(400)
+    await page.goto(URL, { waitUntil: 'load' })
+    await page.waitForFunction(() => !!window.__lemTest, null, { timeout: 20000 })
+    m = await mute()
+    r.check('sound: the mute choice persists across visits', m.game === true && m.global === true, JSON.stringify(m))
+    await key('KeyM'); await wait(150) // leave the board audible for the lanes after us
+    r.check('sound: zero page errors through the sound lifecycle', errors.length === 0, errors.slice(0, 3).join(' | '))
+}
+
 r.exit(browser)
