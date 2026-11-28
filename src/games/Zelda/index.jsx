@@ -259,7 +259,6 @@ export default function Zelda() {
                 c.fillStyle = '#f8f8f8'; c.font = '8px monospace'
                 c.fillText('HYRULE DEMO  -  FAN TRIBUTE', W / 2, 120)
                 if (st.screen === 'attract' && (t >> 5) % 2) { c.fillText('PRESS ANY KEY', W / 2, 170) }
-                if (st.screen === 'attract') { c.fillStyle = '#00d878'; c.fillText(WATCH_ATTRACT_HINT, W / 2, 186) }
                 if (st.screen === 'gameover') { c.fillStyle = '#f80000'; c.fillText('GAME OVER', W / 2, 150) }
                 if (st.screen === 'win') {
                     c.fillStyle = '#f8d800'; c.fillText('YOU GOT THE TRIFORCE', W / 2, 140)
@@ -355,9 +354,14 @@ export default function Zelda() {
                 </div>
             )}
 
-            {/* #1656 — the forgotten-how-to-play tap: start AND watch, one button. */}
+            {/* #1656 — the forgotten-how-to-play tap: start AND watch, one button.
+                The route hint rides the same bottom-anchored wrapper as the pill
+                (house pattern, BubbleBobble) instead of the canvas, so it never
+                lands under the pill — 24% is the gate-pinned clear-band anchor
+                and the hint is 11px of real text, not a tiny in-canvas line. */}
             {screen === 'attract' && (
-                <div className="absolute z-[70] left-1/2 -translate-x-1/2 pointer-events-auto" style={{ bottom: '12%' }}>
+                <div className="absolute z-[70] left-0 right-0 flex flex-col items-center gap-2 pointer-events-none" style={{ bottom: '24%' }}>
+                    <span className="text-emerald-200/70 font-mono text-[11px] tracking-widest">{WATCH_ATTRACT_HINT}</span>
                     <AttractWatchButton />
                 </div>
             )}
