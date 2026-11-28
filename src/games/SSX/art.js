@@ -902,18 +902,40 @@ export function cloudPlan(course) {
 }
 
 let cloudTexCache = null
+// #3898 art pass: a soft radial ball reads as a sun-glare orb against a bright
+// day sky (critique #1). Repaint as a cumulus — a lobe cluster builds a fluffy
+// silhouette, a cool gradient shades the underside, the core stays hollow (no
+// burning white), and a thin lit rim caps the topside. Fixed lobe table: no
+// RNG, same 128px canvas, same single shared sprite texture for the sea.
 function cloudPuffTexture() {
     if (cloudTexCache) return cloudTexCache
     const cvs = document.createElement('canvas')
     cvs.width = cvs.height = 128
     const ctx = cvs.getContext('2d')
-    const grad = ctx.createRadialGradient(64, 64, 6, 64, 64, 64)
-    grad.addColorStop(0, 'rgba(255,255,255,0.85)')
-    grad.addColorStop(0.4, 'rgba(255,255,255,0.38)')
-    grad.addColorStop(0.75, 'rgba(255,255,255,0.12)')
-    grad.addColorStop(1, 'rgba(255,255,255,0)')
-    ctx.fillStyle = grad
+    // lobes: wide low row + small high row, flat-ish base (a deck, not a ball)
+    const LOBES = [
+        [38, 74, 26], [64, 62, 30], [90, 72, 24], [52, 48, 20], [76, 44, 18],
+        [26, 68, 16], [102, 66, 14], [64, 80, 30], [46, 80, 22], [82, 80, 22],
+    ]
+    ctx.filter = 'blur(3px)'
+    for (const [lx, ly, lr] of LOBES) {
+        const g = ctx.createRadialGradient(lx, ly, lr * 0.15, lx, ly, lr)
+        g.addColorStop(0, 'rgba(255,255,255,0.42)')
+        g.addColorStop(0.7, 'rgba(255,255,255,0.22)')
+        g.addColorStop(1, 'rgba(255,255,255,0)')
+        ctx.fillStyle = g
+        ctx.fillRect(lx - lr, ly - lr, lr * 2, lr * 2)
+    }
+    ctx.filter = 'none'
+    // underside shade + lit top rim, clipped to the puff's own alpha
+    ctx.globalCompositeOperation = 'source-atop'
+    const band = ctx.createLinearGradient(0, 30, 0, 108)
+    band.addColorStop(0, 'rgba(255,255,255,0.55)')
+    band.addColorStop(0.45, 'rgba(255,255,255,0)')
+    band.addColorStop(1, 'rgba(150,160,185,0.40)')
+    ctx.fillStyle = band
     ctx.fillRect(0, 0, 128, 128)
+    ctx.globalCompositeOperation = 'source-over'
     cloudTexCache = new THREE.CanvasTexture(cvs)
     cloudTexCache.colorSpace = THREE.SRGBColorSpace
     return cloudTexCache
