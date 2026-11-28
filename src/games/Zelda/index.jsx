@@ -337,7 +337,13 @@ export default function Zelda() {
 
     return (
         <div className="fixed inset-0 flex flex-col items-center justify-center bg-black select-none overflow-hidden" style={{ touchAction: 'none' }}>
-            <canvas ref={canvasRef} width={W} height={H} className="max-w-full max-h-full" style={{ imageRendering: 'pixelated' }} />
+            {/* art pass (#3870): the shell contract is "native resolution, CSS-scaled to
+                fit" — the canvas used to render at its natural 256x240 and float in a
+                black void on every wide screen. Fit it like BlobBattle/QBert do: fill the
+                viewport (16px side margin, 64px bottom for the pad zone) at the exact
+                256:240 aspect, crisp nearest-neighbour, never bend the game. */}
+            <canvas ref={canvasRef} width={W} height={H} className="block"
+                style={{ imageRendering: 'pixelated', width: `min(calc(100vw - 16px), calc((100svh - 64px) * ${W / H}))`, height: 'auto' }} />
 
             {/* #1637 WATCH — the planner walks the quest; any input takes over.
                 (pill first in the DOM, #1637: the phone contract wants its window
@@ -351,7 +357,7 @@ export default function Zelda() {
 
             {/* #1656 — the forgotten-how-to-play tap: start AND watch, one button. */}
             {screen === 'attract' && (
-                <div className="absolute z-[70] left-1/2 -translate-x-1/2 pointer-events-auto" style={{ bottom: '24%' }}>
+                <div className="absolute z-[70] left-1/2 -translate-x-1/2 pointer-events-auto" style={{ bottom: '12%' }}>
                     <AttractWatchButton />
                 </div>
             )}
