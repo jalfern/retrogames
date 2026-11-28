@@ -1,75 +1,83 @@
-# STATE — forge board snapshot (slot b, 2026-11-28 — autopilot and player share one clock)
+# STATE — forge board snapshot (slot b, 2026-11-28 — the mountain learned to manual)
 
-## This session (slot b) — claimed, shipped, closed
+## This session (slot b) — never-dry, claimed, shipped, closed
 
-**LEMMINGS-LITE replay phase (#3892, PR #3896, merged `c4ca306`)** —
-never-dry rung: `idle-kick` answered `KICK LEMMINGS-LITE 1 weak` (score 3 =
-#3879 feedback + 2 unowned gaps; index 1 = the stamp offset).
-- **What shipped:** `replay()` fetched `byTick.get(g.tick + 1)` — every script
-  command fired one tick BEFORE the phase `solve()` verified (stamp T applies
-  between the steps; the step advancing to T+1 moves the body — the phase a
-  human keypress has too). The attract loop, WATCH and the lemcheck mirror
-  carried the same `+1` on screen. All four now apply at `g.tick === T`:
-  THE DOOR replays **6/1, identical to its proof** (was 6/3 — two phantom
-  drownings gone); SPIRE 4/0, MASSIF 5/0, LEDGE 5/3 unchanged; replay-vs-
-  replay stays bit-identical. Side effect handled honestly: the honest world
-  holds its crowds, so the desync-manufactured falls that fed #3853's mid-air
-  canopy vanished — demo floats are now CERTIFIED (`certifyDemoFloat`: grant
-  accepted only when replay keeps win/exited/dead identical). Today SPIRE
-  deploys TWO parachutes mid-descent and DOOR catches its post-bomb drop
-  mid-air — more deploy than the desync-era demo ever showed; MASSIF/LEDGE
-  carry proof-neutral walker stripes.
-- **Gates:** lemcheck 282 → **314** (REPLAY PHASE section: per-board
-  replay==solve, DOOR direct probe silent-at-stamp/live-at-stamp+1, shell
-  source audit; parachute drive rewritten; #3876 plant-probe re-phased to
-  plantT+1). Hand mutation: restore `+ 1` → 5 pins red, restore → green.
-  lemplay 66/66 ×2 (one advisory 64/66 under concurrent load, unnamed pins,
-  green on rerun — rule 3). recmethods PASS 37, goldentracecheck 89/89,
-  lint mario/fps/ai + eslint + build green. Prod: `Lemmings-Cq3bQvxi.js`
-  verified (zero `tick+1` applies, `air` grants present).
+**SSX MANUALS (#3901, PR #3905, merged `3440b3c`)** — never-dry rung: the
+warden armed `KICK SSX -1 weak` (score 1 = open QA feedback #3900 naming it;
+zero unowned README gaps; flagship stage spent). Per the rung's law the fix is
+gameplay, not #3900's fidelity work: the one signature the sim never had was
+the original's ground-combo glue.
+- **What shipped:** a landing that PAID (`evalTrick pts > 0`) met with the
+  edge still held (↓ — #547's scrub verb, drag and all) rolls into a nose-up
+  **manual**. Hold scores nothing; releasing clean pays
+  `manualPts(150) × min(1, t/manualCap 1.2s) × chain mult`, meter fed at the
+  trick-economy rate (rails precedent); the cap makes Showoff farm-proof.
+  Ollie/crest/lip/rail exits pay on the way out (butter into the next
+  feature, combo alive); a crash forfeits silently. Deck pitched ~22° about
+  the #904 somersault axis (boot weld still solves), rider leans back,
+  `MANUAL <t>s +pts` pop, lift thump + exit hiss, trick-book line. Planner
+  stays cold (never emits ↓) → CPU/attract/WATCH byte-identical.
+- **Gates:** ssxcheck 348 → **363** (entry/no-entry/hold-neutral/capped pay ×
+  chain/meter rate/crash-forfeit/ollie+rail exits/hash/cold-planner guard);
+  hand mutant entry→false: 7 red, restore green. ssxplay 11/11 real keys
+  (manual entered→held 0.9s→paid +300, zero page errors, pose screenshot
+  judged). terraincheck 84/84, mountaincheck 257/257 (autopilot still wins).
+  lint mario/fps/ai + eslint + build green. Prod verified: `SSX-sk4bOckF.js`
+  carries the manual.
+- **CI lesson (one PR spent, rule-3 clean):** first static was RED — not
+  lint: `jonqcheck` #991 pins SSX's README honest-gaps list EMPTY (idle-stage
+  fixture). A new README gap must be owned by an open issue or carry the
+  repo's CLOSED/BLOCKED/**DISCLAIMER** marker. My design note now reads
+  `**DISCLAIMER**` (#2488 class: prose stays, weakness doesn't score) —
+  jonqcheck 168/0.
+- **Advisory not-mine:** ssxmodelcheck's pad-cluster (stick/trick-row
+  selectors vs the #3108 full-pad default) fails on THIS Mac at origin/main
+  too (9/76 at a9bee12, nightly green). If it recurs, name it on an issue
+  before blaming a PR.
 
 ## Slot board
 
 | Slot | Lane | Doing | Since | Heartbeat |
 |---|---|---|---|---|
-| a | games | **#3879** Lemmings LOOK & animation slice (claimed via warden TARGET; design comment posted) | 2026-11-28 ~17:00 | fresh |
-| b | games | idle at `origin/main` (`ac3ad22`) after shipping #3892 | 2026-11-28 ~18:20 | fresh |
-| building-qa | qa | **#3888** SIMCITY-MIN idle-water-motion; QA-mini live this session | — | fresh |
+| a | games | **#3879** Lemmings LOOK — first slice shipped (#3904 `a9bee12`), issue open multi-stage | 2026-11-28 ~18:20 | fresh |
+| b | games | idle at `origin/main` (`3440b3c`) after shipping #3905 | 2026-11-28 ~20:30 | fresh |
+| qa (mini/studio) | qa | **#3900 SSX fidelity (#3902) and #3888 simcity strokes (#3907) both SHIPPED this cycle**; sessions alive | — | fresh |
 
-Open question issues: **#3791 AWAITING JON** (dry-shelf flagship title),
-**#3516** (Arkanoid texture rung — deadline passed today, sweep takes its
-`done` default). Neither blocks a claim.
+Open question issues: **#3791 AWAITING JON** (dry-shelf flagship title).
+Neither blocks a claim.
 
 ## What is playable right now
 
-- **LEMMINGS-LITE** at https://jalfern.com/retrogames/lemmings — THE DOOR's
-  attract demo loses 6/1, exactly what the oracle proves, and SPIRE's two
-  parachutes now visibly deploy mid-descent. Attract, WATCH and human input
-  obey one stamp law.
-- **ARCADE** at https://jalfern.com/retrogames/ — marble-madness and
-  ten-deep art landed mid-session (#3897/#3894, other lanes).
+- **SSX** at https://jalfern.com/retrogames/ssx — land ANY scoring trick
+  holding ↓, release clean: nose-up manual, `MANUAL <t>s +pts`, chain-scaled;
+  butter the hold off a roller or onto a rail and it pays on the way out.
+- **LEMMINGS-LITE** — slot a's look slice live (sloped planks, animated
+  sprites, splintering wood). **COMET DRIFT HD** attract column fixed (#3906).
+  **SIMCITY-MIN** one-stroke language (#3907) + river shimmer (#3891).
 
 ## Next actions by priority
 
-1. `idle-kick` now answers **NONE** (Lemmings held by slot a's #3879; the
-   rest of the shelf is owned) — STOP is legal for a fresh lane; never-dry
-   only re-arms if #3879 closes while gaps stay unowned.
-2. **Lemmings float-while-digging** is the game's one big unowned gap left
-   (needs a vertical-dig mode or a dig-model rethink). If a future kick names
-   it, budget it as an engine task, not a one-liner stage.
+1. `idle-kick` re-derives NONE again (SSX gap list empty again, shelf owned)
+   — STOP legal for a fresh lane; never-dry re-arms only when a building issue
+   closes while gaps stay unowned.
+2. **Lemmings float-while-digging** — the shelf's biggest engine gap
+   (vertical-dig mode); budget as engine task if a future kick names it.
 3. **DEFENDER stage 2** — still no open builder issue; verify numbers live
-   (#3860's history) before filing a fresh one.
-4. **#3889** SIMCITY-MIN stroke-language — unowned QA feedback (QA lane's).
+   (#3860's history) before filing fresh.
+4. QA-lane candidates from my stage: SSX attract buttering rollers (README
+   DISCLAIMER names it); rivals riding manuals needs planner ground verbs.
 
 ## Open risks
 
-1. **Issue-number drift in STATE handoffs** — re-check numbers before
-   writing; this session's refs (#3879/#3888/#3892/#3896, ac3ad22/c4ca306)
-   were verified live.
-2. **`statepark` cannot prove its own currency (#1214)** — unchanged.
-3. **Games at 0 lack sensor/agent files (#3821, #3784)** — a claim that
-   assumes them fails at step 4 of Adding a game.
-4. **lemplay double-fail under concurrent load** (unnamed, rerun-green) — if
-   it recurs, name the pins before it hides a real phase regression.
-5. ~~Stamp offset~~ CLOSED by #3892: pins may compare solve outcomes again —
-   replay runs the oracle's world (README carries the law).
+1. **ssxmodelcheck pad-cluster** Mac-only red (full-pad default vs old
+   selectors) — CI green; name it before it eats a lane hour.
+2. **Issue-number drift** — refs above (#3900–#3907, a9bee12→3440b3c) were
+   verified live.
+3. **`statepark` cannot prove its own currency (#1214)** — unchanged.
+4. **jonqcheck REAL_GAPS** — README gap hygiene is a load-bearing fixture;
+   new honest gaps ship with an owner issue or a marker, never bare.
+5. Games at 0 lack sensor/agent files (#3821, #3784) — unchanged.
+
+## Open questions
+
+- #3791 (dry-shelf flagship title) — AWAITING JON.
