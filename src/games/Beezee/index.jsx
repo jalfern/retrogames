@@ -807,10 +807,18 @@ const BeeGame = () => {
             <div ref={stageRef} className="absolute inset-0" />
 
             <div className={`absolute inset-0 pointer-events-none transition-opacity duration-300 ${play ? 'opacity-100' : 'opacity-0'}`}>
-                <div className="absolute top-3 left-4 right-4 flex items-center gap-3 text-amber-50 font-mono">
-                    <span className="text-sm font-bold tracking-widest">SUN</span>
-                    <div className="w-36 h-3 bg-black/40 rounded-full overflow-hidden border border-black/40">
-                        <div id="bee-sun" ref={setHud('sun')} className="h-full rounded-full" style={{ background: 'linear-gradient(90deg,#ffd873,#ff5a2a)', width: '100%' }} />
+                {/* #3916: the row used to ride top-3 — the same band the #437 ARCADE
+                    and PAUSE chips live in, so the SUN readout rendered under the
+                    left chip and the score under the right one. It now sits below the
+                    chrome band (46px, the CometDrift convention) and rides var(--sat)
+                    exactly as the chips do, so it clears them on notched phones too. */}
+                <div data-hud-row className="absolute left-4 right-4 flex items-center gap-3 text-amber-50 font-mono"
+                    style={{ top: 'calc(2.875rem + var(--sat, 0px))', textShadow: '0 2px 6px #000' }}>
+                    <div data-sun-pill className="flex items-center gap-2 rounded-full border border-black/30 bg-black/35 px-2.5 py-1">
+                        <span className="text-sm font-bold tracking-widest">SUN</span>
+                        <div className="w-36 h-3 bg-black/40 rounded-full overflow-hidden border border-black/40">
+                            <div id="bee-sun" ref={setHud('sun')} className="h-full rounded-full" style={{ background: 'linear-gradient(90deg,#ffd873,#ff5a2a)', width: '100%' }} />
+                        </div>
                     </div>
                     <span className="text-lg"><span id="bee-nectar" ref={setHud('nectar')} className="tracking-tighter text-yellow-300" /></span>
                     <span className="text-sm opacity-90">✿×<span id="bee-pollen" ref={setHud('pollen')}>0</span></span>

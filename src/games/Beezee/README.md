@@ -46,7 +46,10 @@ meets Bug's Life.
   toll → ledger → tap-to-restart, zero page errors. The first version banked
   nothing at 20/21: three `evaluate` round-trips per tick put the driver
   below the sim's tempo; one `snap()` per tick fixed it. A driver that thinks
-  slower than the world steers nothing.
+  slower than the world steers nothing. Chrome clearance is pinned here too
+  (#3918/#3916): the sun pill and the score must not intersect the real
+  rects of the ARCADE/PAUSE corner chips — the top row used to ride `top-3`,
+  the chrome band, and the SUN readout painted under the chip in every shot.
 - Not yet in CI: `beeplay` stays manual/advisory (Chrome); `beecheck` +
   `lint:bee` gate `static`.
 

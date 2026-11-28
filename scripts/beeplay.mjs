@@ -79,6 +79,42 @@ await wait(400)
 }
 
 {
+    // #3918 (#3916): the top HUD row used to ride top-3 — the #437 corner-chrome
+    // band — so the SUN readout painted under the ARCADE chip and the score under
+    // PAUSE. ART.md #6: text is never drawn over the HUD. Prove it with real
+    // rects: the sun pill and the score must not intersect either chip. (The
+    // rect helper takes an ELEMENT — taking `closest` off a plain rect object
+    // silently yielded null and the check passed vacuously; an assert the page
+    // cannot falsify is no assert.)
+    const clash = await page.evaluate(() => {
+        const R = el => {
+            if (!el) return null
+            const b = el.getBoundingClientRect()
+            return { l: b.left, t: b.top, r: b.right, b: b.bottom }
+        }
+        const hit = (a, b) => a && b && a.l < b.r && b.l < a.r && a.t < b.b && b.t < a.b
+        const sun = R(document.querySelector('[data-sun-pill]'))
+        const score = R(document.getElementById('bee-score'))
+        const arcade = R(document.querySelector('[data-nav="arcade"]'))
+        const pause = R(document.querySelector('[data-nav="pause"]'))
+        if (!sun || !score || !arcade || !pause) {
+            return { missing: `sun=${!!sun} score=${!!score} arcade=${!!arcade} pause=${!!pause}` }
+        }
+        return { sunVsArcade: hit(sun, arcade), scoreVsPause: hit(score, pause), sun, score, arcade, pause }
+    })
+    if (clash.missing) {
+        r.check('HUD chrome pin can see its elements', false, clash.missing)
+    } else {
+        r.check('the SUN readout clears the ARCADE chip (#3916)', !clash.sunVsArcade,
+            clash.sunVsArcade ? `overlap: sun ${JSON.stringify(clash.sun)} arcade ${JSON.stringify(clash.arcade)}`
+                : `sun top=${clash.sun.t.toFixed(0)}px, arcade bottom=${clash.arcade.b.toFixed(0)}px`)
+        r.check('the score clears the PAUSE chip (#3916)', !clash.scoreVsPause,
+            clash.scoreVsPause ? `overlap: score ${JSON.stringify(clash.score)} pause ${JSON.stringify(clash.pause)}`
+                : `score top=${clash.score.t.toFixed(0)}px, pause bottom=${clash.pause.b.toFixed(0)}px`)
+    }
+}
+
+{
     const b0 = await probe()
     const p0 = await pixels()
     await tap('ArrowLeft', 700)
