@@ -561,6 +561,15 @@ function candidates(g) {
             if (solid(g, Math.floor(L.x), k)) push(L.id, 'block')
             if (a0 === AIR && !L.climber) push(L.id, 'climb')
         }
+        // #3866 BUILDER enters the search space: at a one-tile descent with a
+        // shelf below — the exact cells walker() lays wood into (stage 1's
+        // placement rule mirrored, so the solver can never ask the world for
+        // a plank it would refuse — pond rims and deep holes stay out) — a
+        // free walker is offered the bridge. Like every move it is judged on
+        // the roll: where stepping down survives and still delivers, the
+        // cargo stays in the pack; where the drop is a trap, wood is the
+        // only crossing and the rollout says so.
+        if (a1 === AIR && a0 === AIR && !L.builder && solid(g, cx, k + 1)) push(L.id, 'build')
         // A bomb is a TIMER: assigned at the wall it has already bounced and
         // explodes a tile short. Offer it while the walker still has runway
         // to touch the obstacle when the fuse runs out (~3.7 tiles / 1.6 s).
