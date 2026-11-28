@@ -16,7 +16,7 @@ supplies fails the build.
   the attract replay run on exactly the code the browser runs.
   - Geometry: a lemming's feet sit on a row boundary (`y = k` ⇒ row `k` is the
     ground under it, body = row `k−1`). The three cells ahead — foot, chest,
-    next floor — decide step / wall / fall. Matter: AIR/DIRT/STEEL/WATER.
+    next floor — decide step / wall / fall. Matter: AIR/DIRT/STEEL/WATER/PLANK.
   - Agent-per-entity: each lemming is a small state machine (walk/fall/climb/
     dig/block/bomb/corpse) stepped in id order ⇒ the game is a deterministic
     function of (level, grid, command list). `stateHash` pins that; the attract
@@ -29,13 +29,16 @@ supplies fails the build.
     corpses block walkers; a fatal fall is > `CFG.maxFall`; **water drowns**
     (#3828) — chest or feet in a WATER cell kills from any height, water is
     not ground, and neither dig nor blast yields it.
-  - Skills: BLOCKER, BOMBER, CLIMBER, DIGGER, **FLOATER** (#3827). Climber,
-    digger and floater are flags for life — re-granting any of them refuses
-    rather than burning supply (#422). The floater's parachute caps descent at
-    `CFG.floatSp` and makes no landing height fatal. The solver's
-    `candidates()` never offers FLOATER, so every level's proven solution,
-    load-bearing proofs and slack margin ride the four original mechanics; the
-    two floaters per level are pure player-side slack.
+  - Skills: BLOCKER, BOMBER, CLIMBER, DIGGER, **FLOATER** (#3827),
+    **BUILDER** (#3863). Climber, digger and floater are flags for life —
+    re-granting any of them refuses rather than burning supply (#422). The
+    floater's parachute caps descent at `CFG.floatSp` and makes no landing
+    height fatal. The solver's `candidates()` never offers FLOATER, so every
+    level's proven solution, load-bearing proofs and slack margin ride the
+    four original mechanics; the two floaters per level are pure player-side
+    slack. BUILDER shares the law (#3863): `candidates()` never offers it and
+    never spends planks, so proven scripts replay unchanged — its 12-plank
+    cargo is the sixth skill's player-side slack (see Builder below).
 - `levels.js` — levels CARVED from solid rock in code (IronKeep lesson), each
   with a `proves:` list lemcheck re-solves at zero supply (a skill you can take
   away is decoration) and a slack pass (one fewer of every supply the winning

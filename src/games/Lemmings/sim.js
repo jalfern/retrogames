@@ -53,6 +53,12 @@ export const STEEL = 2
 // drowns, from any height, no skill saves it. Water is NOT ground: walkers walk
 // into it and sink. Only DIRT yields to digging and blasting; water stays.
 export const WATER = 3
+// PLANK (#3863): placed matter — the BUILDER's wood. Planks read as ground
+// (support walkers, mountable one-tile steps, land fallers), but they are not
+// dirt: the digger chews only dirt, and climbers need dirt handholds, so wood
+// refuses both. Bombs clear planks, as in the original. The grid stays one
+// byte per cell, so determinism and stateHash ride planks for free.
+export const PLANK = 4
 
 export const CFG = {
     walkSp: 2.3,
@@ -71,7 +77,7 @@ export const CFG = {
     flash: 36,
 }
 
-export const SKILLS = ['block', 'bomb', 'climb', 'dig', 'float']
+export const SKILLS = ['block', 'bomb', 'climb', 'dig', 'float', 'build']
 // The skill a level opens SELECTED (the tutorial reach of the board). Levels
 // may declare it explicitly (#3864: THE SPIRE ships one BLOCKER, but its
 // tutorial arm is still CLIMB); otherwise it is the first skill in SKILLS
@@ -81,8 +87,8 @@ export const SKILLS = ['block', 'bomb', 'climb', 'dig', 'float']
 export const defaultSkill = (level) => (level.defaultSkill && (level.skills[level.defaultSkill] | 0) > 0)
     ? level.defaultSkill
     : (SKILLS.find((s) => (level.skills[s] | 0) > 0) || 'climb')
-export const SKILL_KEY = { Digit1: 'block', Digit2: 'bomb', Digit3: 'climb', Digit4: 'dig', Digit5: 'float' }
-export const SKILL_NAME = { block: 'BLOCKER', bomb: 'BOMBER', climb: 'CLIMBER', dig: 'DIGGER', float: 'FLOATER' }
+export const SKILL_KEY = { Digit1: 'block', Digit2: 'bomb', Digit3: 'climb', Digit4: 'dig', Digit5: 'float', Digit6: 'build' }
+export const SKILL_NAME = { block: 'BLOCKER', bomb: 'BOMBER', climb: 'CLIMBER', dig: 'DIGGER', float: 'FLOATER', build: 'BUILDER' }
 
 export const mulberry32 = (a) => () => {
     a |= 0; a = (a + 0x6D2B79F5) | 0
@@ -95,7 +101,9 @@ export const cell = (g, cx, cy) => {
     if (cx < 0 || cx >= W || cy < 0 || cy >= H) return STEEL   // world edges are steel
     return g.grid[cy * W + cx]
 }
-export const solid = (g, cx, cy) => { const c = cell(g, cx, cy); return c === DIRT || c === STEEL }
+// PLANK counts as solid (#3863): wood supports walkers and landings exactly
+// like terrain — that is the whole point of a plank road.
+export const solid = (g, cx, cy) => { const c = cell(g, cx, cy); return c === DIRT || c === STEEL || c === PLANK }
 const groundRow = (y) => Math.floor(y + 1e-6)
 const bodyRow = (y) => Math.floor(y - 0.5)
 
@@ -148,6 +156,7 @@ export function spawnLemming(g) {
         climber: false,
         digger: false,
         floater: false,
+        builder: false,
         flashT: 0,
         turnCd: -1,
         live: true,
@@ -189,13 +198,20 @@ export function assign(g, id, skill) {
     // standing) and a bomb's fuse does not un-light. A WOKEN blocker (#3864)
     // is just a walker again and may take either.
     if (skill === 'float' && (L.floater || st === 'block' || st === 'bomb')) return false
-    g.skills[skill]--
+    // #3863 BUILDER: the plank carrier flag is for life like climber/digger
+    // (#422 law — a re-grant would only beg), and the line/bomb jobs refuse it.
+    // Assigning is FREE by design: g.skills.build is the plank cargo, and the
+    // original's panel decrements when wood is LAID, not when the skill is
+    // handed out — the charge model differs from the five per-lemming skills.
+    if (skill === 'build' && (L.builder || st === 'block' || st === 'bomb')) return false
+    if (skill !== 'build') g.skills[skill]--
     g.cmds.push({ tick: g.tick, id, skill })
     if (skill === 'climb') L.climber = true
     else if (skill === 'block') L.state = 'block'
     else if (skill === 'dig') { L.digger = true; L.state = 'dig'; L.digT = 0 }
     else if (skill === 'bomb') { L.state = 'bomb'; L.fuseT = 0 }
     else if (skill === 'float') L.floater = true
+    else if (skill === 'build') L.builder = true
     L.flashT = CFG.flash
     g.events.push({ type: 'assign', id, skill })
     return true
@@ -304,7 +320,21 @@ function walker(g, L) {
     // a0 = the next floor. Flat ground has a0 solid and a1 air.
     const a1 = cell(g, cx, k - 1)
     const a2 = cell(g, cx, k - 2)
-    const a0 = cell(g, cx, k)
+    let a0 = cell(g, cx, k)
+    // #3863 BUILDER: at a one-tile descent — floor gone at foot level, a
+    // shelf directly below — a builder who still carries wood lays a plank
+    // into the gap and keeps walking on it at the level it stood. The wood
+    // becomes a step for everyone behind: mountable from the shelf below,
+    // crossable at the top, and the road follows a staircase down one
+    // plank per step (the original's plank-road trick in square tiles).
+    // It refuses a pond (no shelf under the surface) and refuses a hole
+    // deeper than the plank's reach — the original's planks need ground.
+    if (L.builder && a1 === AIR && a0 === AIR && (g.skills.build | 0) > 0 && solid(g, cx, k + 1)) {
+        g.grid[k * W + cx] = PLANK
+        g.skills.build--
+        g.events.push({ type: 'plank', id: L.id, x: cx + 0.5, y: k })
+        a0 = PLANK                                  // the wood it just laid catches it
+    }
     if (a1 === DIRT && L.digger) {
         L.state = 'dig'
     } else if (a1 !== AIR) {
@@ -443,7 +473,10 @@ function digger(g, L) {
         return
     }
     L.state = 'walk'
-    // water, like steel, refuses the digger (#3828 — only dirt yields)
+    // water, like steel, refuses the digger (#3828 — only dirt yields).
+    // Wood needs no clause here (#3863): the walker's mount/turn checks read
+    // the same row the chest would chew, so a plank face is met as a wall
+    // first — the digger climbs the wood or turns, and the plank survives.
     g.events.push({ type: chest === STEEL || chest === WATER ? 'digstop' : 'digthru', id: L.id })
 }
 
@@ -455,8 +488,8 @@ function blast(g, L) {
         for (let cx = Math.floor(bx - r); cx <= Math.floor(bx + r); cx++) {
             if (cx < 0 || cx >= W || cy < 0 || cy >= H) continue
             const dx = cx + 0.5 - bx, dy = cy + 0.5 - by
-            if (dx * dx + dy * dy <= r * r && g.grid[cy * W + cx] === DIRT) {
-                g.grid[cy * W + cx] = AIR
+            if (dx * dx + dy * dy <= r * r && (g.grid[cy * W + cx] === DIRT || g.grid[cy * W + cx] === PLANK)) {
+                g.grid[cy * W + cx] = AIR         // #3863: blasts splinter planks too
             }
         }
     }
