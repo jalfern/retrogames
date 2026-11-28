@@ -52,6 +52,39 @@ await wait(1200)
     r.check('the hill is painted, not black', p > 20, `mean=${p.toFixed(1)}`)
 }
 
+{
+    // #3879 sloped road, pixel-proved where it is guaranteed: the attract
+    // replay lays SPIRE's chain every cycle — no aim-bot, no timing luck.
+    let saw = 0
+    for (let i = 0; i < 420; i++) {
+        const q = await probe()
+        if (q.screen !== 'attract') break
+        if (q.name === 'THE SPIRE' && q.planks >= 10) {
+            for (let k = 0; k < 10 && saw < 8; k++) {
+                saw = Math.max(saw, await page.evaluate(() => {
+                    const c = document.querySelector('canvas[data-lem-stage]')
+                    const g = c.getContext('2d')
+                    const tan = (x, y, w, h) => { const d = g.getImageData(Math.max(0, x), Math.max(0, y), w, h).data; let m = 0; for (let j = 0; j < d.length; j += 4) if (d[j] > 150 && d[j] < 235 && d[j + 1] > 100 && d[j + 1] < 200 && d[j + 2] > 40 && d[j + 2] < 130) m++; return m }
+                    const woods = window.__lemTest.woods()
+                    const has = (x, y) => woods.some(([a, b]) => a === x && b === y)
+                    let n2 = 0
+                    for (const [x, y] of woods) {
+                        const leanR = has(x + 1, y + 1) || has(x + 2, y + 1) || has(x + 2, y + 2)
+                        const leanL = has(x - 1, y + 1) || has(x - 2, y + 1) || has(x - 2, y + 2)
+                        if (leanR && !leanL) n2 += tan(x * 8 + 8, y * 8 + 9, 2, 4)
+                        else if (leanL && !leanR) n2 += tan(x * 8 - 2, y * 8 + 9, 2, 4)
+                    }
+                    return n2
+                }))
+                await wait(80)
+            }
+            break
+        }
+        await wait(100)
+    }
+    r.check('#3879: sloped road — the attract SPIRE chain throws tan noses past its downhill edges', saw >= 8, `nose px=${saw}`)
+}
+
 await key('KeyX')
 await wait(400)
 r.check('a real key leaves attract and starts the run', (await probe()).screen === 'play', (await probe()).screen)
@@ -97,6 +130,49 @@ r.check('a real key leaves attract and starts the run', (await probe()).screen =
 // assign with Space. Every event is one a thumb could produce.
 r.info('playing level 1 with the solver only as an aim-bot — keys do everything')
 let assigned = 0
+// #3879 LOOK probes: nose px below board edges, walk-cycle poses on isolated
+// walkers, live splinters and landings — sampled through the same drive loop.
+let poseExt = 0, poseRec = 0, sawChips = 0, sawSquash = 0, lookTick = 0
+const lookSample = async (withRoad) => {
+    const s = await page.evaluate((wr) => {
+        const c = document.querySelector('canvas[data-lem-stage]')
+        const g = c.getContext('2d')
+        const p = window.__lemTest.probe()
+        const tan = (x, y, w, h) => {
+            const d = g.getImageData(Math.max(0, x), Math.max(0, y), w, h).data
+            let k = 0
+            for (let i = 0; i < d.length; i += 4) if (d[i] > 150 && d[i] < 235 && d[i + 1] > 100 && d[i + 1] < 200 && d[i + 2] > 40 && d[i + 2] < 130) k++
+            return k
+        }
+        let n = 0
+        if (wr) {
+            const d = g.getImageData(18 * 8, 6 * 8, 22 * 8, 18 * 8).data
+            for (let i = 0; i < d.length; i += 4) if (d[i] > 150 && d[i] < 235 && d[i + 1] > 100 && d[i + 1] < 200 && d[i + 2] > 40 && d[i + 2] < 130) n++
+        }
+        // walk-cycle poses, isolated walkers only (crowds leak neighbouring
+        // pixels into a 1px probe): stride = pants px one column OUTSIDE the
+        // default foot span; recovery = the outer default column gone empty.
+        // Runs only on idle beats — per-pixel reads are the heavy half.
+        let ext = 0, rec = 0
+        if (!wr) for (const L of p.lemmings) {
+            if (L.state !== 'walk' || !L.live || L.x < 2 || L.x > 45) continue
+            if (!p.lemmings.every(o => o.id === L.id || !o.live || Math.abs(o.x - L.x) > 1 || Math.abs(o.y - L.y) > 1)) continue
+            const ph = Math.floor(p.tick / 6 + L.id) % 4
+            const dd = L.dir > 0 ? 1 : -1
+            const px = Math.round(L.x * 8 - 3), py = Math.round(L.y * 8 - 8)
+            if (py < 8 || py > 200) continue
+            const pd = (sx, sy) => { const q = g.getImageData(Math.max(0, sx), sy, 1, 1).data; return q[0] < 90 && q[1] > 70 && q[1] < 130 && q[2] > 130 }
+            if (ph === 1 && pd(dd > 0 ? px + 6 : px, py + 6)) ext++
+            if (ph === 3 && !pd(dd > 0 ? px + 1 : px + 5, py + 6)) rec++
+        }
+        return { n, ext, rec, chips: window.__lemTest.chipsN(), squashes: window.__lemTest.squashIds().length }
+    }, withRoad)
+    if (s.n > 0 && (roadShot === null || s.n > roadShot)) roadShot = s.n
+    poseExt += s.ext
+    poseRec += s.rec
+    if (s.chips > 0) sawChips = s.chips
+    if (s.squashes > 0) sawSquash = s.squashes
+}
 const done = new Set()
 let sawBuild = false, roadShot = null
 const canvas = await page.evaluate(() => {
@@ -152,7 +228,10 @@ for (let i = 0; i < 400; i++) {
     if (s.screen !== 'play') break
     if (assigned >= 8) break     // #3866: SPIRE's script ends with a BUILDER now — ride it to the last command
     const h = await hint()
-    if (!h || done.has(`${h.id}:${h.skill}`)) { await wait(150); continue }
+    if (!h || done.has(`${h.id}:${h.skill}`)) {
+        if (++lookTick % 3 === 0) await lookSample(false)   // every 3rd idle beat — the aim loop must stay fast
+        await wait(150); continue
+    }
     done.add(`${h.id}:${h.skill}`)
     const pt = at(h.x, h.y)
     for (let k = 0; k < 6; k++) {
@@ -176,14 +255,8 @@ for (let i = 0; i < 400; i++) {
         // board shows it (the win scene restarts the attract a beat later)
         // and keep the fullest frame. Palette: base #a8722f, grain #c89050,
         // nails #7c4a18, sunlit lip #e6c17c; dirt tops stay dark (#7a4a22).
-        const n = await page.evaluate(() => {
-            const c = document.querySelector('canvas[data-lem-stage]')
-            const d = c.getContext('2d').getImageData(18 * 8, 6 * 8, 22 * 8, 18 * 8).data
-            let n = 0
-            for (let i = 0; i < d.length; i += 4) if (d[i] > 150 && d[i] < 235 && d[i + 1] > 100 && d[i + 1] < 200 && d[i + 2] > 40 && d[i + 2] < 130) n++
-            return n
-        })
-        if (roadShot === null || n > roadShot) roadShot = n
+        // #3879: the same sample now also counts leaning noses and poses.
+        await lookSample(true)
     }
     if (got || after.skills[h.skill] < s.skills[h.skill]) {
         assigned++
@@ -206,6 +279,12 @@ r.check('real cursor aiming + real keys assigned solver skills to lemmings', ass
     r.check('#3866: the autopilot BUILDER command rode the player input path (Digit6/Space saw, lemming carries)', sawBuild, `sawBuild=${sawBuild}`)
     r.check('#3866: the solver-line build spends cargo in the browser sim', p.skills.build < 12, `cargo=${p.skills.build}`)
     r.check('#3866: the plank road paints on the descent (tan grain on the spire face)', roadShot !== null && roadShot >= 80, `tan px=${roadShot}`)
+    // #3879, pixel-proved in the browser: animated legs, live splinters and
+    // squashed landings (the sloped-road nose is pinned in the attract phase).
+    r.check('#3879: walk cycle strides — pants pixels reach past the default foot span', poseExt >= 4, `stride frames=${poseExt}`)
+    r.check('#3879: walk cycle recovers — outer foot columns go empty mid-cycle', poseRec >= 4, `recovery frames=${poseRec}`)
+    r.check('#3879: wood chips are live (nail-dust on laying, splinters on blast)', sawChips >= 1, `max chips=${sawChips}`)
+    r.check('#3879: landings squash (the map lights up on touch-down)', sawSquash >= 1, `max squashes=${sawSquash}`)
 }
 
 // riders exit around t=30s of world time; poll generously
