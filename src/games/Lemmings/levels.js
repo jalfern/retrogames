@@ -59,6 +59,16 @@ export const LEVELS = [
             // the original's descents are always stepped.
             for (let x = 18; x <= 22; x++) c.column(x, 6 + Math.abs(x - 19), 23, DIRT)
             for (let x = 23; x <= 38; x++) c.column(x, x - 15, 23, DIRT)
+            // #3908 the notch: one real two-row drop mid-stair. The original's
+            // spires mix stepped descents with true drops — and since #3908 a
+            // one-row step is a WALK, so an all-stepped face has no air left
+            // anywhere: the notch keeps the fall (and the parachute #3853
+            // demos on it) in the game, at two rows — survivable by #3849's
+            // law (>3 kills) and reachable by the plank's new span (#3908):
+            // the straggler rides the air, the road rides the wood. Three
+            // rows would close the east face for everyone but a floater;
+            // two is the honest middle.
+            c.set(31, 16, AIR)
             // exit plinth
             c.rect(40, 23, 44, 23, DIRT)
             // #3828 the pond: the original's first level had one, and the

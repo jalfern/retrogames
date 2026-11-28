@@ -9,8 +9,10 @@
 //   (cx, k)   foot level  → solid = a one-tile step (mount it if there is headroom)
 //   (cx, k-1) chest       → solid = a wall 2+ tall (only a climber, and only
 //                           with free air above — an overhang refuses a climb)
-//   both air  → the floor ends: fall. Fatal falls kill; the digger is the only
-//   safe descent, because it tunnels one tile at a time from the inside.
+//   both air  → the floor ends: one row below is a step-down (#3908 — walk it,
+//   the mirror of the mount), two or more is a fall. Fatal falls kill; the
+//   digger is the only descent THROUGH rock, because it tunnels one tile at a
+//   time from the inside.
 //
 // The rules that matter, and why each is the shape it is:
 //
@@ -327,13 +329,27 @@ function walker(g, L) {
     // becomes a step for everyone behind: mountable from the shelf below,
     // crossable at the top, and the road follows a staircase down one
     // plank per step (the original's plank-road trick in square tiles).
-    // It refuses a pond (no shelf under the surface) and refuses a hole
-    // deeper than the plank's reach — the original's planks need ground.
-    if (L.builder && a1 === AIR && a0 === AIR && (g.skills.build | 0) > 0 && solid(g, cx, k + 1)) {
-        g.grid[k * W + cx] = PLANK
-        g.skills.build--
-        g.events.push({ type: 'plank', id: L.id, x: cx + 0.5, y: k })
-        a0 = PLANK                                  // the wood it just laid catches it
+    // It refuses a pond (no shelf under the surface) and, since #3908, a
+    // drop that runs deeper than the plank's two-row reach — the original's
+    // planks need ground.
+    if (L.builder && a1 === AIR && a0 === AIR && (g.skills.build | 0) > 0) {
+        if (solid(g, cx, k + 1)) {
+            g.grid[k * W + cx] = PLANK
+            g.skills.build--
+            g.events.push({ type: 'plank', id: L.id, x: cx + 0.5, y: k })
+            a0 = PLANK                                  // the wood it just laid catches it
+        } else if (cell(g, cx, k + 1) === AIR && solid(g, cx, k + 2)) {
+            // #3908 SLOPED SPAN: a two-cell descent is bridged at the LOWER
+            // level — the board spans the stair at the angle the LOOK (#3879)
+            // already draws, and the step-down below carries the crowd onto it.
+            // Three rows stays out of reach (wood may not hover over a cave
+            // mouth), and water is not ground — `solid` never matched it, and
+            // the cell test refuses even the water-surface lay, so the pond
+            // law stands over deeper ponds too.
+            g.grid[(k + 1) * W + cx] = PLANK
+            g.skills.build--
+            g.events.push({ type: 'plank', id: L.id, x: cx + 0.5, y: k + 1 })
+        }
     }
     if (a1 === DIRT && L.digger) {
         L.state = 'dig'
@@ -350,6 +366,19 @@ function walker(g, L) {
         }
     } else if (a0 !== AIR) {
         L.x = nx                                 // ordinary flat step
+    } else if (solid(g, cx, k + 1)) {
+        // #3908 STEP-DOWN — the mirror of the one-tile mount above: where the
+        // original's boards rode the stair at an angle, this grid now WALKS
+        // the stair at an angle. If the floor ends at foot level and a shelf
+        // waits exactly one row below, the lemming steps down instead of
+        // falling: feet land on the shelf, the walk and its speed continue,
+        // and no fallDist accumulates — a staircase can be descended forever,
+        // while real drops still fall below it and >maxFall still kills. The
+        // body stays clear by construction: the cell it drops into is the
+        // a0 that just read AIR, and the new body row is that same row.
+        L.x = cx + 0.5 - L.dir * 0.02
+        L.y = k + 1
+        g.events.push({ type: 'stepdown', id: L.id })
     } else {
         L.x = nx
         L.state = 'fall'; L.fallDist = 0; L.vy = 0
@@ -578,7 +607,12 @@ export function candidates(g) {
         // the roll: where stepping down survives and still delivers, the
         // cargo stays in the pack; where the drop is a trap, wood is the
         // only crossing and the rollout says so.
-        if (a1 === AIR && a0 === AIR && !L.builder && solid(g, cx, k + 1)) push(L.id, 'build')
+        // #3908: the mirror widened with the span — a two-cell descent whose
+        // LOWER row is solid is a laying site too (wood lands at the lower
+        // level); three rows down stays out of reach, and water is never a
+        // shelf at either level.
+        if (a1 === AIR && a0 === AIR && !L.builder
+            && (solid(g, cx, k + 1) || (cell(g, cx, k + 1) === AIR && solid(g, cx, k + 2)))) push(L.id, 'build')
         // A bomb is a TIMER: assigned at the wall it has already bounced and
         // explodes a tile short. Offer it while the walker still has runway
         // to touch the obstacle when the fuse runs out (~3.7 tiles / 1.6 s).

@@ -290,6 +290,7 @@ const LemGame = () => {
                 else if (e.type === 'land') { audioController.playTone(120, 0.05, 'triangle', 0.04); squash[e.id] = SQUASH_LIFE }   // #3879 knees bend on touchdown
                 else if (e.type === 'landsoft') { audioController.playTone(200, 0.07, 'sine', 0.035); squash[e.id] = SQUASH_LIFE }
                 else if (e.type === 'step') audioController.playTone(220, 0.03, 'triangle', 0.025)
+                else if (e.type === 'stepdown') audioController.playTone(155, 0.035, 'triangle', 0.022)   // #3908: the stair is walked — a heel-plant below the mount chirp
                 else if (e.type === 'crest') audioController.playTone(880, 0.07, 'sine', 0.05)
                 else if (e.type === 'climbblock') audioController.playSweep(300, 620, 0.12, 'triangle', 0.05)
                 else if (e.type === 'wake') audioController.playSweep(620, 300, 0.14, 'square', 0.05)
